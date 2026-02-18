@@ -7,10 +7,10 @@ description: Learn how to use a database with Better Auth.
 
 Better Auth connects to a database to store data. The database will be used to store data such as users, sessions, and more. Plugins can also define their own database tables to store data.
 
-You can pass a database connection to Better Auth by passing a supported database instance in the database options. You can learn more about supported database adapters in the [Other relational databases](/docs/adapters/other-relational-databases) documentation.
+You can pass a database connection to Better Auth by passing a supported database instance in the database options. You can learn more about supported database adapters in the [Other relational databases](/adapters/kysely) documentation.
 
 <Info>
-Better Auth also works without any database. For more details, see [Stateless Session Management](/docs/concepts/session-management#stateless-session-management).
+Better Auth also works without any database. For more details, see [Stateless Session Management](/concepts/session-management#stateless-session-management).
 </Info>
 
 ## CLI
@@ -26,7 +26,7 @@ npx auth@latest migrate
 ```
 
 <Info>
-For PostgreSQL users: The migrate command supports non-default schemas. It automatically detects your `search_path` configuration and creates tables in the correct schema. See [PostgreSQL adapter](/docs/adapters/postgresql#use-a-non-default-schema) for details.
+For PostgreSQL users: The migrate command supports non-default schemas. It automatically detects your `search_path` configuration and creates tables in the correct schema. See [PostgreSQL adapter](/adapters/postgresql#use-a-non-default-schema) for details.
 </Info>
 
 ### Generating Schema
@@ -37,7 +37,7 @@ Better Auth also provides a `generate` command to generate the schema required b
 npx auth@latest generate
 ```
 
-See the [CLI](/docs/concepts/cli) documentation for more information on the CLI.
+See the [CLI](/api-reference/cli/overview) documentation for more information on the CLI.
 
 <Note>
 If you prefer adding tables manually, you can do that as well. The core schema required by Better Auth is described below and you can find additional schema required by plugins in the plugin documentation.
@@ -342,7 +342,7 @@ res.user.lang; // > "fr"
 ```
 
 <Note>
-See the [TypeScript](/docs/concepts/typescript#inferring-additional-fields-on-client) documentation for more information on how to infer additional fields on the client side.
+See the [TypeScript](/concepts/typescript#inferring-additional-fields-on-client) documentation for more information on how to infer additional fields on the client side.
 </Note>
 
 ### ID Generation
@@ -537,10 +537,10 @@ The Better-Auth `1.4` CLI will generate DrizzleORM and PrismaORM relationships f
 
 It's very important to read the documentation regarding experimental joins for your given adapter:
 
-- [DrizzleORM](/docs/adapters/drizzle#joins-experimental)
-- [PrismaORM](/docs/adapters/prisma#joins-experimental)
-- [SQLite](/docs/adapters/sqlite#joins-experimental)
-- [MySQL](/docs/adapters/mysql#joins-experimental)
-- [PostgreSQL](/docs/adapters/postgresql#joins-experimental)
-- [MSSQL](/docs/adapters/mssql#joins-experimental)
-- [MongoDB](/docs/adapters/mongo#joins-experimental)
+- [DrizzleORM](/adapters/drizzle#joins-experimental)
+- [PrismaORM](/adapters/prisma#joins-experimental)
+- [SQLite](/adapters/sqlite#joins-experimental)
+- [MySQL](/adapters/mysql#joins-experimental)
+- [PostgreSQL](/adapters/postgresql#joins-experimental)
+- [MSSQL](/adapters/mssql#joins-experimental)
+- [MongoDB](/adapters/mongo#joins-experimental)

@@ -6,12 +6,12 @@ description: A step-by-step guide to transitioning from Clerk to Better Auth.
 In this guide, we'll walk through the steps to migrate a project from Clerk to Better Auth — including email/password with proper hashing, social/external accounts, phone number, two-factor data, and more.
 
 <Callout type="warn">
-This migration will invalidate all active sessions. This guide doesn't currently show you how to migrate Organization but it should be possible with additional steps and the [Organization](/docs/plugins/organization) Plugin.
+This migration will invalidate all active sessions. This guide doesn't currently show you how to migrate Organization but it should be possible with additional steps and the [Organization](/plugins/organization) Plugin.
 </Callout>
 
 ## Before You Begin
 
-Before starting the migration process, set up Better Auth in your project. Follow the [installation guide](/docs/installation) to get started.
+Before starting the migration process, set up Better Auth in your project. Follow the [installation guide](/installation) to get started.
 
 <Steps>
 <Step>
@@ -72,7 +72,7 @@ export const auth = betterAuth({
 })
 ```
 
-See [Email and Password](/docs/authentication/email-password) for more configuration options.
+See [Email and Password](/authentication/email-password) for more configuration options.
 </Step>
 <Step>
 ### Setup Social Providers (Optional)
@@ -103,13 +103,13 @@ export const auth = betterAuth({
 
 You can add the following plugins to your auth config based on your needs.
 
-[Admin](/docs/plugins/admin) Plugin will allow you to manage users, user impersonations and app level roles and permissions.
+[Admin](/plugins/admin) Plugin will allow you to manage users, user impersonations and app level roles and permissions.
 
-[Two Factor](/docs/plugins/2fa) Plugin will allow you to add two-factor authentication to your application.
+[Two Factor](/plugins/two-factor) Plugin will allow you to add two-factor authentication to your application.
 
-[Phone Number](/docs/plugins/phone-number) Plugin will allow you to add phone number authentication to your application.
+[Phone Number](/plugins/phone-number) Plugin will allow you to add phone number authentication to your application.
 
-[Username](/docs/plugins/username) Plugin will allow you to add username authentication to your application.
+[Username](/plugins/username) Plugin will allow you to add username authentication to your application.
 
 ```ts title="auth.ts"
 import { Pool } from "pg";

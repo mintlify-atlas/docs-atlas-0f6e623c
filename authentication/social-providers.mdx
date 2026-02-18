@@ -120,7 +120,7 @@ const { accessToken, refreshToken } = await authClient.getAccessToken({
 Better Auth supports 30+ social authentication providers out of the box:
 
 <CardGroup cols={3}>
-  <Card title="Google" icon="google" href="/authentication/google">
+  <Card title="Google" icon="google" href="/concepts/oauth">
     Sign in with Google accounts
   </Card>
   <Card title="GitHub" icon="github" href="/authentication/github">
@@ -165,7 +165,7 @@ Better Auth includes support for these additional providers:
 - **Others**: Spotify, PayBin
 
 <Note>
-For providers not listed above, use the [Generic OAuth Plugin](/plugins/generic-oauth) to add any OAuth 2.0 or OIDC provider.
+For providers not listed above, use the [Generic OAuth Plugin](/plugins/overview) to add any OAuth 2.0 or OIDC provider.
 </Note>
 
 ## Configuration Options
@@ -370,7 +370,7 @@ export const auth = betterAuth({
 });
 ```
 
-See the [Generic OAuth Plugin](/plugins/generic-oauth) documentation for complete details.
+See the [Generic OAuth Plugin](/plugins/overview) documentation for complete details.
 
 ## Troubleshooting
 

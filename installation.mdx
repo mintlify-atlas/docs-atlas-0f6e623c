@@ -223,7 +223,7 @@ Better Auth requires a database to store user data, sessions, and accounts. You 
 </Tabs>
 
 <Note>
-Better Auth can also work in stateless mode without a database using JWT sessions. However, most plugins require a database. See the [Stateless Session Management](/docs/concepts/session-management#stateless) documentation for details.
+Better Auth can also work in stateless mode without a database using JWT sessions. However, most plugins require a database. See the [Stateless Session Management](/concepts/session-management#stateless) documentation for details.
 </Note>
 
 </Step>
@@ -266,7 +266,7 @@ npx drizzle-kit push
 </Warning>
 
 <Info>
-If you prefer to create the schema manually, see the [Database Schema](/docs/concepts/database#core-schema) documentation for the required tables and fields.
+If you prefer to create the schema manually, see the [Database Schema](/concepts/database#core-schema) documentation for the required tables and fields.
 </Info>
 
 </Step>
@@ -310,11 +310,11 @@ export const auth = betterAuth({
     GitHub, Google, Apple, Discord, Twitter, and many more
   </Card>
   
-  <Card title="Passkeys" icon="fingerprint" href="/docs/plugins/passkey">
+  <Card title="Passkeys" icon="fingerprint" href="/plugins/passkey">
     Modern passwordless authentication via plugin
   </Card>
   
-  <Card title="Magic Links" icon="wand-magic-sparkles" href="/docs/plugins/magic-link">
+  <Card title="Magic Links" icon="wand-magic-sparkles" href="/plugins/magic-link">
     Passwordless email authentication via plugin
   </Card>
 </CardGroup>
@@ -436,7 +436,7 @@ Create an API route to handle authentication requests. Better Auth needs a catch
 </Tabs>
 
 <Info>
-Better Auth works with any framework that supports standard Request and Response objects. See the [framework integrations](/docs/integrations) for more examples.
+Better Auth works with any framework that supports standard Request and Response objects. See the [framework integrations](/integrations) for more examples.
 </Info>
 
 </Step>
@@ -524,11 +524,11 @@ You're now ready to use Better Auth in your application!
     Follow a complete example to build your first auth flow
   </Card>
   
-  <Card title="Basic Usage" icon="book-open" href="/docs/basic-usage">
+  <Card title="Basic Usage" icon="book-open" href="/basic-usage">
     Learn how to sign in, sign up, and manage sessions
   </Card>
   
-  <Card title="Explore Plugins" icon="puzzle-piece" href="/docs/plugins">
+  <Card title="Explore Plugins" icon="puzzle-piece" href="/plugins">
     Add advanced features like 2FA, passkeys, and organizations
   </Card>
   
@@ -572,7 +572,7 @@ You're now ready to use Better Auth in your application!
 </Accordion>
 
 <Accordion title="CORS issues">
-  If your client and server are on different domains, you'll need to configure CORS. See the [CORS documentation](/docs/concepts/cors) for details.
+  If your client and server are on different domains, you'll need to configure CORS. See the [CORS documentation](/concepts/api) for details.
 </Accordion>
 
 <Accordion title="Type errors with adapters">

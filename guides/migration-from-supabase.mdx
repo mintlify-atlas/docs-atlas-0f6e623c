@@ -16,7 +16,7 @@ This migration will invalidate all active sessions. While this guide doesn't cur
 
 ## Before You Begin
 
-Before starting the migration process, set up Better Auth in your project. Follow the [installation guide](/docs/installation) to get started.
+Before starting the migration process, set up Better Auth in your project. Follow the [installation guide](/installation) to get started.
 
 <Steps>
 
@@ -62,7 +62,7 @@ export const auth = betterAuth({
 ```
 
 <Callout type="info">
-If you want to require email verification, add the `emailVerification` config separately. See the [Email Verification docs](/docs/authentication/email-password#email-verification) for details.
+If you want to require email verification, add the `emailVerification` config separately. See the [Email Verification docs](/authentication/email-password#email-verification) for details.
 </Callout>
 </Step>
 
@@ -97,9 +97,9 @@ export const auth = betterAuth({
 
 Add plugins that match the features you used in Supabase. Include only what you need:
 
-- **[admin](/docs/plugins/admin)**: If you have users with `is_super_admin` or `banned_until` fields
-- **[anonymous](/docs/plugins/anonymous)**: If you used anonymous authentication (`signInAnonymously`)
-- **[phoneNumber](/docs/plugins/phone-number)**: If you have users who signed up with phone numbers
+- **[admin](/plugins/admin)**: If you have users with `is_super_admin` or `banned_until` fields
+- **[anonymous](/plugins/anonymous)**: If you used anonymous authentication (`signInAnonymously`)
+- **[phoneNumber](/plugins/phone-number)**: If you have users who signed up with phone numbers
 
 <Callout type="info">
 Only include plugins for features you actually used in Supabase. The migration script will automatically detect which plugins are enabled and migrate data accordingly.
@@ -1029,13 +1029,13 @@ Here's a list of the Supabase auth API calls and their Better Auth counterparts.
 - `supabase.auth.getSession` -> `authClient.getSession` -  you can also use `authClient.useSession` for reactive state
 
 Learn more:
-- [Basic Usage](/docs/basic-usage): Learn how to use the auth client to sign up, sign in, and sign out.
-- [Email and Password](/docs/authentication/email-password): Learn how to add email and password authentication to your project.
-- [Anonymous](/docs/plugins/anonymous): Learn how to add anonymous authentication to your project.
-- [Admin](/docs/plugins/admin): Learn how to add admin authentication to your project.
-- [Email OTP](/docs/plugins/email-otp): Learn how to add email OTP authentication to your project.
-- [Hooks](/docs/concepts/hooks): Learn how to use the hooks to listen for events.
-- [Next.js](/docs/integrations/next): Learn how to use the auth client in a Next.js project.
+- [Basic Usage](/quickstart): Learn how to use the auth client to sign up, sign in, and sign out.
+- [Email and Password](/authentication/email-password): Learn how to add email and password authentication to your project.
+- [Anonymous](/plugins/anonymous): Learn how to add anonymous authentication to your project.
+- [Admin](/plugins/admin): Learn how to add admin authentication to your project.
+- [Email OTP](/plugins/email-otp): Learn how to add email OTP authentication to your project.
+- [Hooks](/concepts/hooks): Learn how to use the hooks to listen for events.
+- [Next.js](/integrations/next): Learn how to use the auth client in a Next.js project.
 </Step>
 </Steps>
 
@@ -1473,11 +1473,11 @@ Use this checklist to ensure a complete SSO migration:
 **Multiple Domains**: If you have multiple domains for a single SSO provider, separate them with commas in the `domain` field: `"company.com,company.org"`.
 </Callout>
 
-Learn more about SSO configuration in the [SSO Plugin Documentation](/docs/plugins/sso).
+Learn more about SSO configuration in the [SSO Plugin Documentation](/plugins/overview).
 
 ### Auth Protection
 
-To protect routes with proxy(middleware), refer to the [Next.js Auth Protection Guide](/docs/integrations/next#auth-protection) or your framework's documentation.
+To protect routes with proxy(middleware), refer to the [Next.js Auth Protection Guide](/integrations/next#auth-protection) or your framework's documentation.
 
 ## Wrapping Up
 

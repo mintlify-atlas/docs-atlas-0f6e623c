@@ -11,7 +11,7 @@ However, if you're starting a new project or facing challenges with your current
 <Step>
 ## Create Better Auth Instance
 
-Before starting the migration process, set up Better Auth in your project. Follow the [installation guide](/docs/installation) to get started.
+Before starting the migration process, set up Better Auth in your project. Follow the [installation guide](/installation) to get started.
 
 For example, if you use the GitHub OAuth provider, here is a comparison of the `auth.ts` file.
 
@@ -51,7 +51,7 @@ Now Better Auth supports stateless session management without any database. If y
 <Step>
 ## Create Client Instance
 
-This client instance includes a set of functions for interacting with the Better Auth server instance. For more information, see [here](/docs/concepts/client).
+This client instance includes a set of functions for interacting with the Better Auth server instance. For more information, see [here](/api-reference/cli/overview).
 
 ```ts title="auth-client.ts"
 import { createAuthClient } from "better-auth/react"
@@ -88,7 +88,7 @@ export const { POST, GET } = toNextJsHandler(auth)
 <Step>
 ## Session Management
 
-In this section, we'll look at how to manage sessions in Better Auth compared to Auth.js. For more information, see [here](/docs/concepts/session-management).
+In this section, we'll look at how to manage sessions in Better Auth compared to Auth.js. For more information, see [here](/concepts/session-management).
 
 ### Client-side
 
@@ -754,7 +754,7 @@ If you were using Auth.js v4, note that v5 does not introduce any breaking chang
 
 ### Customization
 
-You may have extended the database models or implemented additional logic in Auth.js. Better Auth allows you to customize the core schema in a type-safe way. You can also define custom logic during the lifecycle of database operations. For more details, see [Concepts - Database](/docs/concepts/database). 
+You may have extended the database models or implemented additional logic in Auth.js. Better Auth allows you to customize the core schema in a type-safe way. You can also define custom logic during the lifecycle of database operations. For more details, see [Concepts - Database](/concepts/database). 
 </Step>
 </Steps>
 
@@ -762,4 +762,4 @@ You may have extended the database models or implemented additional logic in Aut
 
 Now you're ready to migrate from Auth.js to Better Auth. For a complete implementation with multiple authentication methods, check out the [Next.js Demo App](https://github.com/better-auth/better-auth/tree/canary/demo/nextjs). Better Auth offers greater flexibility and more features, so be sure to explore the [documentation](/docs) to unlock its full potential.
 
-If you need help with migration, join our [community](/community) or reach out to [contact@better-auth.com](mailto:contact@better-auth.com).
+If you need help with migration, join our [communityhttps://discord.gg/better-auth or reach out to [contact@better-auth.com](mailto:contact@better-auth.com).
