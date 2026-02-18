@@ -1,0 +1,260 @@
+---
+title: Session Type
+description: Type definitions for session objects in Better Auth
+---
+
+## Overview
+
+The `Session` type represents an authenticated user session in Better Auth. Sessions track active user connections, including metadata like IP address and user agent.
+
+**Source:** `/packages/core/src/db/schema/session.ts`
+
+## Base Session
+
+The core session schema includes these fields:
+
+```typescript
+interface BaseSession {
+  id: string;
+  userId: string;
+  token: string;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}
+```
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the session
+</ResponseField>
+
+<ResponseField name="userId" type="string" required>
+  Reference to the user who owns this session
+</ResponseField>
+
+<ResponseField name="token" type="string" required>
+  Session token used for authentication. This is a unique, cryptographically secure string that identifies the session.
+</ResponseField>
+
+<ResponseField name="expiresAt" type="Date" required>
+  When the session expires. After this time, the session is no longer valid.
+</ResponseField>
+
+<ResponseField name="createdAt" type="Date" required>
+  Timestamp when the session was created
+</ResponseField>
+
+<ResponseField name="updatedAt" type="Date" required>
+  Timestamp when the session was last updated
+</ResponseField>
+
+<ResponseField name="ipAddress" type="string | null">
+  IP address from which the session was created
+</ResponseField>
+
+<ResponseField name="userAgent" type="string | null">
+  Browser/client user agent string
+</ResponseField>
+
+## Extended Session Type
+
+The `Session` type supports additional fields from configuration and plugins:
+
+```typescript
+type Session<
+  DBOptions extends BetterAuthOptions["session"] = BetterAuthOptions["session"],
+  Plugins extends BetterAuthOptions["plugins"] = BetterAuthOptions["plugins"]
+> = BaseSession &
+  InferDBFieldsFromOptions<DBOptions> &
+  InferDBFieldsFromPlugins<"session", Plugins>;
+```
+
+### Type Parameters
+
+<ResponseField name="DBOptions" type="BetterAuthOptions['session']">
+  Session configuration options, including `additionalFields`
+</ResponseField>
+
+<ResponseField name="Plugins" type="BetterAuthOptions['plugins']">
+  Array of plugins that may add fields to the session schema
+</ResponseField>
+
+## Adding Custom Fields
+
+You can extend sessions with additional fields:
+
+```typescript
+import { betterAuth } from "better-auth";
+
+const auth = betterAuth({
+  session: {
+    additionalFields: {
+      deviceId: {
+        type: "string",
+        required: false
+      },
+      deviceName: {
+        type: "string",
+        required: false
+      },
+      lastActivity: {
+        type: "date",
+        required: false
+      }
+    }
+  }
+});
+```
+
+This creates a session type with the additional fields:
+
+```typescript
+interface ExtendedSession extends BaseSession {
+  deviceId?: string | null;
+  deviceName?: string | null;
+  lastActivity?: Date | null;
+}
+```
+
+## Plugin Extensions
+
+Plugins can add fields to sessions. For example, the multi-session plugin adds device tracking:
+
+<CodeGroup>
+```typescript Multi-Session Plugin
+import { betterAuth } from "better-auth";
+import { multiSession } from "better-auth/plugins";
+
+const auth = betterAuth({
+  plugins: [
+    multiSession()
+  ]
+});
+
+// Sessions now include multi-session fields
+type SessionWithMulti = Session & {
+  activeOrganizationId?: string;
+};
+```
+
+```typescript Custom Session Plugin
+import { betterAuth } from "better-auth";
+import { customSession } from "better-auth/plugins";
+
+const auth = betterAuth({
+  plugins: [
+    customSession({
+      fetchUser: async (session) => ({
+        role: "admin",
+        permissions: ["read", "write"]
+      })
+    })
+  ]
+});
+
+// Session data now includes custom fields
+type CustomSessionData = Session & {
+  role: string;
+  permissions: string[];
+};
+```
+</CodeGroup>
+
+## Session with User Data
+
+When fetching sessions, you often get the associated user:
+
+```typescript
+interface SessionWithUser {
+  session: Session;
+  user: User;
+}
+```
+
+Example:
+
+```typescript
+import { auth } from "./auth";
+
+const sessionData = await auth.api.getSession({
+  headers: request.headers
+});
+
+if (sessionData) {
+  const { session, user } = sessionData;
+  console.log(session.token); // Session token
+  console.log(user.email);    // User email
+}
+```
+
+## Type Utilities
+
+### Inferring Session Types
+
+Use type inference to get your session type:
+
+```typescript
+import type { Session } from "better-auth";
+import type { auth } from "./auth";
+
+type MySession = Session<
+  typeof auth.$Infer.Options["session"],
+  typeof auth.$Infer.Options["plugins"]
+>;
+```
+
+Or use the inferred type directly:
+
+```typescript
+import type { auth } from "./auth";
+
+type MySession = typeof auth.$Infer.Session;
+```
+
+## Zod Schema
+
+The base session schema is defined using Zod:
+
+```typescript
+import * as z from "zod";
+import { coreSchema } from "./shared";
+
+const sessionSchema = coreSchema.extend({
+  userId: z.coerce.string(),
+  expiresAt: z.date(),
+  token: z.string(),
+  ipAddress: z.string().nullish(),
+  userAgent: z.string().nullish()
+});
+
+type BaseSession = z.infer<typeof sessionSchema>;
+```
+
+The `coreSchema` adds standard fields:
+
+```typescript
+const coreSchema = z.object({
+  id: z.string(),
+  createdAt: z.date().default(() => new Date()),
+  updatedAt: z.date().default(() => new Date())
+});
+```
+
+## Related Types
+
+<CardGroup cols={2}>
+  <Card title="User Type" href="/api/types/user" icon="user">
+    User type definition
+  </Card>
+  <Card title="Adapter Type" href="/api/types/adapter" icon="database">
+    Database adapter interface
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Session Management](/concepts/session-management) - Learn about session lifecycle
+- [Multi-Session Plugin](/plugins/multi-session) - Support multiple active sessions
+- [Custom Session Plugin](/plugins/custom-session) - Add custom data to sessions

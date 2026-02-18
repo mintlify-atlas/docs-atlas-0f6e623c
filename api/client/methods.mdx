@@ -1,0 +1,733 @@
+---
+title: 'Client Methods'
+description: 'Type-safe authentication methods for the Better Auth client'
+---
+
+## Overview
+
+The Better Auth client provides auto-generated, fully type-safe methods for all authentication operations. These methods are dynamically created based on your server configuration and installed plugins.
+
+## Core Authentication Methods
+
+### signIn.email
+
+Sign in a user with email and password.
+
+#### Signature
+
+```typescript
+signIn.email(data: {
+	email: string
+	password: string
+	rememberMe?: boolean
+	callbackURL?: string
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	user: User
+	session: Session
+	redirect: boolean
+}>>
+```
+
+#### Parameters
+
+<ParamField path="email" type="string" required>
+	The user's email address.
+</ParamField>
+
+<ParamField path="password" type="string" required>
+	The user's password.
+</ParamField>
+
+<ParamField path="rememberMe" type="boolean" optional>
+	Whether to persist the session. Defaults to `true`.
+</ParamField>
+
+<ParamField path="callbackURL" type="string" optional>
+	URL to redirect to after successful sign in.
+</ParamField>
+
+<ParamField path="fetchOptions" type="ClientFetchOption" optional>
+	Additional fetch options for this request.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.signIn.email({
+	email: "user@example.com",
+	password: "password123",
+	rememberMe: true
+})
+
+if (error) {
+	console.error("Sign in failed:", error.message)
+} else {
+	console.log("Signed in:", data.user)
+}
+```
+
+### signIn.social
+
+Sign in with an OAuth provider.
+
+#### Signature
+
+```typescript
+signIn.social(data: {
+	provider: string
+	callbackURL?: string
+	newUserCallbackURL?: string
+	errorCallbackURL?: string
+	disableRedirect?: boolean
+	idToken?: {
+		token: string
+		nonce?: string
+		accessToken?: string
+	}
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{ url: string }>>
+```
+
+#### Parameters
+
+<ParamField path="provider" type="string" required>
+	The OAuth provider to use (e.g., "google", "github", "discord").
+</ParamField>
+
+<ParamField path="callbackURL" type="string" optional>
+	URL to redirect to after successful authentication.
+</ParamField>
+
+<ParamField path="newUserCallbackURL" type="string" optional>
+	Separate callback URL for newly registered users.
+</ParamField>
+
+<ParamField path="errorCallbackURL" type="string" optional>
+	URL to redirect to if an error occurs.
+</ParamField>
+
+<ParamField path="disableRedirect" type="boolean" optional>
+	Prevent automatic redirection. Useful for popup flows.
+</ParamField>
+
+<ParamField path="idToken" type="object" optional>
+	ID token from provider for client-side authentication (Google, Apple).
+	
+	<Expandable title="properties">
+		<ParamField path="token" type="string" required>
+			The ID token from the provider.
+		</ParamField>
+		
+		<ParamField path="nonce" type="string" optional>
+			Nonce value for token validation.
+		</ParamField>
+		
+		<ParamField path="accessToken" type="string" optional>
+			Access token from the provider.
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+#### Example
+
+```typescript
+// Standard OAuth flow
+await client.signIn.social({
+	provider: "google",
+	callbackURL: "/dashboard"
+})
+
+// Client-side token authentication
+const { data, error } = await client.signIn.social({
+	provider: "google",
+	idToken: {
+		token: googleIdToken,
+		accessToken: googleAccessToken
+	}
+})
+```
+
+### signUp.email
+
+Create a new user account with email and password.
+
+#### Signature
+
+```typescript
+signUp.email(data: {
+	email: string
+	password: string
+	name: string
+	image?: string
+	callbackURL?: string
+	rememberMe?: boolean
+	fetchOptions?: ClientFetchOption
+} & AdditionalUserFields): Promise<BetterFetchResponse<{
+	user: User
+	session: Session
+}>>
+```
+
+#### Parameters
+
+<ParamField path="email" type="string" required>
+	The user's email address.
+</ParamField>
+
+<ParamField path="password" type="string" required>
+	The user's password.
+</ParamField>
+
+<ParamField path="name" type="string" required>
+	The user's display name.
+</ParamField>
+
+<ParamField path="image" type="string" optional>
+	URL to the user's profile image.
+</ParamField>
+
+<ParamField path="callbackURL" type="string" optional>
+	URL for email verification callback.
+</ParamField>
+
+<ParamField path="rememberMe" type="boolean" optional>
+	Whether to persist the session. Defaults to `true`.
+</ParamField>
+
+<ParamField path="...additionalFields" type="any" optional>
+	Any additional user fields defined in your schema.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.signUp.email({
+	email: "user@example.com",
+	password: "securePassword123",
+	name: "John Doe",
+	image: "https://example.com/avatar.jpg"
+})
+
+if (error) {
+	console.error("Sign up failed:", error.message)
+} else {
+	console.log("User created:", data.user)
+}
+```
+
+### signOut
+
+Sign out the current user and invalidate their session.
+
+#### Signature
+
+```typescript
+signOut(data?: {
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{ success: boolean }>>
+```
+
+#### Example
+
+```typescript
+const { error } = await client.signOut()
+
+if (error) {
+	console.error("Sign out failed:", error)
+} else {
+	console.log("Signed out successfully")
+}
+```
+
+## Session Management
+
+### getSession
+
+Manually fetch the current session. Usually you'll use `useSession` hook instead.
+
+#### Signature
+
+```typescript
+getSession(data?: {
+	query?: {
+		disableCookieCache?: boolean
+		disableRefresh?: boolean
+	}
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	user: User
+	session: Session
+} | null>>
+```
+
+#### Parameters
+
+<ParamField path="query.disableCookieCache" type="boolean" optional>
+	Bypass cookie cache and fetch fresh session data from the server.
+</ParamField>
+
+<ParamField path="query.disableRefresh" type="boolean" optional>
+	Disable automatic session refresh for this request.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.getSession({
+	query: {
+		disableCookieCache: true
+	}
+})
+
+if (data) {
+	console.log("Current user:", data.user)
+}
+```
+
+### revokeSessions
+
+Revoke specific or all user sessions.
+
+#### Signature
+
+```typescript
+revokeSessions(data?: {
+	sessionTokens?: string[]
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{ success: boolean }>>
+```
+
+#### Parameters
+
+<ParamField path="sessionTokens" type="string[]" optional>
+	Array of session tokens to revoke. If omitted, all sessions are revoked.
+</ParamField>
+
+#### Example
+
+```typescript
+// Revoke all sessions
+await client.revokeSessions()
+
+// Revoke specific sessions
+await client.revokeSessions({
+	sessionTokens: ["token1", "token2"]
+})
+```
+
+### revokeOtherSessions
+
+Revoke all sessions except the current one.
+
+#### Signature
+
+```typescript
+revokeOtherSessions(data?: {
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{ success: boolean }>>
+```
+
+#### Example
+
+```typescript
+await client.revokeOtherSessions()
+```
+
+## User Management
+
+### updateUser
+
+Update the current user's profile information.
+
+#### Signature
+
+```typescript
+updateUser(data: {
+	name?: string
+	image?: string | null
+	[key: string]: any
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	user: User
+}>>
+```
+
+#### Parameters
+
+<ParamField path="name" type="string" optional>
+	Update the user's display name.
+</ParamField>
+
+<ParamField path="image" type="string | null" optional>
+	Update the user's profile image URL. Set to `null` to remove.
+</ParamField>
+
+<ParamField path="...additionalFields" type="any" optional>
+	Update any additional user fields defined in your schema.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.updateUser({
+	name: "Jane Doe",
+	image: "https://example.com/new-avatar.jpg"
+})
+
+if (error) {
+	console.error("Update failed:", error)
+} else {
+	console.log("Updated user:", data.user)
+}
+```
+
+### deleteUser
+
+Delete the current user's account.
+
+#### Signature
+
+```typescript
+deleteUser(data?: {
+	password?: string
+	token?: string
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{ success: boolean }>>
+```
+
+#### Parameters
+
+<ParamField path="password" type="string" optional>
+	User's password for verification (if password authentication is enabled).
+</ParamField>
+
+<ParamField path="token" type="string" optional>
+	Deletion confirmation token (if required by server config).
+</ParamField>
+
+#### Example
+
+```typescript
+const { error } = await client.deleteUser({
+	password: "currentPassword"
+})
+
+if (error) {
+	console.error("Account deletion failed:", error)
+} else {
+	console.log("Account deleted successfully")
+}
+```
+
+## Password Management
+
+### requestPasswordReset
+
+Request a password reset email.
+
+#### Signature
+
+```typescript
+requestPasswordReset(data: {
+	email: string
+	redirectTo?: string
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	status: boolean
+	message: string
+}>>
+```
+
+#### Parameters
+
+<ParamField path="email" type="string" required>
+	Email address to send the reset link to.
+</ParamField>
+
+<ParamField path="redirectTo" type="string" optional>
+	URL to redirect to for password reset. Token will be appended as query parameter.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.requestPasswordReset({
+	email: "user@example.com",
+	redirectTo: "/reset-password"
+})
+
+if (error) {
+	console.error("Request failed:", error)
+} else {
+	console.log("Reset email sent:", data.message)
+}
+```
+
+### resetPassword
+
+Reset password using a token.
+
+#### Signature
+
+```typescript
+resetPassword(data: {
+	token: string
+	password: string
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	user: User
+	session: Session
+}>>
+```
+
+#### Parameters
+
+<ParamField path="token" type="string" required>
+	Password reset token from email.
+</ParamField>
+
+<ParamField path="password" type="string" required>
+	New password.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.resetPassword({
+	token: resetToken,
+	password: "newSecurePassword123"
+})
+
+if (error) {
+	console.error("Password reset failed:", error)
+} else {
+	console.log("Password updated, signed in as:", data.user)
+}
+```
+
+### changePassword
+
+Change password for the currently authenticated user.
+
+#### Signature
+
+```typescript
+changePassword(data: {
+	currentPassword: string
+	newPassword: string
+	revokeOtherSessions?: boolean
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{ success: boolean }>>
+```
+
+#### Parameters
+
+<ParamField path="currentPassword" type="string" required>
+	User's current password for verification.
+</ParamField>
+
+<ParamField path="newPassword" type="string" required>
+	New password to set.
+</ParamField>
+
+<ParamField path="revokeOtherSessions" type="boolean" optional>
+	Whether to revoke all other sessions. Defaults to `false`.
+</ParamField>
+
+#### Example
+
+```typescript
+const { error } = await client.changePassword({
+	currentPassword: "oldPassword",
+	newPassword: "newSecurePassword123",
+	revokeOtherSessions: true
+})
+
+if (error) {
+	console.error("Password change failed:", error)
+} else {
+	console.log("Password changed successfully")
+}
+```
+
+## Email Verification
+
+### sendVerificationEmail
+
+Send or resend email verification.
+
+#### Signature
+
+```typescript
+sendVerificationEmail(data?: {
+	email?: string
+	callbackURL?: string
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	status: boolean
+	message: string
+}>>
+```
+
+#### Parameters
+
+<ParamField path="email" type="string" optional>
+	Email address to send verification to. Uses current user's email if omitted.
+</ParamField>
+
+<ParamField path="callbackURL" type="string" optional>
+	URL to redirect to after verification.
+</ParamField>
+
+#### Example
+
+```typescript
+await client.sendVerificationEmail({
+	callbackURL: "/dashboard"
+})
+```
+
+### verifyEmail
+
+Verify email address using a token.
+
+#### Signature
+
+```typescript
+verifyEmail(data: {
+	token: string
+	fetchOptions?: ClientFetchOption
+}): Promise<BetterFetchResponse<{
+	user: User
+	session: Session
+}>>
+```
+
+#### Parameters
+
+<ParamField path="token" type="string" required>
+	Email verification token from email.
+</ParamField>
+
+#### Example
+
+```typescript
+const { data, error } = await client.verifyEmail({
+	token: verificationToken
+})
+
+if (error) {
+	console.error("Verification failed:", error)
+} else {
+	console.log("Email verified:", data.user.emailVerified)
+}
+```
+
+## Response Format
+
+All client methods return a `BetterFetchResponse` with the following structure:
+
+```typescript
+type BetterFetchResponse<Data, Error = any> = {
+	data: Data | null
+	error: BetterFetchError<Error> | null
+}
+
+type BetterFetchError<Error = any> = {
+	status: number
+	statusText: string
+	message: string
+	code?: string
+	data?: Error
+}
+```
+
+## Error Handling
+
+All methods follow a consistent error handling pattern:
+
+```typescript
+const { data, error } = await client.signIn.email({
+	email: "user@example.com",
+	password: "password"
+})
+
+if (error) {
+	// Check error code
+	if (error.code === client.$ERROR_CODES.INVALID_PASSWORD) {
+		console.error("Invalid password")
+	} else if (error.code === client.$ERROR_CODES.USER_NOT_FOUND) {
+		console.error("User not found")
+	} else {
+		console.error("Sign in error:", error.message)
+	}
+} else {
+	// Success
+	console.log("Signed in:", data.user)
+}
+```
+
+## Fetch Options
+
+All methods accept an optional `fetchOptions` parameter for customizing requests:
+
+```typescript
+await client.signIn.email(
+	{
+		email: "user@example.com",
+		password: "password"
+	},
+	{
+		onSuccess: (context) => {
+			console.log("Sign in successful:", context.data)
+		},
+		onError: (context) => {
+			console.error("Sign in failed:", context.error)
+		},
+		headers: {
+			"X-Custom-Header": "value"
+		},
+		throw: true // Throw errors instead of returning them
+	}
+)
+```
+
+## Plugin Methods
+
+When using plugins, additional methods are automatically added to the client:
+
+```typescript
+import { createAuthClient } from "better-auth/react"
+import { organizationClient, twoFactorClient } from "better-auth/client/plugins"
+
+const client = createAuthClient({
+	plugins: [
+		organizationClient(),
+		twoFactorClient()
+	]
+})
+
+// Organization methods (from organizationClient)
+await client.organization.create({ name: "My Org" })
+await client.organization.inviteMember({ email: "user@example.com" })
+
+// Two-factor methods (from twoFactorClient)
+await client.twoFactor.enable()
+await client.twoFactor.verify({ code: "123456" })
+```
+
+## Notes
+
+<Note>
+All methods automatically handle session updates. After successful authentication operations, the session state is automatically refreshed.
+</Note>
+
+<Warning>
+Password and sensitive data are transmitted securely. Always use HTTPS in production.
+</Warning>
+
+## Related
+
+- [createAuthClient](/api/client/create-auth-client)
+- [Client Hooks](/api/client/hooks)

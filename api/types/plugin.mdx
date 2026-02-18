@@ -1,0 +1,700 @@
+---
+title: Plugin Type
+description: Type definitions for creating Better Auth plugins
+---
+
+## Overview
+
+The `BetterAuthPlugin` interface defines the structure for creating custom authentication plugins. Plugins extend Better Auth with additional functionality, endpoints, database schemas, and hooks.
+
+**Source:** `/packages/core/src/types/plugin.ts`
+
+## BetterAuthPlugin Interface
+
+```typescript
+interface BetterAuthPlugin {
+  id: string;
+  init?: (ctx: AuthContext) => Awaitable<{
+    context?: DeepPartial<Omit<AuthContext, "options">> & Record<string, unknown>;
+    options?: Partial<BetterAuthOptions>;
+  } | void>;
+  endpoints?: Record<string, Endpoint>;
+  middlewares?: Array<{
+    path: string;
+    middleware: Middleware;
+  }>;
+  onRequest?: (request: Request, ctx: AuthContext) => Promise<{
+    response: Response;
+  } | {
+    request: Request;
+  } | void>;
+  onResponse?: (response: Response, ctx: AuthContext) => Promise<{
+    response: Response;
+  } | void>;
+  hooks?: {
+    before?: Array<{
+      matcher: (context: HookEndpointContext) => boolean;
+      handler: AuthMiddleware;
+    }>;
+    after?: Array<{
+      matcher: (context: HookEndpointContext) => boolean;
+      handler: AuthMiddleware;
+    }>;
+  };
+  schema?: BetterAuthPluginDBSchema;
+  migrations?: Record<string, Migration>;
+  options?: Record<string, any>;
+  $Infer?: Record<string, any>;
+  $ERROR_CODES?: Record<string, RawError>;
+  rateLimit?: Array<{
+    window: number;
+    max: number;
+    pathMatcher: (path: string) => boolean;
+  }>;
+  adapter?: Record<string, (...args: any[]) => Awaitable<any>>;
+}
+```
+
+## Core Properties
+
+<ResponseField name="id" type="LiteralString" required>
+  Unique identifier for the plugin. Should be a descriptive string literal.
+</ResponseField>
+
+<ResponseField name="options" type="Record<string, any>">
+  Plugin configuration options. These are user-provided settings for the plugin.
+</ResponseField>
+
+<ResponseField name="$Infer" type="Record<string, any>">
+  Types to be inferred and merged into the auth instance. Used for TypeScript type inference.
+</ResponseField>
+
+<ResponseField name="$ERROR_CODES" type="Record<string, RawError>">
+  Error codes returned by the plugin for type-safe error handling.
+</ResponseField>
+
+## Lifecycle Methods
+
+### init
+
+Called when the plugin is initialized. Can modify context or options:
+
+```typescript
+init?: (ctx: AuthContext) => Awaitable<{
+  context?: DeepPartial<Omit<AuthContext, "options">> & Record<string, unknown>;
+  options?: Partial<BetterAuthOptions>;
+} | void>;
+```
+
+<Expandable title="Example: Initialize Plugin Context">
+```typescript
+import { BetterAuthPlugin } from "better-auth";
+
+const myPlugin: BetterAuthPlugin = {
+  id: "my-plugin",
+  init: async (ctx) => {
+    // Add custom context
+    return {
+      context: {
+        myCustomService: createMyService(ctx.options)
+      },
+      options: {
+        session: {
+          expiresIn: 60 * 60 * 24 * 7 // 7 days
+        }
+      }
+    };
+  }
+};
+```
+</Expandable>
+
+### onRequest
+
+Intercepts requests before they reach endpoints:
+
+```typescript
+onRequest?: (
+  request: Request,
+  ctx: AuthContext
+) => Promise<
+  | { response: Response }
+  | { request: Request }
+  | void
+>;
+```
+
+<Expandable title="Example: Custom Request Handling">
+```typescript
+const myPlugin: BetterAuthPlugin = {
+  id: "custom-auth",
+  onRequest: async (request, ctx) => {
+    // Check for custom header
+    const apiKey = request.headers.get("x-api-key");
+    
+    if (!apiKey) {
+      return {
+        response: new Response("API key required", { status: 401 })
+      };
+    }
+    
+    // Modify request
+    const newHeaders = new Headers(request.headers);
+    newHeaders.set("x-validated", "true");
+    
+    return {
+      request: new Request(request, { headers: newHeaders })
+    };
+  }
+};
+```
+</Expandable>
+
+### onResponse
+
+Modifies responses before they're sent to clients:
+
+```typescript
+onResponse?: (
+  response: Response,
+  ctx: AuthContext
+) => Promise<{
+  response: Response;
+} | void>;
+```
+
+<Expandable title="Example: Add Response Headers">
+```typescript
+const myPlugin: BetterAuthPlugin = {
+  id: "custom-headers",
+  onResponse: async (response, ctx) => {
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set("x-powered-by", "better-auth");
+    
+    return {
+      response: new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: newHeaders
+      })
+    };
+  }
+};
+```
+</Expandable>
+
+## Endpoints
+
+Define custom API endpoints:
+
+```typescript
+endpoints?: Record<string, Endpoint>;
+```
+
+<Expandable title="Example: Custom Endpoints">
+```typescript
+import { createEndpoint } from "better-call";
+import { z } from "zod";
+
+const myPlugin: BetterAuthPlugin = {
+  id: "custom-actions",
+  endpoints: {
+    "/custom-action": createEndpoint(
+      "/custom-action",
+      {
+        method: "POST",
+        body: z.object({
+          data: z.string()
+        })
+      },
+      async (ctx) => {
+        const { data } = ctx.body;
+        
+        // Perform custom action
+        const result = await processData(data);
+        
+        return ctx.json({
+          success: true,
+          result
+        });
+      }
+    ),
+    "/get-status": createEndpoint(
+      "/get-status",
+      {
+        method: "GET"
+      },
+      async (ctx) => {
+        return ctx.json({
+          status: "active"
+        });
+      }
+    )
+  }
+};
+```
+</Expandable>
+
+## Middlewares
+
+Apply middleware to specific paths:
+
+```typescript
+middlewares?: Array<{
+  path: string;
+  middleware: Middleware;
+}>;
+```
+
+<Expandable title="Example: Path-specific Middleware">
+```typescript
+const myPlugin: BetterAuthPlugin = {
+  id: "admin-protection",
+  middlewares: [
+    {
+      path: "/admin/*",
+      middleware: async (ctx) => {
+        const session = await ctx.context.getSession();
+        
+        if (!session || session.user.role !== "admin") {
+          return ctx.json(
+            { error: "Admin access required" },
+            { status: 403 }
+          );
+        }
+      }
+    }
+  ]
+};
+```
+</Expandable>
+
+## Hooks
+
+Hook into endpoint execution:
+
+```typescript
+hooks?: {
+  before?: Array<{
+    matcher: (context: HookEndpointContext) => boolean;
+    handler: AuthMiddleware;
+  }>;
+  after?: Array<{
+    matcher: (context: HookEndpointContext) => boolean;
+    handler: AuthMiddleware;
+  }>;
+};
+```
+
+<Expandable title="Example: Before/After Hooks">
+```typescript
+const myPlugin: BetterAuthPlugin = {
+  id: "audit-log",
+  hooks: {
+    before: [
+      {
+        matcher: (ctx) => ctx.path?.startsWith("/sign-in"),
+        handler: async (ctx) => {
+          console.log("Sign-in attempt:", ctx.request?.headers);
+        }
+      }
+    ],
+    after: [
+      {
+        matcher: (ctx) => ctx.path === "/sign-in",
+        handler: async (ctx) => {
+          // Log successful sign-in
+          if (ctx.context.returned) {
+            await logAuditEvent({
+              action: "sign-in",
+              userId: ctx.context.returned.user.id,
+              timestamp: new Date()
+            });
+          }
+        }
+      }
+    ]
+  }
+};
+```
+</Expandable>
+
+## Database Schema
+
+Define tables and fields the plugin needs:
+
+```typescript
+schema?: BetterAuthPluginDBSchema;
+```
+
+<Expandable title="Example: Plugin Schema">
+```typescript
+import { BetterAuthPlugin } from "better-auth";
+
+const myPlugin: BetterAuthPlugin = {
+  id: "profile-views",
+  schema: {
+    profileView: {
+      fields: {
+        userId: {
+          type: "string",
+          required: true,
+          references: {
+            model: "user",
+            field: "id",
+            onDelete: "cascade"
+          }
+        },
+        viewerId: {
+          type: "string",
+          required: true,
+          references: {
+            model: "user",
+            field: "id",
+            onDelete: "cascade"
+          }
+        },
+        viewedAt: {
+          type: "date",
+          required: true,
+          defaultValue: () => new Date()
+        },
+        ipAddress: {
+          type: "string",
+          required: false
+        }
+      }
+    }
+  }
+};
+```
+</Expandable>
+
+## Migrations
+
+Custom database migrations:
+
+```typescript
+migrations?: Record<string, Migration>;
+```
+
+<Note>
+Only use migrations if you don't want to use the `schema` option. The schema option automatically creates migrations.
+</Note>
+
+<Expandable title="Example: Custom Migration">
+```typescript
+import { Kysely } from "kysely";
+
+const myPlugin: BetterAuthPlugin = {
+  id: "custom-migration",
+  migrations: {
+    "001_create_custom_table": {
+      async up(db: Kysely<any>) {
+        await db.schema
+          .createTable("custom_table")
+          .addColumn("id", "text", (col) => col.primaryKey())
+          .addColumn("data", "jsonb")
+          .execute();
+      },
+      async down(db: Kysely<any>) {
+        await db.schema.dropTable("custom_table").execute();
+      }
+    }
+  }
+};
+```
+</Expandable>
+
+## Rate Limiting
+
+Define rate limit rules:
+
+```typescript
+rateLimit?: Array<{
+  window: number;
+  max: number;
+  pathMatcher: (path: string) => boolean;
+}>;
+```
+
+<Expandable title="Example: Rate Limit Configuration">
+```typescript
+const myPlugin: BetterAuthPlugin = {
+  id: "api-limits",
+  rateLimit: [
+    {
+      window: 60, // 1 minute
+      max: 10,    // 10 requests
+      pathMatcher: (path) => path.startsWith("/api/public")
+    },
+    {
+      window: 3600, // 1 hour
+      max: 100,     // 100 requests
+      pathMatcher: (path) => path.startsWith("/api/")
+    }
+  ]
+};
+```
+</Expandable>
+
+## Custom Adapter Methods
+
+Override default database operations:
+
+```typescript
+adapter?: Record<string, (...args: any[]) => Awaitable<any>>;
+```
+
+<Expandable title="Example: Custom Adapter Methods">
+```typescript
+const myPlugin: BetterAuthPlugin = {
+  id: "custom-storage",
+  adapter: {
+    createCustomRecord: async (data: any) => {
+      // Custom database operation
+      return await db.insert(data);
+    },
+    findCustomRecords: async (filter: any) => {
+      return await db.query(filter);
+    }
+  }
+};
+```
+</Expandable>
+
+## Type Inference
+
+### InferPluginTypes
+
+Extract types from plugins:
+
+```typescript
+type InferPluginTypes<O extends BetterAuthOptions> =
+  O["plugins"] extends Array<infer P>
+    ? UnionToIntersection<
+        P extends BetterAuthPlugin
+          ? P["$Infer"] extends Record<string, any>
+            ? P["$Infer"]
+            : {}
+          : {}
+      >
+    : {};
+```
+
+### InferPluginContext
+
+Extract context additions from plugins:
+
+```typescript
+type InferPluginContext<O extends BetterAuthOptions> =
+  O["plugins"] extends Array<infer P>
+    ? UnionToIntersection<
+        P extends BetterAuthPlugin ? ExtractInitContext<P> : {}
+      >
+    : {};
+```
+
+### InferPluginErrorCodes
+
+Extract error codes from plugins:
+
+```typescript
+type InferPluginErrorCodes<O extends BetterAuthOptions> =
+  O["plugins"] extends Array<infer P>
+    ? UnionToIntersection<
+        P extends BetterAuthPlugin
+          ? P["$ERROR_CODES"] extends Record<string, any>
+            ? P["$ERROR_CODES"]
+            : {}
+          : {}
+      >
+    : {};
+```
+
+## Helper Types
+
+### HookEndpointContext
+
+Context provided to hook handlers:
+
+```typescript
+type HookEndpointContext = Partial<
+  EndpointContext<string, any> & Omit<InputContext<string, any>, "method">
+> & {
+  path?: string;
+  context: AuthContext & {
+    returned?: unknown;
+    responseHeaders?: Headers;
+  };
+  headers?: Headers;
+};
+```
+
+### DeepPartial
+
+Make all properties optional recursively:
+
+```typescript
+type DeepPartial<T> = T extends Function
+  ? T
+  : T extends object
+    ? { [K in keyof T]?: DeepPartial<T[K]> }
+    : T;
+```
+
+## Complete Plugin Example
+
+<CodeGroup>
+```typescript Full Plugin Example
+import { BetterAuthPlugin } from "better-auth";
+import { createEndpoint } from "better-call";
+import { z } from "zod";
+
+interface MyPluginOptions {
+  enableFeature: boolean;
+  customValue?: string;
+}
+
+export const myPlugin = (options?: MyPluginOptions): BetterAuthPlugin => {
+  return {
+    id: "my-plugin",
+    
+    options: {
+      enableFeature: options?.enableFeature ?? true,
+      customValue: options?.customValue
+    },
+    
+    init: async (ctx) => {
+      console.log("Plugin initialized");
+      
+      return {
+        context: {
+          customService: {
+            doSomething: async () => {
+              // Custom service method
+            }
+          }
+        }
+      };
+    },
+    
+    endpoints: {
+      "/my-action": createEndpoint(
+        "/my-action",
+        {
+          method: "POST",
+          body: z.object({
+            data: z.string()
+          }),
+          metadata: {
+            openapi: {
+              summary: "Custom action",
+              description: "Performs a custom action"
+            }
+          }
+        },
+        async (ctx) => {
+          const { data } = ctx.body;
+          
+          return ctx.json({
+            success: true,
+            processed: data
+          });
+        }
+      )
+    },
+    
+    schema: {
+      myTable: {
+        fields: {
+          userId: {
+            type: "string",
+            required: true,
+            references: {
+              model: "user",
+              field: "id",
+              onDelete: "cascade"
+            }
+          },
+          data: {
+            type: "json",
+            required: true
+          }
+        }
+      }
+    },
+    
+    hooks: {
+      after: [
+        {
+          matcher: (ctx) => ctx.path === "/sign-in",
+          handler: async (ctx) => {
+            if (options?.enableFeature) {
+              // Do something after sign-in
+            }
+          }
+        }
+      ]
+    },
+    
+    rateLimit: [
+      {
+        window: 60,
+        max: 10,
+        pathMatcher: (path) => path === "/my-action"
+      }
+    ],
+    
+    $Infer: {} as {
+      Session: {
+        myCustomField: string;
+      };
+    },
+    
+    $ERROR_CODES: {
+      MY_CUSTOM_ERROR: {
+        message: "Custom error occurred",
+        status: 400
+      }
+    }
+  };
+};
+```
+
+```typescript Using the Plugin
+import { betterAuth } from "better-auth";
+import { myPlugin } from "./my-plugin";
+
+const auth = betterAuth({
+  database: /* ... */,
+  plugins: [
+    myPlugin({
+      enableFeature: true,
+      customValue: "custom"
+    })
+  ]
+});
+
+// Types are automatically inferred
+type Session = typeof auth.$Infer.Session;
+// Session now includes myCustomField: string
+```
+</CodeGroup>
+
+## Related Types
+
+<CardGroup cols={2}>
+  <Card title="User Type" href="/api/types/user" icon="user">
+    User type extensions
+  </Card>
+  <Card title="Session Type" href="/api/types/session" icon="clock">
+    Session type extensions
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Creating Custom Plugins](/guides/creating-custom-plugin) - Complete plugin development guide
+- [Plugin Overview](/concepts/plugins) - Understanding the plugin system
+- [Built-in Plugins](/plugins/overview) - Explore official plugins

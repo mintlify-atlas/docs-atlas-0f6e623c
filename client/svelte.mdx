@@ -1,0 +1,498 @@
+---
+title: Svelte Client
+description: Use Better Auth with Svelte using stores for authentication and session management.
+---
+
+# Svelte Client
+
+The Svelte client provides a store-based API for authentication in Svelte applications. It uses nanostores which integrate seamlessly with Svelte's reactive system.
+
+## Installation
+
+```bash
+npm install better-auth
+# or
+pnpm add better-auth
+# or
+yarn add better-auth
+```
+
+## Basic Setup
+
+<Steps>
+
+### Create Client Instance
+
+Create a client instance by importing from `better-auth/svelte`:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/svelte";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000", // Your backend URL
+});
+```
+
+### Configure Options
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/svelte";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  basePath: "/api/auth",
+  fetchOptions: {
+    onError(ctx) {
+      console.error("Auth error:", ctx.error);
+    },
+  },
+});
+```
+
+</Steps>
+
+## Store API
+
+### useSession Store
+
+The primary store for accessing session state:
+
+```svelte title="components/UserProfile.svelte"
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  const sessionStore = authClient.useSession();
+  
+  async function handleSignOut() {
+    await authClient.signOut();
+  }
+</script>
+
+{#if $sessionStore.isPending}
+  <div>Loading...</div>
+{:else if $sessionStore.error}
+  <div>Error: {$sessionStore.error.message}</div>
+{:else if !$sessionStore.data}
+  <div>Not authenticated</div>
+{:else}
+  <div>
+    <h1>Welcome {$sessionStore.data.user.name}!</h1>
+    <p>Email: {$sessionStore.data.user.email}</p>
+    <button on:click={handleSignOut}>Sign Out</button>
+  </div>
+{/if}
+```
+
+#### Session Store Structure
+
+The `useSession()` function returns a nanostore atom:
+
+```ts
+import type { Atom } from "nanostores";
+
+interface SessionState {
+  data: {
+    session: Session | null;
+    user: User | null;
+  } | null;
+  isPending: boolean;
+  isRefetching: boolean;
+  error: BetterFetchError | null;
+  refetch: (params?: { query?: SessionQueryParams }) => Promise<void>;
+}
+
+type SessionStore = Atom<SessionState>;
+```
+
+### Accessing Store Values
+
+In Svelte, prefix the store with `$` to access its reactive value:
+
+```svelte
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  const sessionStore = authClient.useSession();
+  
+  // Reactive access
+  $: user = $sessionStore.data?.user;
+  $: isLoading = $sessionStore.isPending;
+</script>
+
+<div>
+  {#if isLoading}
+    <p>Loading...</p>
+  {:else if user}
+    <p>Hello, {user.name}!</p>
+  {/if}
+</div>
+```
+
+### Manual Refetch
+
+```svelte
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  const sessionStore = authClient.useSession();
+  
+  async function refreshSession() {
+    await $sessionStore.refetch();
+  }
+  
+  async function forceRefresh() {
+    await $sessionStore.refetch({
+      query: { disableCookieCache: true }
+    });
+  }
+</script>
+
+<button on:click={refreshSession}>Refresh Session</button>
+<button on:click={forceRefresh}>Force Refresh</button>
+```
+
+## Authentication Methods
+
+### Sign Up
+
+```svelte title="routes/sign-up/+page.svelte"
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  import { goto } from "$app/navigation";
+  
+  let email = "";
+  let password = "";
+  let name = "";
+  let error = "";
+  let loading = false;
+  
+  async function handleSignUp() {
+    error = "";
+    loading = true;
+    
+    const { data, error: signUpError } = await authClient.signUp.email({
+      email,
+      password,
+      name,
+    });
+    
+    loading = false;
+    
+    if (signUpError) {
+      error = signUpError.message ?? "Failed to sign up";
+      return;
+    }
+    
+    goto("/dashboard");
+  }
+</script>
+
+<form on:submit|preventDefault={handleSignUp}>
+  <input
+    bind:value={name}
+    type="text"
+    placeholder="Name"
+    required
+  />
+  <input
+    bind:value={email}
+    type="email"
+    placeholder="Email"
+    required
+  />
+  <input
+    bind:value={password}
+    type="password"
+    placeholder="Password"
+    required
+  />
+  {#if error}
+    <div class="error">{error}</div>
+  {/if}
+  <button type="submit" disabled={loading}>
+    {loading ? "Signing up..." : "Sign Up"}
+  </button>
+</form>
+```
+
+### Sign In
+
+```svelte title="routes/sign-in/+page.svelte"
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  import { goto } from "$app/navigation";
+  
+  let email = "";
+  let password = "";
+  let error = "";
+  let loading = false;
+  
+  async function handleSignIn() {
+    error = "";
+    loading = true;
+    
+    const { error: signInError } = await authClient.signIn.email({
+      email,
+      password,
+    });
+    
+    loading = false;
+    
+    if (signInError) {
+      error = signInError.message ?? "Failed to sign in";
+      return;
+    }
+    
+    goto("/dashboard");
+  }
+</script>
+
+<form on:submit|preventDefault={handleSignIn}>
+  <input
+    bind:value={email}
+    type="email"
+    placeholder="Email"
+    required
+  />
+  <input
+    bind:value={password}
+    type="password"
+    placeholder="Password"
+    required
+  />
+  {#if error}
+    <div class="error">{error}</div>
+  {/if}
+  <button type="submit" disabled={loading}>
+    {loading ? "Signing in..." : "Sign In"}
+  </button>
+</form>
+```
+
+### Social Sign In
+
+```svelte
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  async function handleSocialSignIn(provider: "google" | "github") {
+    await authClient.signIn.social({
+      provider,
+      callbackURL: "/dashboard",
+    });
+  }
+</script>
+
+<div>
+  <button on:click={() => handleSocialSignIn("google")}>
+    Sign in with Google
+  </button>
+  <button on:click={() => handleSocialSignIn("github")}>
+    Sign in with GitHub
+  </button>
+</div>
+```
+
+### Sign Out
+
+```svelte
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  async function handleSignOut() {
+    await authClient.signOut();
+    // Session store will automatically update
+  }
+</script>
+
+<button on:click={handleSignOut}>Sign Out</button>
+```
+
+## Protected Routes
+
+### SvelteKit Load Function
+
+```ts title="routes/dashboard/+page.ts"
+import { authClient } from "$lib/auth-client";
+import { redirect } from "@sveltejs/kit";
+import type { PageLoad } from "./$types";
+
+export const load: PageLoad = async () => {
+  const session = authClient.$store.atoms.session.get();
+  
+  if (!session.data) {
+    throw redirect(303, "/sign-in");
+  }
+  
+  return {
+    user: session.data.user,
+  };
+};
+```
+
+### Layout Protection
+
+```svelte title="routes/(protected)/+layout.svelte"
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  import { goto } from "$app/navigation";
+  import { onMount } from "svelte";
+  
+  const sessionStore = authClient.useSession();
+  
+  $: if (!$sessionStore.isPending && !$sessionStore.data) {
+    goto("/sign-in");
+  }
+</script>
+
+{#if $sessionStore.isPending}
+  <div>Loading...</div>
+{:else if $sessionStore.data}
+  <slot />
+{/if}
+```
+
+## User Management
+
+### Update User Profile
+
+```svelte
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  const sessionStore = authClient.useSession();
+  
+  let name = $sessionStore.data?.user.name ?? "";
+  let loading = false;
+  let message = "";
+  
+  async function handleUpdate() {
+    loading = true;
+    message = "";
+    
+    const { error } = await authClient.updateUser({ name });
+    
+    loading = false;
+    
+    if (error) {
+      message = "Failed to update profile";
+    } else {
+      message = "Profile updated!";
+    }
+  }
+</script>
+
+<form on:submit|preventDefault={handleUpdate}>
+  <input bind:value={name} placeholder="Name" />
+  <button type="submit" disabled={loading}>
+    {loading ? "Updating..." : "Update Profile"}
+  </button>
+  {#if message}
+    <p>{message}</p>
+  {/if}
+</form>
+```
+
+## SvelteKit Integration
+
+For full SvelteKit integration with SSR support, see the [SvelteKit integration guide](/integrations/sveltekit).
+
+### Server-Side Session
+
+```ts title="routes/+layout.server.ts"
+import { auth } from "$lib/server/auth";
+import type { LayoutServerLoad } from "./$types";
+
+export const load: LayoutServerLoad = async ({ request }) => {
+  const session = await auth.api.getSession({
+    headers: request.headers,
+  });
+  
+  return {
+    session,
+  };
+};
+```
+
+## Plugin Stores
+
+When using plugins, additional stores become available:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/svelte";
+import { organizationClient } from "better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  plugins: [organizationClient()],
+});
+```
+
+```svelte
+<script lang="ts">
+  import { authClient } from "$lib/auth-client";
+  
+  // Plugin stores are automatically available
+  const activeOrgStore = authClient.useActiveOrganization();
+</script>
+
+{#if $activeOrgStore.data}
+  <div>Current Organization: {$activeOrgStore.data.name}</div>
+{/if}
+```
+
+## TypeScript Support
+
+The Svelte client provides full TypeScript support:
+
+```ts
+import type { AuthClient } from "better-auth/svelte";
+
+// Infer session type
+type Session = typeof authClient.$Infer.Session;
+
+// Type-safe store usage
+const sessionStore = authClient.useSession();
+const session: Session | null = sessionStore.get().data;
+```
+
+## Best Practices
+
+<Note>
+**Store Usage:**
+- Use `$` prefix for reactive access in Svelte components
+- Call `.get()` for one-time value access in non-reactive contexts
+- Stores automatically handle subscription cleanup
+- Session state is shared globally
+</Note>
+
+<Note>
+**SvelteKit:**
+- Use load functions for server-side authentication checks
+- Combine server and client session for SSR
+- Protect routes at the layout level when possible
+</Note>
+
+<Note>
+**Performance:**
+- Stores are lightweight and don't cause unnecessary re-renders
+- Authentication methods are framework-agnostic
+- Consider using `derived` stores for computed session values
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SvelteKit" icon="s" href="/integrations/sveltekit">
+    Full-stack integration with SvelteKit
+  </Card>
+  <Card title="Plugins" icon="plug" href="/plugins/overview">
+    Extend functionality with plugins
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/client/methods">
+    Complete API reference
+  </Card>
+  <Card title="Authentication" icon="lock" href="/authentication/email-password">
+    Authentication methods
+  </Card>
+</CardGroup>

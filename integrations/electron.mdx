@@ -1,0 +1,423 @@
+---
+title: Electron Integration
+description: Integrate Better Auth with Electron for secure desktop authentication.
+---
+
+Better Auth provides full support for Electron applications with secure token exchange, OAuth flows, and persistent sessions.
+
+## Prerequisites
+
+Make sure you have:
+- A Better Auth server instance running
+- An Electron project set up
+- Basic understanding of Electron's main/renderer process architecture
+
+## Installation
+
+<Steps>
+
+### Install Dependencies
+
+Install the Electron package:
+
+```bash
+npm install @better-auth/electron
+```
+
+### Configure Server
+
+Add the Electron plugin to your Better Auth server:
+
+```ts title="lib/auth.ts (Server)"
+import { betterAuth } from "better-auth";
+import { electron } from "@better-auth/electron";
+import Database from "better-sqlite3";
+
+export const auth = betterAuth({
+  database: new Database("./sqlite.db"),
+  emailAndPassword: {
+    enabled: true
+  },
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!
+    },
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!
+    }
+  },
+  plugins: [
+    electron({
+      // Optional: customize client ID (default: "electron")
+      clientID: "my-electron-app",
+      // Optional: customize code expiration (default: 300 seconds)
+      codeExpiresIn: 300,
+      // Optional: disable origin override (default: false)
+      disableOriginOverride: false
+    })
+  ]
+});
+```
+
+### Register Protocol Handler
+
+Register a custom protocol in your main process:
+
+```ts title="src/main/index.ts"
+import { app, protocol } from "electron";
+import { registerProtocolHandler } from "@better-auth/electron/main";
+
+const PROTOCOL_SCHEME = "com.better-auth.demo";
+
+// Register protocol before app is ready
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(PROTOCOL_SCHEME, process.execPath, [
+      path.resolve(process.argv[1])
+    ]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL_SCHEME);
+}
+
+app.whenReady().then(() => {
+  // Register the protocol handler
+  registerProtocolHandler({
+    scheme: PROTOCOL_SCHEME,
+    protocol
+  });
+
+  // ... rest of your app initialization
+});
+```
+
+### Create Client Instance
+
+Create the auth client in your renderer process:
+
+```ts title="src/renderer/lib/auth-client.ts"
+import { createAuthClient } from "better-auth/client";
+import { electronClient } from "@better-auth/electron/client";
+import { storage } from "@better-auth/electron/storage";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000/api/auth",
+  plugins: [
+    electronClient({
+      protocol: {
+        scheme: "com.better-auth.demo" // Must match main process
+      },
+      signInURL: "http://localhost:3000/sign-in",
+      storage: storage() // Secure storage for tokens
+    })
+  ]
+});
+```
+
+</Steps>
+
+## Usage
+
+### Session Management
+
+Use the auth client in your React components:
+
+```tsx title="src/renderer/components/UserProfile.tsx"
+import { authClient } from "../lib/auth-client";
+import { useEffect, useState } from "react";
+
+interface Session {
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
+}
+
+export function UserProfile() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    authClient.getSession().then((data) => {
+      setSession(data.data);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session) {
+    return (
+      <div>
+        <button onClick={() => handleSignIn()}>Sign In</button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h1>Welcome {session.user.name}!</h1>
+      <p>Email: {session.user.email}</p>
+      <button onClick={() => authClient.signOut()}>Sign Out</button>
+    </div>
+  );
+}
+```
+
+### Email/Password Authentication
+
+```tsx title="src/renderer/components/SignInForm.tsx"
+import { useState } from "react";
+import { authClient } from "../lib/auth-client";
+
+export function SignInForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    await authClient.signIn.email(
+      { email, password },
+      {
+        onSuccess: () => {
+          window.location.hash = "#/dashboard";
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  return (
+    <form onSubmit={handleSignIn}>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+        required
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Password"
+        required
+      />
+      <button type="submit" disabled={loading}>
+        {loading ? "Signing in..." : "Sign In"}
+      </button>
+    </form>
+  );
+}
+```
+
+### OAuth Authentication
+
+The Electron integration handles OAuth flows securely:
+
+```tsx title="src/renderer/components/SocialSignIn.tsx"
+import { authClient } from "../lib/auth-client";
+
+export function SocialSignIn() {
+  const handleGitHubSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "github",
+      callbackURL: "/dashboard" // Will be opened in your Electron window
+    });
+  };
+
+  const handleGoogleSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/dashboard"
+    });
+  };
+
+  return (
+    <div>
+      <button onClick={handleGitHubSignIn}>
+        Continue with GitHub
+      </button>
+      <button onClick={handleGoogleSignIn}>
+        Continue with Google
+      </button>
+    </div>
+  );
+}
+```
+
+## How It Works
+
+The Electron integration uses a secure PKCE (Proof Key for Code Exchange) flow:
+
+1. **Authentication Request**: When signing in, the renderer process initiates authentication
+2. **Browser Window**: A new browser window opens to the authentication provider
+3. **Token Exchange**: After successful auth, a temporary code is generated
+4. **Secure Transfer**: The code is exchanged for session tokens using PKCE
+5. **Storage**: Tokens are securely stored in the app's local storage
+
+<Note type="info">
+The Electron plugin uses a secure authorization code flow with PKCE to protect against token interception. The codes expire after 5 minutes by default.
+</Note>
+
+## Deep Links
+
+The Electron integration automatically handles deep links for OAuth callbacks. Make sure your app handles second instances:
+
+```ts title="src/main/index.ts"
+import { app } from "electron";
+
+// Handle second instance (for OAuth callbacks)
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on("second-instance", (event, commandLine, workingDirectory) => {
+    // Someone tried to run a second instance, focus our window
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+
+    // Handle the protocol URL
+    const url = commandLine.find((arg) => arg.startsWith("com.better-auth.demo://"));
+    if (url && mainWindow) {
+      // The protocol handler will automatically process this
+    }
+  });
+}
+```
+
+## Platform-Specific Setup
+
+### macOS
+
+Update your `package.json` with the protocol:
+
+```json title="package.json"
+{
+  "build": {
+    "appId": "com.your-app.id",
+    "protocols": [
+      {
+        "name": "better-auth",
+        "schemes": ["com.better-auth.demo"]
+      }
+    ]
+  }
+}
+```
+
+### Windows
+
+The protocol is automatically registered when using `app.setAsDefaultProtocolClient()`.
+
+### Linux
+
+Create a `.desktop` file with the protocol handler:
+
+```desktop title="your-app.desktop"
+[Desktop Entry]
+Name=Your App
+Exec=/path/to/your-app %u
+Type=Application
+MimeType=x-scheme-handler/com.better-auth.demo;
+```
+
+## Configuration Options
+
+### Server Options
+
+```ts
+electron({
+  // Client ID for identifying Electron apps (default: "electron")
+  clientID: "my-electron-app",
+  
+  // Code expiration time in seconds (default: 300)
+  codeExpiresIn: 300,
+  
+  // Redirect cookie expiration in seconds (default: 120)
+  redirectCookieExpiresIn: 120,
+  
+  // Cookie prefix (default: "better-auth")
+  cookiePrefix: "better-auth",
+  
+  // Disable origin override (default: false)
+  disableOriginOverride: false
+})
+```
+
+### Client Options
+
+```ts
+electronClient({
+  // Required: Protocol scheme
+  protocol: {
+    scheme: "com.better-auth.demo"
+  },
+  
+  // Required: Sign in URL for OAuth flows
+  signInURL: "http://localhost:3000/sign-in",
+  
+  // Required: Storage for tokens
+  storage: storage(),
+  
+  // Optional: Client ID (must match server)
+  clientID: "my-electron-app"
+})
+```
+
+## Security Considerations
+
+<Warning>
+1. **Never expose server secrets** in your Electron app
+2. **Use HTTPS** in production for your auth server
+3. **Validate OAuth redirects** to prevent malicious redirects
+4. **Store tokens securely** using the provided storage adapter
+</Warning>
+
+## Common Issues
+
+<AccordionGroup>
+
+<Accordion title="Protocol not registered">
+  Make sure:
+  1. You're calling `app.setAsDefaultProtocolClient()` before `app.whenReady()`
+  2. The scheme in client and server matches exactly
+  3. For macOS, the protocol is in `package.json`
+</Accordion>
+
+<Accordion title="OAuth not working">
+  Ensure:
+  1. The protocol handler is registered in the main process
+  2. Your app handles second instances for callbacks
+  3. The `signInURL` points to your auth server's sign-in page
+</Accordion>
+
+<Accordion title="Session not persisting">
+  The Electron client uses local storage by default. Make sure you're using the `storage()` function from `@better-auth/electron/storage`.
+</Accordion>
+
+</AccordionGroup>
+
+## Resources
+
+- [Electron Documentation](https://www.electronjs.org/docs)
+- [Electron Security](https://www.electronjs.org/docs/latest/tutorial/security)
+- [Better Auth Core Concepts](/concepts/database)

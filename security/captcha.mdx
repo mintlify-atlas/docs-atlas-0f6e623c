@@ -1,0 +1,544 @@
+---
+title: CAPTCHA Protection
+description: Protect authentication endpoints from bots and automated attacks
+---
+
+The CAPTCHA plugin protects your authentication endpoints from automated attacks, bot registrations, and credential stuffing by requiring users to complete a CAPTCHA challenge. Better Auth supports multiple CAPTCHA providers with a unified API.
+
+## Supported Providers
+
+- **Cloudflare Turnstile** - Privacy-focused, free alternative to reCAPTCHA
+- **Google reCAPTCHA v3** - Invisible captcha with risk scoring
+- **hCaptcha** - Privacy-focused with enterprise options
+- **CaptchaFox** - Modern captcha solution
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Choose a CAPTCHA provider
+
+    Sign up for one of the supported providers:
+    - [Cloudflare Turnstile](https://www.cloudflare.com/products/turnstile/)
+    - [Google reCAPTCHA](https://www.google.com/recaptcha/about/)
+    - [hCaptcha](https://www.hcaptcha.com/)
+    - [CaptchaFox](https://www.captchafox.com/)
+
+    Get your site key and secret key from the provider's dashboard.
+  </Step>
+  
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { captcha } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        captcha({
+          provider: "cloudflare-turnstile",
+          secretKey: process.env.TURNSTILE_SECRET_KEY!
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Configure protected endpoints (optional)
+
+    By default, the plugin protects:
+    - `/sign-up/email`
+    - `/sign-in/email`
+    - `/request-password-reset`
+
+    Customize the endpoints:
+
+    ```ts title="auth.ts"
+    captcha({
+      provider: "cloudflare-turnstile",
+      secretKey: process.env.TURNSTILE_SECRET_KEY!,
+      endpoints: [
+        "/sign-up/email",
+        "/sign-in/email",
+        "/request-password-reset",
+        "/change-email" // Add custom endpoints
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Add the CAPTCHA widget to your client
+
+    Install the provider's client library and add it to your forms. See provider-specific setup below.
+  </Step>
+</Steps>
+
+## Provider Setup
+
+### Cloudflare Turnstile
+
+<Steps>
+  <Step>
+    #### Server configuration
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { captcha } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        captcha({
+          provider: "cloudflare-turnstile",
+          secretKey: process.env.TURNSTILE_SECRET_KEY!
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    #### Client integration
+
+    ```tsx title="components/SignUpForm.tsx"
+    import { authClient } from "@/lib/auth-client"
+    import { useRef } from "react"
+    import { Turnstile } from "@marsidev/react-turnstile"
+
+    export default function SignUpForm() {
+      const turnstileRef = useRef(null)
+      
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        
+        const token = turnstileRef.current?.getResponse()
+        
+        const { data, error } = await authClient.signUp.email(
+          {
+            email: "user@example.com",
+            password: "password123",
+            name: "John Doe"
+          },
+          {
+            headers: {
+              "x-captcha-response": token
+            }
+          }
+        )
+        
+        if (error) {
+          console.error(error.message)
+          turnstileRef.current?.reset()
+        }
+      }
+      
+      return (
+        <form onSubmit={handleSubmit}>
+          {/* Form fields */}
+          
+          <Turnstile
+            ref={turnstileRef}
+            siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+          />
+          
+          <button type="submit">Sign Up</button>
+        </form>
+      )
+    }
+    ```
+  </Step>
+</Steps>
+
+<Tip>
+Cloudflare Turnstile is recommended for most use cases. It's privacy-focused, free, and provides excellent bot detection.
+</Tip>
+
+### Google reCAPTCHA v3
+
+<Steps>
+  <Step>
+    #### Server configuration
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { captcha } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        captcha({
+          provider: "google-recaptcha",
+          secretKey: process.env.RECAPTCHA_SECRET_KEY!,
+          minScore: 0.5 // Minimum score (0.0 - 1.0)
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    #### Client integration
+
+    ```tsx title="components/SignUpForm.tsx"
+    import { authClient } from "@/lib/auth-client"
+    import { GoogleReCaptchaProvider, useGoogleReCaptcha } from "react-google-recaptcha-v3"
+
+    function SignUpFormInner() {
+      const { executeRecaptcha } = useGoogleReCaptcha()
+      
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        
+        if (!executeRecaptcha) {
+          console.log("Execute recaptcha not yet available")
+          return
+        }
+        
+        const token = await executeRecaptcha("signup")
+        
+        const { data, error } = await authClient.signUp.email(
+          {
+            email: "user@example.com",
+            password: "password123",
+            name: "John Doe"
+          },
+          {
+            headers: {
+              "x-captcha-response": token
+            }
+          }
+        )
+      }
+      
+      return (
+        <form onSubmit={handleSubmit}>
+          {/* Form fields */}
+          <button type="submit">Sign Up</button>
+        </form>
+      )
+    }
+
+    export default function SignUpForm() {
+      return (
+        <GoogleReCaptchaProvider
+          reCaptchaKey={process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY!}
+        >
+          <SignUpFormInner />
+        </GoogleReCaptchaProvider>
+      )
+    }
+    ```
+  </Step>
+</Steps>
+
+<Note>
+reCAPTCHA v3 returns a score (0.0 - 1.0) indicating the likelihood of the user being a bot. Configure `minScore` based on your security needs.
+</Note>
+
+### hCaptcha
+
+<Steps>
+  <Step>
+    #### Server configuration
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { captcha } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        captcha({
+          provider: "hcaptcha",
+          secretKey: process.env.HCAPTCHA_SECRET_KEY!,
+          siteKey: process.env.HCAPTCHA_SITE_KEY!
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    #### Client integration
+
+    ```tsx title="components/SignUpForm.tsx"
+    import { authClient } from "@/lib/auth-client"
+    import HCaptcha from "@hcaptcha/react-hcaptcha"
+    import { useRef } from "react"
+
+    export default function SignUpForm() {
+      const captchaRef = useRef<HCaptcha>(null)
+      
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        
+        const { response } = await captchaRef.current?.execute({ async: true })!
+        
+        const { data, error } = await authClient.signUp.email(
+          {
+            email: "user@example.com",
+            password: "password123",
+            name: "John Doe"
+          },
+          {
+            headers: {
+              "x-captcha-response": response
+            }
+          }
+        )
+      }
+      
+      return (
+        <form onSubmit={handleSubmit}>
+          {/* Form fields */}
+          
+          <HCaptcha
+            ref={captchaRef}
+            sitekey={process.env.NEXT_PUBLIC_HCAPTCHA_SITE_KEY!}
+            size="invisible"
+          />
+          
+          <button type="submit">Sign Up</button>
+        </form>
+      )
+    }
+    ```
+  </Step>
+</Steps>
+
+### CaptchaFox
+
+<Steps>
+  <Step>
+    #### Server configuration
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { captcha } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        captcha({
+          provider: "captchafox",
+          secretKey: process.env.CAPTCHAFOX_SECRET_KEY!,
+          siteKey: process.env.CAPTCHAFOX_SITE_KEY!
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    #### Client integration
+
+    Follow CaptchaFox documentation for React integration and pass the token in the `x-captcha-response` header.
+  </Step>
+</Steps>
+
+## Error Handling
+
+### Missing CAPTCHA Token
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { error } = await authClient.signUp.email({
+  email: "user@example.com",
+  password: "password123"
+})
+
+if (error?.code === "MISSING_CAPTCHA_RESPONSE") {
+  console.log("Please complete the CAPTCHA")
+}
+```
+
+### Failed CAPTCHA Verification
+
+```ts
+if (error?.code === "CAPTCHA_VERIFICATION_FAILED") {
+  console.log("CAPTCHA verification failed. Please try again.")
+  // Reset the CAPTCHA widget
+  captchaRef.current?.reset()
+}
+```
+
+### Timeout or Network Errors
+
+```ts
+if (error?.status === 500) {
+  console.log("CAPTCHA service temporarily unavailable")
+}
+```
+
+## Configuration Options
+
+### Cloudflare Turnstile
+
+```ts title="auth.ts"
+captcha({
+  provider: "cloudflare-turnstile",
+  secretKey: process.env.TURNSTILE_SECRET_KEY!,
+  endpoints: ["/sign-up/email", "/sign-in/email"],
+  siteVerifyURLOverride: "https://custom-verify-url.com" // Optional
+})
+```
+
+### Google reCAPTCHA
+
+```ts title="auth.ts"
+captcha({
+  provider: "google-recaptcha",
+  secretKey: process.env.RECAPTCHA_SECRET_KEY!,
+  minScore: 0.5, // Minimum acceptable score (0.0 - 1.0)
+  endpoints: ["/sign-up/email"],
+  siteVerifyURLOverride: "https://custom-verify-url.com" // Optional
+})
+```
+
+<Note>
+Lower `minScore` values allow more users through but may let some bots pass. Higher values are more secure but may reject legitimate users. Start with 0.5 and adjust based on your needs.
+</Note>
+
+### hCaptcha
+
+```ts title="auth.ts"
+captcha({
+  provider: "hcaptcha",
+  secretKey: process.env.HCAPTCHA_SECRET_KEY!,
+  siteKey: process.env.HCAPTCHA_SITE_KEY!,
+  endpoints: ["/sign-up/email"]
+})
+```
+
+### CaptchaFox
+
+```ts title="auth.ts"
+captcha({
+  provider: "captchafox",
+  secretKey: process.env.CAPTCHAFOX_SECRET_KEY!,
+  siteKey: process.env.CAPTCHAFOX_SITE_KEY!,
+  endpoints: ["/sign-up/email"]
+})
+```
+
+## Best Practices
+
+<Steps>
+  <Step>
+    ### Use environment variables
+    
+    Never commit secret keys to your repository:
+    
+    ```ts
+    secretKey: process.env.CAPTCHA_SECRET_KEY!
+    ```
+  </Step>
+  
+  <Step>
+    ### Protect sensitive endpoints
+    
+    Add CAPTCHA to all endpoints vulnerable to automated attacks:
+    
+    ```ts
+    endpoints: [
+      "/sign-up/email",
+      "/sign-in/email",
+      "/request-password-reset",
+      "/change-email",
+      "/resend-verification"
+    ]
+    ```
+  </Step>
+  
+  <Step>
+    ### Handle failures gracefully
+    
+    Reset the CAPTCHA widget on error:
+    
+    ```tsx
+    if (error) {
+      captchaRef.current?.reset()
+      setError(error.message)
+    }
+    ```
+  </Step>
+  
+  <Step>
+    ### Consider user experience
+    
+    Use invisible or automatic CAPTCHAs (like Turnstile or reCAPTCHA v3) for better UX.
+  </Step>
+  
+  <Step>
+    ### Monitor verification rates
+    
+    Track CAPTCHA failure rates to detect attacks and adjust sensitivity.
+  </Step>
+</Steps>
+
+## Testing
+
+Most CAPTCHA providers offer test keys:
+
+### Cloudflare Turnstile Test Keys
+
+```bash
+# Always passes
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+
+# Always blocks
+NEXT_PUBLIC_TURNSTILE_SITE_KEY=2x00000000000000000000AB
+TURNSTILE_SECRET_KEY=2x0000000000000000000000000000000AA
+```
+
+### Google reCAPTCHA Test Keys
+
+```bash
+# Test keys (always succeed)
+NEXT_PUBLIC_RECAPTCHA_SITE_KEY=6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI
+RECAPTCHA_SECRET_KEY=6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe
+```
+
+## Comparison Table
+
+| Feature | Cloudflare Turnstile | reCAPTCHA v3 | hCaptcha | CaptchaFox |
+|---------|---------------------|--------------|----------|------------|
+| **Privacy** | High | Medium | High | High |
+| **Free Tier** | Unlimited | Yes | Yes | Limited |
+| **Invisible** | Yes | Yes | Optional | Yes |
+| **Accessibility** | Excellent | Good | Good | Good |
+| **Bot Detection** | Excellent | Excellent | Good | Good |
+| **Setup Difficulty** | Easy | Easy | Easy | Easy |
+
+## Troubleshooting
+
+### CAPTCHA not appearing
+
+- Verify your site key is correct
+- Check console for JavaScript errors
+- Ensure the CAPTCHA library is loaded
+
+### Verification always fails
+
+- Verify your secret key is correct
+- Check that the token is being sent in the `x-captcha-response` header
+- Ensure your server can reach the verification endpoint
+
+### High false positive rate
+
+For reCAPTCHA v3, lower the `minScore`:
+
+```ts
+captcha({
+  provider: "google-recaptcha",
+  secretKey: process.env.RECAPTCHA_SECRET_KEY!,
+  minScore: 0.3 // Lower threshold
+})
+```
+
+## Related
+
+- [Rate Limiting](/security/rate-limiting) - Additional protection against automated attacks
+- [Two-Factor Authentication](/security/two-factor) - Enhanced account security
+- [Password Breach Detection](/security/password-breach) - Prevent compromised passwords

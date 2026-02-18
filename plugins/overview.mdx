@@ -3,173 +3,278 @@ title: Plugins Overview
 description: Extend Better Auth with powerful plugins for authentication, authorization, and more
 ---
 
-Better Auth provides a comprehensive plugin system that allows you to extend your authentication setup with additional features. Plugins can add new endpoints, database tables, middleware, and client-side functionality.
+Better Auth provides a comprehensive plugin system that allows you to extend the core authentication functionality with additional features. Plugins can add new endpoints, modify database schemas, add hooks, and integrate seamlessly with your authentication flow.
 
-## Core Plugins
+## What are Plugins?
 
-Better Auth includes several official plugins that cover common authentication scenarios:
+Plugins are modular extensions that enhance Better Auth with specific functionality. Each plugin follows a standard structure and can:
+
+- Add new API endpoints and authentication methods
+- Extend the database schema with additional tables and fields
+- Hook into the authentication lifecycle (before/after hooks)
+- Provide rate limiting and security features
+- Add custom middleware and error handling
+
+## Available Plugins
+
+Better Auth includes a wide range of official plugins:
 
 <CardGroup cols={2}>
-  <Card title="Organization" icon="building" href="/plugins/organization">
-    Multi-tenant organizations with role-based access control, teams, and invitations
+  <Card title="Two-Factor Authentication" icon="shield-halved" href="/plugins/two-factor">
+    Add TOTP, OTP, and backup code support for enhanced security
   </Card>
   
-  <Card title="Two-Factor Auth" icon="shield" href="/plugins/two-factor">
-    Add an extra layer of security with TOTP, OTP, backup codes, and trusted devices
+  <Card title="Organization" icon="building" href="/plugins/organization">
+    Multi-tenancy with organizations, teams, and role-based access control
   </Card>
   
   <Card title="Admin" icon="user-shield" href="/plugins/admin">
-    Powerful admin tools for user management, banning, impersonation, and more
+    User management, impersonation, and administrative controls
   </Card>
   
-  <Card title="JWT" icon="key" href="/plugins/jwt">
-    Generate and verify JWT tokens with JWKS support for external services
-  </Card>
-  
-  <Card title="Bearer" icon="lock" href="/plugins/bearer">
-    Authenticate API requests using Bearer tokens instead of cookies
-  </Card>
-  
-  <Card title="Magic Link" icon="envelope" href="/plugins/magic-link">
+  <Card title="Magic Link" icon="wand-magic-sparkles" href="/plugins/magic-link">
     Passwordless authentication via email links
   </Card>
   
-  <Card title="Email OTP" icon="at" href="/plugins/email-otp">
-    One-time passwords sent via email for sign-in and verification
+  <Card title="Anonymous" icon="user-secret" href="/plugins/anonymous">
+    Allow users to access your app without signing up
+  </Card>
+  
+  <Card title="Username" icon="at" href="/plugins/username">
+    Enable username-based authentication
   </Card>
   
   <Card title="Phone Number" icon="phone" href="/plugins/phone-number">
-    SMS-based authentication with OTP verification
+    SMS-based authentication and verification
   </Card>
   
-  <Card title="Username" icon="user" href="/plugins/username">
-    Allow users to sign in with usernames instead of email
+  <Card title="Email OTP" icon="envelope-open-text" href="/plugins/email-otp">
+    One-time password authentication via email
   </Card>
   
-  <Card title="Anonymous" icon="user-secret" href="/plugins/anonymous">
-    Enable guest users without requiring authentication
+  <Card title="API Key" icon="key" href="/plugins/api-key">
+    Generate and manage API keys for programmatic access
   </Card>
   
-  <Card title="OAuth Proxy" icon="arrow-right-arrow-left" href="/plugins/oauth-proxy">
-    Proxy OAuth requests for development and preview deployments
+  <Card title="JWT" icon="lock" href="/plugins/jwt">
+    JSON Web Token support for stateless authentication
   </Card>
   
-  <Card title="Multi-Session" icon="users" href="/plugins/multi-session">
-    Maintain multiple active sessions across different accounts
+  <Card title="Bearer Token" icon="ticket" href="/plugins/bearer">
+    Bearer token authentication for API access
+  </Card>
+  
+  <Card title="Multi-Session" icon="window-restore" href="/plugins/multi-session">
+    Allow users to maintain multiple active sessions
   </Card>
   
   <Card title="OIDC Provider" icon="id-card" href="/plugins/oidc-provider">
     Turn your app into an OpenID Connect provider
   </Card>
   
-  <Card title="Device Authorization" icon="tv" href="/plugins/device-authorization">
-    OAuth 2.0 device flow for TVs, CLIs, and IoT devices
+  <Card title="OAuth Proxy" icon="arrow-right-arrow-left" href="/plugins/oauth-proxy">
+    Proxy OAuth requests for client-side applications
+  </Card>
+  
+  <Card title="Generic OAuth" icon="plug" href="/plugins/generic-oauth">
+    Add custom OAuth providers
+  </Card>
+  
+  <Card title="SIWE" icon="ethereum" href="/plugins/siwe">
+    Sign in with Ethereum wallet support
+  </Card>
+  
+  <Card title="One Tap" icon="fingerprint" href="/plugins/one-tap">
+    Google One Tap authentication
+  </Card>
+  
+  <Card title="CAPTCHA" icon="robot" href="/plugins/captcha">
+    Protect against bots with CAPTCHA verification
+  </Card>
+  
+  <Card title="HaveIBeenPwned" icon="triangle-exclamation" href="/plugins/haveibeenpwned">
+    Check passwords against breached password databases
+  </Card>
+  
+  <Card title="OpenAPI" icon="file-code" href="/plugins/open-api">
+    Generate OpenAPI documentation for your auth endpoints
   </Card>
 </CardGroup>
 
-## Installation
+## Plugin Architecture
 
-Most plugins follow a similar installation pattern:
+Every Better Auth plugin implements the `BetterAuthPlugin` interface, which provides a consistent structure:
 
-<Steps>
-  <Step>
-    ### Add the server plugin
-    
-    ```ts title="auth.ts"
-    import { betterAuth } from "better-auth"
-    import { pluginName } from "better-auth/plugins"
-    
-    export const auth = betterAuth({
-      plugins: [
-        pluginName({
-          // plugin options
-        })
-      ]
-    })
-    ```
-  </Step>
+```typescript
+interface BetterAuthPlugin {
+  // Unique identifier for the plugin
+  id: string;
   
-  <Step>
-    ### Migrate the database
-    
-    Most plugins require database changes:
-    
-    ```bash
-    npx auth migrate
-    ```
-  </Step>
+  // Initialize plugin and modify context
+  init?: (ctx: AuthContext) => Promise<{
+    context?: Record<string, unknown>;
+    options?: Partial<BetterAuthOptions>;
+  }>;
   
-  <Step>
-    ### Add the client plugin
-    
-    ```ts title="auth-client.ts"
-    import { createAuthClient } from "better-auth/client"
-    import { pluginNameClient } from "better-auth/client/plugins"
-    
-    export const authClient = createAuthClient({
-      plugins: [
-        pluginNameClient({
-          // plugin options
-        })
-      ]
-    })
-    ```
-  </Step>
-</Steps>
+  // Add new API endpoints
+  endpoints?: Record<string, Endpoint>;
+  
+  // Lifecycle hooks
+  hooks?: {
+    before?: Array<{ matcher: Function; handler: AuthMiddleware }>;
+    after?: Array<{ matcher: Function; handler: AuthMiddleware }>;
+  };
+  
+  // Database schema extensions
+  schema?: BetterAuthPluginDBSchema;
+  
+  // Rate limiting configuration
+  rateLimit?: Array<{
+    pathMatcher: (path: string) => boolean;
+    window: number;
+    max: number;
+  }>;
+  
+  // Plugin-specific error codes
+  $ERROR_CODES?: Record<string, RawError>;
+  
+  // Plugin configuration options
+  options?: Record<string, any>;
+}
+```
 
-## Plugin Categories
+## Key Plugin Features
 
-### Authentication Methods
+### Endpoints
 
-Plugins that add new ways for users to authenticate:
+Plugins can add new authentication endpoints that integrate seamlessly with Better Auth:
 
-- **Magic Link** - Passwordless email authentication
-- **Email OTP** - One-time password via email
-- **Phone Number** - SMS-based authentication
-- **Username** - Sign in with username
-- **Anonymous** - Guest access without credentials
+```typescript
+endpoints: {
+  signInMagicLink: createAuthEndpoint(
+    "/sign-in/magic-link",
+    {
+      method: "POST",
+      body: signInMagicLinkBodySchema,
+    },
+    async (ctx) => {
+      // Endpoint handler logic
+    }
+  )
+}
+```
 
-### Security Enhancements
+### Database Schema
 
-Plugins that improve security:
+Plugins can extend the database schema by adding new tables or fields:
 
-- **Two-Factor Auth** - TOTP, OTP, and backup codes
-- **JWT** - Token-based authentication for APIs
-- **Bearer** - Bearer token authentication
+```typescript
+schema: {
+  twoFactor: {
+    fields: {
+      secret: { type: "string", required: true },
+      backupCodes: { type: "string", required: true },
+      userId: {
+        type: "string",
+        required: true,
+        references: { model: "user", field: "id" }
+      }
+    }
+  },
+  user: {
+    fields: {
+      twoFactorEnabled: { type: "boolean", defaultValue: false }
+    }
+  }
+}
+```
 
-### User Management
+### Hooks
 
-Plugins for managing users and organizations:
+Plugins can hook into the authentication lifecycle to modify behavior:
 
-- **Admin** - Administrative user management tools
-- **Organization** - Multi-tenant organizations and teams
-- **Multi-Session** - Multiple concurrent sessions
+```typescript
+hooks: {
+  before: [{
+    matcher: (ctx) => ctx.path === "/sign-in/email",
+    handler: async (ctx) => {
+      // Run before sign-in
+    }
+  }],
+  after: [{
+    matcher: (ctx) => ctx.path === "/sign-in/email",
+    handler: async (ctx) => {
+      // Run after sign-in
+    }
+  }]
+}
+```
 
-### OAuth & Standards
+### Rate Limiting
 
-Plugins implementing OAuth and OpenID Connect:
+Plugins can define rate limiting rules for their endpoints:
 
-- **OIDC Provider** - Become an OpenID Connect provider
-- **Device Authorization** - OAuth 2.0 device flow
-- **OAuth Proxy** - Proxy OAuth for development
+```typescript
+rateLimit: [{
+  pathMatcher: (path) => path.startsWith("/two-factor/"),
+  window: 10,  // seconds
+  max: 3       // max requests per window
+}]
+```
 
-## Creating Custom Plugins
+## Plugin Initialization
 
-You can create your own plugins to extend Better Auth. Check out the [Custom Plugins](/plugins/custom) documentation for more information.
+The `init` function allows plugins to modify the authentication context and inject custom functionality:
 
-## Plugin Best Practices
+```typescript
+init: (ctx: AuthContext) => {
+  return {
+    context: {
+      // Add custom context properties
+      customValidator: async (data) => { /* ... */ }
+    },
+    options: {
+      // Modify auth options
+      databaseHooks: {
+        user: {
+          create: {
+            before: async (user) => {
+              // Modify user before creation
+              return { data: { ...user, role: 'user' } };
+            }
+          }
+        }
+      }
+    }
+  };
+}
+```
 
-1. **Install only what you need** - Each plugin adds overhead, so only install plugins you'll actually use
-2. **Run migrations** - Most plugins require database changes, so always run migrations after adding plugins
-3. **Configure carefully** - Review each plugin's options to ensure proper configuration
-4. **Test thoroughly** - Test your authentication flows after adding new plugins
-5. **Keep updated** - Update plugins regularly to get the latest features and security fixes
+## Error Handling
 
-## Need Help?
+Plugins can define custom error codes that integrate with Better Auth's error system:
 
-If you're having trouble with a plugin:
+```typescript
+$ERROR_CODES: {
+  INVALID_TOKEN: {
+    message: "Invalid verification token",
+    status: 400
+  },
+  EXPIRED_TOKEN: {
+    message: "Verification token has expired",
+    status: 400
+  }
+}
+```
 
-- Check the specific plugin documentation
-- Review the plugin's options and configuration
-- Look at example implementations in the Better Auth demo
-- Ask for help in the Better Auth community
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/plugins/configuration">
+    Learn how to configure and use plugins in your application
+  </Card>
+  
+  <Card title="Custom Plugins" icon="puzzle-piece" href="/plugins/custom">
+    Create your own custom plugins to extend Better Auth
+  </Card>
+</CardGroup>

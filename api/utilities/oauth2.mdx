@@ -1,0 +1,686 @@
+---
+title: 'OAuth2 Utilities'
+description: 'OAuth2 authorization, token validation, and JWT verification utilities'
+---
+
+## Overview
+
+Better Auth provides comprehensive OAuth2 utilities for implementing OAuth2 flows, validating tokens, and managing OAuth2 provider integrations. These utilities support authorization code flow, token refresh, and access token verification.
+
+## Import
+
+```typescript
+import {
+  createAuthorizationURL,
+  validateAuthorizationCode,
+  refreshAccessToken,
+  verifyAccessToken,
+  verifyJwsAccessToken,
+  getJwks,
+  generateCodeChallenge,
+  getOAuth2Tokens
+} from "@better-auth/core/oauth2"
+```
+
+## Authorization Flow
+
+### createAuthorizationURL
+
+Creates an OAuth2 authorization URL with PKCE support.
+
+```typescript
+function createAuthorizationURL(options: {
+  id: string
+  options: AwaitableFunction<ProviderOptions>
+  authorizationEndpoint: string
+  state: string
+  codeVerifier?: string
+  scopes?: string[]
+  claims?: string[]
+  redirectURI: string
+  duration?: string
+  prompt?: string
+  accessType?: string
+  responseType?: string
+  display?: string
+  loginHint?: string
+  hd?: string
+  responseMode?: string
+  additionalParams?: Record<string, string>
+  scopeJoiner?: string
+}): Promise<URL>
+```
+
+<ParamField path="id" type="string" required>
+  Provider identifier.
+</ParamField>
+
+<ParamField path="options" type="AwaitableFunction<ProviderOptions>" required>
+  Provider configuration options.
+</ParamField>
+
+<ParamField path="authorizationEndpoint" type="string" required>
+  The OAuth2 authorization endpoint URL.
+</ParamField>
+
+<ParamField path="state" type="string" required>
+  CSRF protection state parameter.
+</ParamField>
+
+<ParamField path="codeVerifier" type="string" optional>
+  PKCE code verifier. If provided, code challenge will be generated.
+</ParamField>
+
+<ParamField path="scopes" type="string[]" optional>
+  OAuth2 scopes to request.
+</ParamField>
+
+<ParamField path="redirectURI" type="string" required>
+  Callback URL after authorization.
+</ParamField>
+
+<ParamField path="prompt" type="string" optional>
+  Authorization prompt type (`consent`, `select_account`, `login`, `none`).
+</ParamField>
+
+<ParamField path="responseType" type="string" optional>
+  OAuth2 response type. Defaults to `"code"`.
+</ParamField>
+
+<ParamField path="loginHint" type="string" optional>
+  Hint to pre-fill the login identifier.
+</ParamField>
+
+<ParamField path="additionalParams" type="Record<string, string>" optional>
+  Additional query parameters to include.
+</ParamField>
+
+**Returns:** Promise resolving to the authorization URL
+
+**Example:**
+
+```typescript
+import { generateRandomString } from "better-auth/crypto"
+
+const state = generateRandomString(32)
+const codeVerifier = generateRandomString(64)
+
+const authUrl = await createAuthorizationURL({
+  id: "google",
+  options: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET
+  },
+  authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+  state,
+  codeVerifier,
+  scopes: ["openid", "email", "profile"],
+  redirectURI: "https://example.com/api/auth/callback/google",
+  prompt: "select_account"
+})
+
+// Redirect user to authUrl
+```
+
+### generateCodeChallenge
+
+Generates a PKCE code challenge from a code verifier.
+
+```typescript
+function generateCodeChallenge(
+  codeVerifier: string
+): Promise<string>
+```
+
+<ParamField path="codeVerifier" type="string" required>
+  The code verifier string.
+</ParamField>
+
+**Returns:** Promise resolving to base64url-encoded SHA-256 hash
+
+**Example:**
+
+```typescript
+import { generateRandomString } from "better-auth/crypto"
+
+const codeVerifier = generateRandomString(64)
+const codeChallenge = await generateCodeChallenge(codeVerifier)
+
+// Store codeVerifier securely
+// Send codeChallenge in authorization request
+```
+
+<Note>
+PKCE (Proof Key for Code Exchange) enhances security by preventing authorization code interception attacks.
+</Note>
+
+## Token Validation
+
+### validateAuthorizationCode
+
+Exchanges an authorization code for access and refresh tokens.
+
+```typescript
+function validateAuthorizationCode(options: {
+  code: string
+  redirectURI: string
+  options: AwaitableFunction<Partial<ProviderOptions>>
+  tokenEndpoint: string
+  codeVerifier?: string
+  deviceId?: string
+  authentication?: "basic" | "post"
+  headers?: Record<string, string>
+  additionalParams?: Record<string, string>
+  resource?: string | string[]
+}): Promise<OAuth2Tokens>
+```
+
+<ParamField path="code" type="string" required>
+  The authorization code from the callback.
+</ParamField>
+
+<ParamField path="redirectURI" type="string" required>
+  The same redirect URI used in authorization.
+</ParamField>
+
+<ParamField path="options" type="AwaitableFunction<Partial<ProviderOptions>>" required>
+  Provider configuration options.
+</ParamField>
+
+<ParamField path="tokenEndpoint" type="string" required>
+  The OAuth2 token endpoint URL.
+</ParamField>
+
+<ParamField path="codeVerifier" type="string" optional>
+  PKCE code verifier (required if PKCE was used).
+</ParamField>
+
+<ParamField path="authentication" type="'basic' | 'post'" optional>
+  Client authentication method. Defaults to `"post"`.
+  
+  - `"basic"`: HTTP Basic authentication
+  - `"post"`: Client credentials in request body
+</ParamField>
+
+<ParamField path="additionalParams" type="Record<string, string>" optional>
+  Additional parameters for the token request.
+</ParamField>
+
+**Returns:** Promise resolving to OAuth2 tokens
+
+**Example:**
+
+```typescript
+try {
+  const tokens = await validateAuthorizationCode({
+    code: authorizationCode,
+    redirectURI: "https://example.com/api/auth/callback/google",
+    options: {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET
+    },
+    tokenEndpoint: "https://oauth2.googleapis.com/token",
+    codeVerifier: storedCodeVerifier,
+    authentication: "post"
+  })
+
+  console.log("Access token:", tokens.accessToken)
+  console.log("Refresh token:", tokens.refreshToken)
+  console.log("Expires at:", tokens.accessTokenExpiresAt)
+} catch (error) {
+  console.error("Token validation failed:", error)
+}
+```
+
+### getOAuth2Tokens
+
+Parses and normalizes OAuth2 token response data.
+
+```typescript
+function getOAuth2Tokens(
+  data: Record<string, any>
+): OAuth2Tokens
+```
+
+<ParamField path="data" type="Record<string, any>" required>
+  Raw token response from provider.
+</ParamField>
+
+**Returns:** Normalized OAuth2Tokens object
+
+<ResponseField name="tokenType" type="string | undefined">
+  Token type (usually `"Bearer"`).
+</ResponseField>
+
+<ResponseField name="accessToken" type="string | undefined">
+  The access token.
+</ResponseField>
+
+<ResponseField name="refreshToken" type="string | undefined">
+  The refresh token (if provided).
+</ResponseField>
+
+<ResponseField name="accessTokenExpiresAt" type="Date | undefined">
+  Expiration date of the access token.
+</ResponseField>
+
+<ResponseField name="refreshTokenExpiresAt" type="Date | undefined">
+  Expiration date of the refresh token.
+</ResponseField>
+
+<ResponseField name="scopes" type="string[] | undefined">
+  Granted scopes.
+</ResponseField>
+
+<ResponseField name="idToken" type="string | undefined">
+  OpenID Connect ID token.
+</ResponseField>
+
+<ResponseField name="raw" type="Record<string, unknown> | undefined">
+  Raw provider response for provider-specific fields.
+</ResponseField>
+
+**Example:**
+
+```typescript
+const rawResponse = {
+  access_token: "ya29.a0...",
+  refresh_token: "1//0g...",
+  expires_in: 3600,
+  token_type: "Bearer",
+  scope: "openid email profile",
+  id_token: "eyJhbGc..."
+}
+
+const tokens = getOAuth2Tokens(rawResponse)
+
+console.log(tokens.accessToken)        // "ya29.a0..."
+console.log(tokens.scopes)             // ["openid", "email", "profile"]
+console.log(tokens.accessTokenExpiresAt) // Date object (1 hour from now)
+```
+
+## Token Refresh
+
+### refreshAccessToken
+
+Refreshes an access token using a refresh token.
+
+```typescript
+function refreshAccessToken(options: {
+  refreshToken: string
+  options: Partial<ProviderOptions>
+  tokenEndpoint: string
+  authentication?: "basic" | "post"
+  extraParams?: Record<string, string>
+}): Promise<OAuth2Tokens>
+```
+
+<ParamField path="refreshToken" type="string" required>
+  The refresh token.
+</ParamField>
+
+<ParamField path="options" type="Partial<ProviderOptions>" required>
+  Provider configuration options.
+</ParamField>
+
+<ParamField path="tokenEndpoint" type="string" required>
+  The OAuth2 token endpoint URL.
+</ParamField>
+
+<ParamField path="authentication" type="'basic' | 'post'" optional>
+  Client authentication method.
+</ParamField>
+
+<ParamField path="extraParams" type="Record<string, string>" optional>
+  Additional parameters for the refresh request.
+</ParamField>
+
+**Returns:** Promise resolving to new OAuth2 tokens
+
+**Example:**
+
+```typescript
+try {
+  const newTokens = await refreshAccessToken({
+    refreshToken: storedRefreshToken,
+    options: {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET
+    },
+    tokenEndpoint: "https://oauth2.googleapis.com/token",
+    authentication: "post"
+  })
+
+  // Update stored tokens
+  await updateTokens(userId, newTokens)
+} catch (error) {
+  // Refresh token expired or invalid
+  // User needs to re-authenticate
+}
+```
+
+## Access Token Verification
+
+### verifyAccessToken
+
+Verifies an access token locally or remotely.
+
+```typescript
+function verifyAccessToken(
+  token: string,
+  opts: {
+    verifyOptions: JWTVerifyOptions & Required<Pick<JWTVerifyOptions, "audience" | "issuer">>
+    scopes?: string[]
+    jwksUrl?: string
+    remoteVerify?: VerifyAccessTokenRemote
+  }
+): Promise<JWTPayload>
+```
+
+<ParamField path="token" type="string" required>
+  The access token to verify.
+</ParamField>
+
+<ParamField path="verifyOptions" type="JWTVerifyOptions" required>
+  JWT verification options.
+  
+  <Expandable title="properties">
+    <ParamField path="audience" type="string | string[]" required>
+      Expected audience claim.
+    </ParamField>
+    
+    <ParamField path="issuer" type="string | string[]" required>
+      Expected issuer claim.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField path="scopes" type="string[]" optional>
+  Required scopes. Token must include all specified scopes.
+</ParamField>
+
+<ParamField path="jwksUrl" type="string" optional>
+  URL to fetch JWKS for local verification.
+</ParamField>
+
+<ParamField path="remoteVerify" type="VerifyAccessTokenRemote" optional>
+  Configuration for remote token introspection.
+  
+  <Expandable title="properties">
+    <ParamField path="introspectUrl" type="string" required>
+      Token introspection endpoint URL.
+    </ParamField>
+    
+    <ParamField path="clientId" type="string" required>
+      Client ID for introspection.
+    </ParamField>
+    
+    <ParamField path="clientSecret" type="string" required>
+      Client secret for introspection.
+    </ParamField>
+    
+    <ParamField path="force" type="boolean" optional>
+      Force remote verification even if local succeeds.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+**Returns:** Promise resolving to the JWT payload
+
+**Throws:** APIError if token is invalid, expired, or lacks required scopes
+
+**Example:**
+
+<CodeGroup>
+
+```typescript Local Verification
+const payload = await verifyAccessToken(accessToken, {
+  jwksUrl: "https://example.com/.well-known/jwks.json",
+  verifyOptions: {
+    audience: "https://api.example.com",
+    issuer: "https://auth.example.com"
+  },
+  scopes: ["read:users", "write:users"]
+})
+
+console.log("User ID:", payload.sub)
+console.log("Scopes:", payload.scope)
+```
+
+```typescript Remote Verification
+const payload = await verifyAccessToken(accessToken, {
+  verifyOptions: {
+    audience: "https://api.example.com",
+    issuer: "https://auth.example.com"
+  },
+  remoteVerify: {
+    introspectUrl: "https://auth.example.com/oauth2/introspect",
+    clientId: process.env.CLIENT_ID,
+    clientSecret: process.env.CLIENT_SECRET,
+    force: true // Always verify remotely
+  },
+  scopes: ["read:users"]
+})
+```
+
+</CodeGroup>
+
+### verifyJwsAccessToken
+
+Verifies a JWT access token using JWKS.
+
+```typescript
+function verifyJwsAccessToken(
+  token: string,
+  opts: {
+    jwksFetch: string | (() => Promise<JSONWebKeySet | undefined>)
+    verifyOptions: JWTVerifyOptions & Required<Pick<JWTVerifyOptions, "audience" | "issuer">>
+  }
+): Promise<JWTPayload>
+```
+
+<ParamField path="token" type="string" required>
+  The JWT access token to verify.
+</ParamField>
+
+<ParamField path="jwksFetch" type="string | (() => Promise<JSONWebKeySet>)" required>
+  JWKS URL or function that returns JWKS.
+</ParamField>
+
+<ParamField path="verifyOptions" type="JWTVerifyOptions" required>
+  JWT verification options including audience and issuer.
+</ParamField>
+
+**Returns:** Promise resolving to the JWT payload
+
+**Example:**
+
+```typescript
+try {
+  const payload = await verifyJwsAccessToken(token, {
+    jwksFetch: "https://auth.example.com/.well-known/jwks.json",
+    verifyOptions: {
+      audience: "https://api.example.com",
+      issuer: "https://auth.example.com"
+    }
+  })
+
+  // Token is valid
+  console.log("User:", payload.sub)
+} catch (error) {
+  if (error.name === "JWTExpired") {
+    // Token expired
+  } else if (error.name === "JWTInvalid") {
+    // Invalid token
+  }
+}
+```
+
+### getJwks
+
+Fetches and caches JWKS for token verification.
+
+```typescript
+function getJwks(
+  token: string,
+  opts: {
+    jwksFetch: string | (() => Promise<JSONWebKeySet | undefined>)
+  }
+): Promise<JSONWebKeySet>
+```
+
+<ParamField path="token" type="string" required>
+  The JWT token (used to extract kid for matching).
+</ParamField>
+
+<ParamField path="jwksFetch" type="string | (() => Promise<JSONWebKeySet>)" required>
+  JWKS URL or function.
+</ParamField>
+
+**Returns:** Promise resolving to the JWKS
+
+**Example:**
+
+```typescript
+const jwks = await getJwks(token, {
+  jwksFetch: "https://auth.example.com/.well-known/jwks.json"
+})
+
+console.log("Keys:", jwks.keys.length)
+```
+
+<Note>
+JWKS are automatically cached and re-fetched only when a new `kid` is encountered.
+</Note>
+
+## Type Definitions
+
+### OAuth2Tokens
+
+```typescript
+interface OAuth2Tokens {
+  tokenType?: string
+  accessToken?: string
+  refreshToken?: string
+  accessTokenExpiresAt?: Date
+  refreshTokenExpiresAt?: Date
+  scopes?: string[]
+  idToken?: string
+  raw?: Record<string, unknown>
+}
+```
+
+### ProviderOptions
+
+```typescript
+interface ProviderOptions {
+  clientId?: unknown
+  clientSecret?: string
+  scope?: string[]
+  disableDefaultScope?: boolean
+  redirectURI?: string
+  authorizationEndpoint?: string
+  clientKey?: string
+  disableIdTokenSignIn?: boolean
+  verifyIdToken?: (token: string, nonce?: string) => Promise<boolean>
+  getUserInfo?: (token: OAuth2Tokens) => Promise<{ user: OAuth2UserInfo; data: any } | null>
+  refreshAccessToken?: (refreshToken: string) => Promise<OAuth2Tokens>
+  mapProfileToUser?: (profile: any) => { id?: string; name?: string; email?: string | null; image?: string; emailVerified?: boolean; [key: string]: any }
+  disableImplicitSignUp?: boolean
+  disableSignUp?: boolean
+  prompt?: "select_account" | "consent" | "login" | "none" | "select_account consent"
+  responseMode?: "query" | "form_post"
+  overrideUserInfoOnSignIn?: boolean
+}
+```
+
+## Best Practices
+
+<Note>
+**Security Best Practices:**
+
+1. **Always use PKCE** for public clients (SPAs, mobile apps)
+2. **Validate state parameter** to prevent CSRF attacks
+3. **Use secure storage** for refresh tokens
+4. **Implement token rotation** when refreshing
+5. **Verify token audience and issuer** to prevent token misuse
+6. **Use HTTPS** for all OAuth2 endpoints
+7. **Implement proper error handling** for token expiration
+</Note>
+
+<Warning>
+**Common Pitfalls:**
+
+- Don't expose client secrets in client-side code
+- Don't skip PKCE for public clients
+- Don't store tokens in localStorage (use httpOnly cookies)
+- Don't ignore token expiration times
+- Don't reuse authorization codes
+</Warning>
+
+## OAuth2 Flow Example
+
+Complete authorization code flow with PKCE:
+
+```typescript
+import { generateRandomString } from "better-auth/crypto"
+import {
+  createAuthorizationURL,
+  generateCodeChallenge,
+  validateAuthorizationCode
+} from "@better-auth/core/oauth2"
+
+// Step 1: Start authorization
+const state = generateRandomString(32)
+const codeVerifier = generateRandomString(64)
+
+// Store state and codeVerifier securely (e.g., in session)
+
+const authUrl = await createAuthorizationURL({
+  id: "google",
+  options: {
+    clientId: process.env.GOOGLE_CLIENT_ID,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET
+  },
+  authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
+  state,
+  codeVerifier,
+  scopes: ["openid", "email", "profile"],
+  redirectURI: "https://example.com/api/auth/callback/google"
+})
+
+// Redirect user to authUrl
+
+// Step 2: Handle callback
+app.get("/api/auth/callback/google", async (req, res) => {
+  const { code, state: returnedState } = req.query
+
+  // Verify state
+  if (returnedState !== storedState) {
+    throw new Error("Invalid state")
+  }
+
+  // Exchange code for tokens
+  const tokens = await validateAuthorizationCode({
+    code,
+    redirectURI: "https://example.com/api/auth/callback/google",
+    options: {
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET
+    },
+    tokenEndpoint: "https://oauth2.googleapis.com/token",
+    codeVerifier: storedCodeVerifier
+  })
+
+  // Store tokens and create session
+  await createSession(tokens)
+
+  res.redirect("/dashboard")
+})
+```
+
+## Related
+
+- [Crypto Utilities](/api-reference/utilities/crypto)
+- [Social Providers](/docs/integrations/social-providers)
+- [OAuth2 Plugin](/api-reference/plugins/oauth2)

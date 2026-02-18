@@ -1,11 +1,11 @@
 {
   "$schema": "https://mintlify.com/docs.json",
   "name": "Better Auth",
-  "theme": "palm",
+  "theme": "aspen",
   "colors": {
-    "primary": "#0066FF",
-    "light": "#3399FF",
-    "dark": "#0052CC"
+    "primary": "#2563eb",
+    "light": "#60a5fa",
+    "dark": "#1e40af"
   },
   "favicon": "/favicon.ico",
   "navbar": {
@@ -16,8 +16,7 @@
   },
   "footer": {
     "socials": {
-      "github": "https://github.com/better-auth/better-auth",
-      "x": "https://x.com/better_auth"
+      "github": "https://github.com/better-auth/better-auth"
     }
   },
   "navigation": {
@@ -26,7 +25,7 @@
         "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting Started",
+            "group": "Get Started",
             "pages": [
               "introduction",
               "installation",
@@ -36,24 +35,26 @@
           {
             "group": "Core Concepts",
             "pages": [
+              "concepts/architecture",
               "concepts/database",
               "concepts/session-management",
-              "concepts/api",
-              "concepts/client",
               "concepts/plugins",
               "concepts/hooks",
-              "concepts/typescript"
+              "concepts/cli"
             ]
           },
           {
             "group": "Authentication Methods",
             "pages": [
               "authentication/email-password",
-              "authentication/oauth",
+              "authentication/social-providers",
               "authentication/magic-link",
-              "authentication/passkey",
-              "authentication/two-factor",
-              "authentication/social-providers"
+              "authentication/email-otp",
+              "authentication/phone-number",
+              "authentication/passkeys",
+              "authentication/username",
+              "authentication/anonymous",
+              "authentication/web3"
             ]
           },
           {
@@ -62,54 +63,127 @@
               "adapters/overview",
               "adapters/prisma",
               "adapters/drizzle",
-              "adapters/mongodb",
               "adapters/kysely",
+              "adapters/mongodb",
               "adapters/custom"
             ]
           },
           {
             "group": "Framework Integrations",
             "pages": [
+              "integrations/overview",
               "integrations/nextjs",
               "integrations/sveltekit",
               "integrations/solid-start",
-              "integrations/react",
-              "integrations/vue",
-              "integrations/express",
-              "integrations/other"
+              "integrations/tanstack-start",
+              "integrations/astro",
+              "integrations/nuxt",
+              "integrations/react-native",
+              "integrations/electron"
             ]
           },
           {
-            "group": "Plugins",
+            "group": "Client Libraries",
             "pages": [
-              "plugins/overview",
-              "plugins/organization",
-              "plugins/two-factor",
-              "plugins/admin",
-              "plugins/jwt",
-              "plugins/bearer",
-              "plugins/magic-link",
-              "plugins/email-otp",
-              "plugins/phone-number",
-              "plugins/username",
-              "plugins/anonymous",
-              "plugins/oauth-proxy",
-              "plugins/multi-session",
-              "plugins/oidc-provider",
-              "plugins/device-authorization",
-              "plugins/custom"
+              "client/vanilla",
+              "client/react",
+              "client/vue",
+              "client/svelte",
+              "client/solid"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/two-factor",
+              "security/rate-limiting",
+              "security/password-breach",
+              "security/captcha",
+              "security/trusted-devices"
+            ]
+          },
+          {
+            "group": "Enterprise",
+            "pages": [
+              "enterprise/sso",
+              "enterprise/scim",
+              "enterprise/organizations",
+              "enterprise/oauth-provider"
             ]
           },
           {
             "group": "Guides",
             "pages": [
-              "guides/migration-from-nextauth",
-              "guides/migration-from-clerk",
-              "guides/migration-from-supabase",
-              "guides/creating-custom-adapter",
-              "guides/creating-custom-plugin",
-              "guides/saml-sso",
-              "guides/performance-optimization"
+              "guides/custom-plugin",
+              "guides/testing",
+              "guides/deployment",
+              "guides/migration"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Plugins",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "plugins/overview",
+              "plugins/configuration"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": [
+              "plugins/magic-link",
+              "plugins/email-otp",
+              "plugins/phone-number",
+              "plugins/username",
+              "plugins/anonymous",
+              "plugins/bearer",
+              "plugins/siwe"
+            ]
+          },
+          {
+            "group": "Authorization",
+            "pages": [
+              "plugins/access",
+              "plugins/admin",
+              "plugins/organization"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "plugins/two-factor",
+              "plugins/passkey",
+              "plugins/haveibeenpwned",
+              "plugins/captcha",
+              "plugins/jwt"
+            ]
+          },
+          {
+            "group": "Session",
+            "pages": [
+              "plugins/multi-session",
+              "plugins/custom-session",
+              "plugins/one-time-token"
+            ]
+          },
+          {
+            "group": "OAuth",
+            "pages": [
+              "plugins/generic-oauth",
+              "plugins/oauth-proxy",
+              "plugins/oidc-provider",
+              "plugins/device-authorization"
+            ]
+          },
+          {
+            "group": "Developer Tools",
+            "pages": [
+              "plugins/openapi",
+              "plugins/test-utils"
             ]
           }
         ]
@@ -120,51 +194,47 @@
           {
             "group": "Server API",
             "pages": [
-              "api-reference/server/betterauth",
-              "api-reference/server/configuration",
-              "api-reference/server/endpoints",
-              "api-reference/server/middleware",
-              "api-reference/server/rate-limiting"
+              "api/server/betterauth",
+              "api/server/configuration",
+              "api/server/context",
+              "api/server/handlers"
             ]
           },
           {
             "group": "Client API",
             "pages": [
-              "api-reference/client/create-auth-client",
-              "api-reference/client/react",
-              "api-reference/client/vue",
-              "api-reference/client/svelte",
-              "api-reference/client/solid"
+              "api/client/create-auth-client",
+              "api/client/methods",
+              "api/client/hooks"
             ]
           },
           {
-            "group": "Plugin API",
+            "group": "Social Providers",
             "pages": [
-              "api-reference/plugins/plugin-interface",
-              "api-reference/plugins/hooks",
-              "api-reference/plugins/schema-extension"
+              "api/social/overview",
+              "api/social/apple",
+              "api/social/github",
+              "api/social/google",
+              "api/social/discord",
+              "api/social/microsoft",
+              "api/social/custom"
             ]
           },
           {
-            "group": "CLI",
+            "group": "Types",
             "pages": [
-              "api-reference/cli/overview",
-              "api-reference/cli/commands"
+              "api/types/session",
+              "api/types/user",
+              "api/types/plugin",
+              "api/types/adapter"
             ]
-          }
-        ]
-      },
-      {
-        "tab": "Resources",
-        "groups": [
+          },
           {
-            "group": "Resources",
+            "group": "Utilities",
             "pages": [
-              "resources/examples",
-              "resources/faq",
-              "resources/security",
-              "resources/contributing",
-              "resources/changelog"
+              "api/utilities/crypto",
+              "api/utilities/cookies",
+              "api/utilities/oauth2"
             ]
           }
         ]

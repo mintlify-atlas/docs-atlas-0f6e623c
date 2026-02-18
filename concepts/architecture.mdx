@@ -1,0 +1,363 @@
+---
+title: Architecture
+description: Understand Better Auth's core architecture and design principles
+---
+
+## Overview
+
+Better Auth is built on a modular, plugin-based architecture that provides flexibility while maintaining type safety. The framework is designed to be framework-agnostic, working seamlessly across different JavaScript runtimes and web frameworks.
+
+## Core Components
+
+Better Auth's architecture consists of several key components that work together:
+
+### 1. Auth Instance
+
+The main entry point is the `betterAuth` function, which initializes and returns an `Auth` instance:
+
+```typescript
+import { betterAuth } from "better-auth";
+
+const auth = betterAuth({
+  database: /* your database config */,
+  plugins: [/* your plugins */]
+});
+```
+
+The Auth instance provides:
+
+- **`handler`**: Request handler for authentication endpoints
+- **`api`**: Type-safe API methods for server-side operations
+- **`options`**: Configuration options
+- **`$context`**: Internal context with adapter, session config, etc.
+- **`$ERROR_CODES`**: Error codes from core and plugins
+
+**Source:** `/packages/better-auth/src/types/auth.ts:8`
+
+### 2. Auth Context
+
+The `AuthContext` is the central state container that holds all runtime configuration and utilities:
+
+```typescript
+interface AuthContext {
+  appName: string;
+  baseURL: string;
+  version: string;
+  options: BetterAuthOptions;
+  adapter: DBAdapter;
+  internalAdapter: InternalAdapter;
+  tables: Record<string, Table>;
+  authCookies: AuthCookies;
+  sessionConfig: SessionConfig;
+  socialProviders: OAuthProvider[];
+  trustedOrigins: string[];
+  secret: string;
+  generateId: (options: { model: string; size?: number }) => string | false;
+  logger: InternalLogger;
+  // ... more properties
+}
+```
+
+**Source:** `/packages/better-auth/src/context/create-context.ts:83`
+
+<Info>
+The context is created during initialization and is accessible throughout the request lifecycle.
+</Info>
+
+### 3. Request Handler
+
+The handler processes incoming HTTP requests and routes them to appropriate endpoints:
+
+```typescript
+auth.handler(request: Request): Promise<Response>
+```
+
+The handler:
+1. Determines the base URL from the request
+2. Sets trusted origins and providers
+3. Routes to the appropriate endpoint
+4. Runs the request with the database adapter in context
+
+**Source:** `/packages/better-auth/src/auth/base.ts:24`
+
+### 4. API Router
+
+The API router maps endpoints to handler functions. Each endpoint is registered with:
+
+- **Path**: e.g., `/sign-in/email`, `/get-session`
+- **Method**: GET, POST, etc.
+- **Handler**: Function that processes the request
+- **Middleware**: Optional middleware for validation, auth checks, etc.
+
+**Source:** `/packages/better-auth/src/api/index.ts`
+
+## Initialization Flow
+
+<Steps>
+
+### Step 1: Configuration
+
+You provide configuration options including database, plugins, and other settings.
+
+### Step 2: Context Creation
+
+Better Auth creates the `AuthContext` by:
+- Validating the secret
+- Setting up the database adapter
+- Initializing cookies configuration
+- Processing plugins
+- Creating the internal adapter with hooks
+
+### Step 3: Plugin Initialization
+
+Each plugin's `init` function is called, allowing plugins to:
+- Add custom endpoints
+- Register database hooks
+- Extend the context
+- Add middleware
+
+### Step 4: Endpoint Registration
+
+All endpoints (core + plugin endpoints) are registered with the router.
+
+### Step 5: Ready
+
+The `Auth` instance is returned, ready to handle requests.
+
+</Steps>
+
+## Modes
+
+Better Auth supports two operational modes:
+
+### Full Mode (Default)
+
+Includes Kysely for built-in database migrations:
+
+```typescript
+import { betterAuth } from "better-auth";
+import { PostgresDialect } from "kysely";
+
+const auth = betterAuth({
+  database: new PostgresDialect({
+    connectionString: process.env.DATABASE_URL
+  })
+});
+```
+
+### Minimal Mode
+
+Uses adapters without Kysely for smaller bundle sizes:
+
+```typescript
+import { betterAuth } from "better-auth/minimal";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+
+const auth = betterAuth({
+  database: drizzleAdapter(db, { provider: "pg" })
+});
+```
+
+**Source:** `/packages/better-auth/src/auth/full.ts:27`
+
+## Type Safety
+
+Better Auth leverages TypeScript's type system extensively:
+
+### Inferred Types
+
+Types are automatically inferred from your configuration:
+
+```typescript
+const auth = betterAuth({
+  user: {
+    additionalFields: {
+      role: { type: "string", required: true }
+    }
+  },
+  plugins: [twoFactor()]
+});
+
+// Types are automatically inferred
+type Session = typeof auth.$Infer.Session;
+// Session includes { user: { role: string, twoFactorEnabled?: boolean } }
+```
+
+### Plugin Type Augmentation
+
+Plugins can augment types through module declaration:
+
+```typescript
+declare module "@better-auth/core" {
+  interface BetterAuthPluginRegistry<AuthOptions, Options> {
+    myPlugin: {
+      creator: typeof myPlugin;
+    };
+  }
+}
+```
+
+## Error Handling
+
+Better Auth uses a structured error system:
+
+```typescript
+import { APIError } from "better-auth";
+
+// In your endpoint
+throw APIError.from("UNAUTHORIZED", {
+  message: "Invalid credentials",
+  code: "INVALID_CREDENTIALS"
+});
+```
+
+Error codes are collected from core and plugins:
+
+```typescript
+const errorCodes = {
+  ...BASE_ERROR_CODES,
+  ...plugin1.$ERROR_CODES,
+  ...plugin2.$ERROR_CODES
+};
+```
+
+**Source:** `/packages/better-auth/src/auth/base.ts:15`
+
+## Security Features
+
+### CSRF Protection
+
+Better Auth includes CSRF protection by default:
+- Validates Origin header for state-changing requests
+- Checks against trusted origins
+- Can be disabled for specific use cases
+
+### Origin Validation
+
+Requests are validated against trusted origins:
+
+```typescript
+const auth = betterAuth({
+  trustedOrigins: ["https://app.example.com"],
+  advanced: {
+    disableOriginCheck: false // default
+  }
+});
+```
+
+**Source:** `/packages/better-auth/src/auth/base.ts:45`
+
+### Secret Validation
+
+Secrets are validated for minimum length and entropy:
+
+```typescript
+// Minimum 32 characters recommended
+const auth = betterAuth({
+  secret: process.env.BETTER_AUTH_SECRET // or BETTER_AUTH_SECRET env var
+});
+```
+
+**Source:** `/packages/better-auth/src/context/create-context.ts:46`
+
+## Runtime Flexibility
+
+Better Auth works across different runtimes:
+
+<Tabs>
+  <Tab title="Node.js">
+    ```typescript
+    import { betterAuth } from "better-auth";
+    
+    const auth = betterAuth({ /* config */ });
+    
+    // Express
+    app.all("/api/auth/*", async (req, res) => {
+      const response = await auth.handler(new Request(url, {
+        method: req.method,
+        headers: req.headers,
+        body: req.body
+      }));
+      // Send response
+    });
+    ```
+  </Tab>
+  
+  <Tab title="Edge">
+    ```typescript
+    // Vercel Edge, Cloudflare Workers, etc.
+    export default async function handler(request: Request) {
+      return auth.handler(request);
+    }
+    ```
+  </Tab>
+  
+  <Tab title="Framework Adapters">
+    ```typescript
+    // Next.js
+    import { toNextJsHandler } from "better-auth/nextjs";
+    
+    export const { GET, POST } = toNextJsHandler(auth);
+    ```
+  </Tab>
+</Tabs>
+
+## Background Tasks
+
+Better Auth supports running tasks in the background:
+
+```typescript
+const auth = betterAuth({
+  advanced: {
+    backgroundTasks: {
+      handler: (promise) => {
+        // Custom background task handler
+        // e.g., queue in Redis, use a job processor
+        queue.add(() => promise);
+      }
+    }
+  }
+});
+```
+
+By default, tasks run immediately but errors are caught to prevent crashes.
+
+**Source:** `/packages/better-auth/src/context/create-context.ts:330`
+
+## Telemetry
+
+Better Auth includes optional telemetry for understanding usage patterns:
+
+```typescript
+import { createTelemetry } from "@better-auth/telemetry";
+
+const { publish } = await createTelemetry(options, {
+  adapter: adapter.id,
+  database: getDatabaseType(options.database)
+});
+
+// Publish events
+await publish({
+  type: "signin",
+  payload: { method: "email" }
+});
+```
+
+**Source:** `/packages/better-auth/src/context/create-context.ts:193`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Integration" href="/concepts/database" icon="database">
+    Learn about database adapters and schema management
+  </Card>
+  <Card title="Plugin System" href="/concepts/plugins" icon="plug">
+    Understand how to use and create plugins
+  </Card>
+  <Card title="Session Management" href="/concepts/session-management" icon="lock">
+    Deep dive into session handling
+  </Card>
+  <Card title="Hooks" href="/concepts/hooks" icon="webhook">
+    Extend functionality with hooks
+  </Card>
+</CardGroup>

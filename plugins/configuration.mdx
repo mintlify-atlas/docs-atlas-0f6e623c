@@ -1,0 +1,545 @@
+---
+title: Plugin Configuration
+description: Learn how to install, configure, and use Better Auth plugins
+---
+
+Plugins extend Better Auth with additional functionality. This guide covers how to install, configure, and use plugins in your application.
+
+## Installing Plugins
+
+All official plugins are included in the Better Auth package. To use a plugin, simply import it and add it to your auth configuration:
+
+```typescript
+import { betterAuth } from "better-auth";
+import { twoFactor, admin, organization } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  database: {
+    provider: "postgres",
+    url: process.env.DATABASE_URL
+  },
+  plugins: [
+    twoFactor(),
+    admin(),
+    organization()
+  ]
+});
+```
+
+## Basic Configuration
+
+Most plugins accept configuration options to customize their behavior:
+
+```typescript
+import { betterAuth } from "better-auth";
+import { twoFactor, magicLink } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  database: {
+    provider: "postgres",
+    url: process.env.DATABASE_URL
+  },
+  plugins: [
+    // Two-factor authentication with custom issuer
+    twoFactor({
+      issuer: "MyApp",
+      totpOptions: {
+        digits: 6,
+        period: 30
+      },
+      backupCodeOptions: {
+        storeBackupCodes: "encrypted"
+      }
+    }),
+    
+    // Magic link with custom email sender
+    magicLink({
+      expiresIn: 300, // 5 minutes
+      sendMagicLink: async ({ email, url }) => {
+        await sendEmail({
+          to: email,
+          subject: "Sign in to MyApp",
+          html: `Click here to sign in: ${url}`
+        });
+      }
+    })
+  ]
+});
+```
+
+## Database Migration
+
+When you add plugins that extend the database schema, you need to generate and run migrations:
+
+<Steps>
+  <Step title="Generate Migration">
+    Run the Better Auth CLI to generate migrations for your plugins:
+    
+    ```bash
+    npx better-auth migrate
+    ```
+    
+    This will create migration files for all plugin schemas in your project.
+  </Step>
+  
+  <Step title="Review Migrations">
+    Check the generated migration files in your migrations directory to ensure they match your expectations.
+  </Step>
+  
+  <Step title="Run Migrations">
+    Apply the migrations to your database:
+    
+    ```bash
+    npx better-auth migrate --apply
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Some plugins modify existing tables (like `user` or `session`). Make sure to review these changes carefully before applying migrations.
+</Note>
+
+## Plugin Options Pattern
+
+Most plugins follow a consistent configuration pattern:
+
+### Schema Customization
+
+You can customize table and field names to match your database schema:
+
+```typescript
+import { organization } from "better-auth/plugins";
+
+organization({
+  schema: {
+    organization: {
+      modelName: "companies", // Custom table name
+      fields: {
+        name: "company_name",  // Custom field name
+        slug: "company_slug"
+      }
+    }
+  }
+})
+```
+
+### Rate Limiting
+
+Many plugins include built-in rate limiting that you can configure:
+
+```typescript
+import { magicLink } from "better-auth/plugins";
+
+magicLink({
+  rateLimit: {
+    window: 60,  // Time window in seconds
+    max: 5       // Maximum requests per window
+  },
+  sendMagicLink: async ({ email, url }) => {
+    // Send email
+  }
+})
+```
+
+### Custom Validators
+
+Some plugins allow custom validation logic:
+
+```typescript
+import { username } from "better-auth/plugins";
+
+username({
+  minUsernameLength: 3,
+  maxUsernameLength: 20,
+  usernameValidator: async (username) => {
+    // Custom validation logic
+    return /^[a-zA-Z0-9_]+$/.test(username);
+  }
+})
+```
+
+## Common Plugin Examples
+
+### Two-Factor Authentication
+
+```typescript
+import { twoFactor } from "better-auth/plugins";
+
+twoFactor({
+  // Custom issuer for TOTP URIs
+  issuer: "MyApp",
+  
+  // TOTP configuration
+  totpOptions: {
+    digits: 6,      // Number of digits in OTP
+    period: 30      // Time period in seconds
+  },
+  
+  // Backup code configuration
+  backupCodeOptions: {
+    storeBackupCodes: "encrypted", // or "hashed" or "plain"
+    amount: 10                      // Number of backup codes
+  },
+  
+  // Trust device configuration
+  trustDeviceMaxAge: 30 * 24 * 60 * 60, // 30 days
+  
+  // Skip verification on enable (for testing)
+  skipVerificationOnEnable: false
+})
+```
+
+### Admin Plugin
+
+```typescript
+import { admin } from "better-auth/plugins";
+
+admin({
+  // Default role for new users
+  defaultRole: "user",
+  
+  // Roles that have admin privileges
+  adminRoles: ["admin", "superadmin"],
+  
+  // Custom roles and permissions
+  roles: {
+    user: {
+      permissions: ["read"]
+    },
+    admin: {
+      permissions: ["read", "write", "delete"]
+    },
+    superadmin: {
+      permissions: ["*"]
+    }
+  },
+  
+  // Message shown to banned users
+  bannedUserMessage: "Your account has been suspended. Contact support."
+})
+```
+
+### Organization Plugin
+
+```typescript
+import { organization } from "better-auth/plugins";
+
+organization({
+  // Allow users to create organizations
+  allowUserToCreateOrganization: true,
+  
+  // Organization size limits
+  maxMemberPerOrganization: 100,
+  
+  // Role configuration
+  roles: {
+    owner: {
+      permissions: ["admin", "member:create", "member:delete"]
+    },
+    admin: {
+      permissions: ["member:create", "member:read"]
+    },
+    member: {
+      permissions: ["member:read"]
+    }
+  },
+  
+  // Enable teams feature
+  teams: {
+    enabled: true,
+    maxTeamPerOrganization: 10
+  }
+})
+```
+
+### Anonymous Plugin
+
+```typescript
+import { anonymous } from "better-auth/plugins";
+
+anonymous({
+  // Custom email domain for anonymous users
+  emailDomainName: "anonymous.myapp.com",
+  
+  // Or provide a custom email generator
+  generateRandomEmail: async () => {
+    const id = crypto.randomUUID();
+    return `anon-${id}@myapp.com`;
+  },
+  
+  // Custom name generator
+  generateName: async (ctx) => {
+    return "Guest User";
+  },
+  
+  // Prevent anonymous users from being deleted
+  disableDeleteAnonymousUser: false,
+  
+  // Callback when linking anonymous account
+  onLinkAccount: async ({ anonymousUser, newUser, ctx }) => {
+    // Transfer data from anonymous user to new user
+    console.log("Linking accounts", anonymousUser.user.id, "->", newUser.user.id);
+  }
+})
+```
+
+### Magic Link Plugin
+
+```typescript
+import { magicLink } from "better-auth/plugins";
+
+magicLink({
+  // Token expiration in seconds
+  expiresIn: 60 * 5, // 5 minutes
+  
+  // Number of verification attempts
+  allowedAttempts: 1,
+  
+  // Disable sign up for new users
+  disableSignUp: false,
+  
+  // Custom token generator
+  generateToken: async (email) => {
+    return crypto.randomUUID();
+  },
+  
+  // Token storage method
+  storeToken: "hashed", // or "plain" or { type: "custom-hasher", hash: ... }
+  
+  // Email sender (required)
+  sendMagicLink: async ({ email, url, token }) => {
+    await sendEmail({
+      to: email,
+      subject: "Your Magic Link",
+      html: `Click to sign in: <a href="${url}">${url}</a>`
+    });
+  },
+  
+  // Rate limiting
+  rateLimit: {
+    window: 60,
+    max: 5
+  }
+})
+```
+
+## Client-Side Usage
+
+After configuring plugins on the server, you need to extend your client to access plugin methods:
+
+```typescript
+import { createAuthClient } from "better-auth/client";
+import { twoFactorClient } from "better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  plugins: [
+    twoFactorClient()
+  ]
+});
+
+// Use plugin methods
+const { data, error } = await authClient.twoFactor.enable({
+  password: "user-password"
+});
+```
+
+Each plugin typically exports a corresponding client plugin:
+
+```typescript
+import { createAuthClient } from "better-auth/client";
+import {
+  twoFactorClient,
+  adminClient,
+  organizationClient
+} from "better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  plugins: [
+    twoFactorClient(),
+    adminClient(),
+    organizationClient()
+  ]
+});
+```
+
+## Type Safety
+
+Better Auth provides full type inference for plugin methods:
+
+```typescript
+// Server-side types are automatically inferred
+export const auth = betterAuth({
+  plugins: [
+    organization({
+      roles: {
+        owner: { permissions: ["admin"] },
+        member: { permissions: ["read"] }
+      }
+    })
+  ]
+});
+
+// TypeScript knows about organization methods
+type AuthType = typeof auth;
+// AuthType.api.createOrganization - available
+// AuthType.api.addMember - available
+
+// Client types are also inferred
+const authClient = createAuthClient({
+  plugins: [organizationClient()]
+});
+
+// TypeScript knows about client methods
+await authClient.organization.create({ name: "My Org" });
+```
+
+## Combining Multiple Plugins
+
+You can use multiple plugins together. Better Auth handles plugin compatibility automatically:
+
+```typescript
+import { betterAuth } from "better-auth";
+import {
+  twoFactor,
+  admin,
+  organization,
+  username,
+  magicLink
+} from "better-auth/plugins";
+
+export const auth = betterAuth({
+  database: {
+    provider: "postgres",
+    url: process.env.DATABASE_URL
+  },
+  plugins: [
+    // Authentication methods
+    username(),
+    magicLink({
+      sendMagicLink: async ({ email, url }) => {
+        await sendEmail({ to: email, url });
+      }
+    }),
+    
+    // Security features
+    twoFactor({
+      issuer: "MyApp"
+    }),
+    
+    // User management
+    admin({
+      defaultRole: "user"
+    }),
+    
+    // Multi-tenancy
+    organization({
+      allowUserToCreateOrganization: true
+    })
+  ]
+});
+```
+
+<Note>
+  Some plugins work together seamlessly. For example, the `admin` and `organization` plugins integrate to provide role-based access control across organizations.
+</Note>
+
+## Plugin Lifecycle
+
+Understanding the plugin lifecycle helps you configure them correctly:
+
+<Steps>
+  <Step title="Plugin Registration">
+    Plugins are registered when you call `betterAuth()` with your configuration.
+  </Step>
+  
+  <Step title="Initialization">
+    Each plugin's `init` function is called to set up context and modify options.
+  </Step>
+  
+  <Step title="Schema Merging">
+    Plugin schemas are merged with your base schema.
+  </Step>
+  
+  <Step title="Endpoint Registration">
+    Plugin endpoints are registered and made available via the API.
+  </Step>
+  
+  <Step title="Hook Registration">
+    Before and after hooks are registered for the authentication lifecycle.
+  </Step>
+</Steps>
+
+## Environment Variables
+
+Many plugins require environment variables for configuration:
+
+```bash
+# Database
+DATABASE_URL=postgresql://...
+
+# Better Auth
+BETTER_AUTH_SECRET=your-secret-key
+BETTER_AUTH_URL=http://localhost:3000
+
+# Email service (for magic link, email OTP, etc.)
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=user@example.com
+SMTP_PASSWORD=password
+
+# SMS service (for phone number plugin)
+TWILIO_ACCOUNT_SID=your-account-sid
+TWILIO_AUTH_TOKEN=your-auth-token
+TWILIO_PHONE_NUMBER=+1234567890
+```
+
+## Troubleshooting
+
+### Plugin Not Working
+
+If a plugin isn't working as expected:
+
+1. Ensure you've run migrations for plugin schemas
+2. Check that the plugin is properly imported and added to the plugins array
+3. Verify plugin configuration options are correct
+4. Check console logs for plugin-specific error messages
+
+### Type Errors
+
+If you're experiencing type errors:
+
+1. Make sure you're using the latest version of Better Auth
+2. Ensure TypeScript is configured correctly in your project
+3. Clear your TypeScript cache: `rm -rf node_modules/.cache`
+4. Restart your TypeScript server
+
+### Migration Issues
+
+If migrations fail:
+
+1. Check database connection string
+2. Ensure database user has proper permissions
+3. Review generated migration files for conflicts
+4. Consider manual migration for complex schema changes
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Two-Factor Auth" icon="shield-halved" href="/plugins/two-factor">
+    Add two-factor authentication to your app
+  </Card>
+  
+  <Card title="Organizations" icon="building" href="/plugins/organization">
+    Implement multi-tenancy with organizations
+  </Card>
+  
+  <Card title="Custom Plugins" icon="puzzle-piece" href="/plugins/custom">
+    Build your own custom plugins
+  </Card>
+  
+  <Card title="API Reference" icon="book" href="/api-reference/plugins">
+    Explore the complete plugin API
+  </Card>
+</CardGroup>

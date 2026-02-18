@@ -1,0 +1,321 @@
+---
+title: 'createAuthClient'
+description: 'Create a type-safe authentication client'
+---
+
+## Overview
+
+`createAuthClient` is the core function for creating a type-safe authentication client in Better Auth. It generates a client instance with auto-generated methods based on your server configuration and plugins.
+
+## Import
+
+<CodeGroup>
+
+```tsx React
+import { createAuthClient } from "better-auth/react"
+```
+
+```tsx Vue
+import { createAuthClient } from "better-auth/vue"
+```
+
+```tsx Svelte
+import { createAuthClient } from "better-auth/svelte"
+```
+
+```tsx Solid
+import { createAuthClient } from "better-auth/solid"
+```
+
+```tsx Vanilla
+import { createAuthClient } from "better-auth/client"
+```
+
+</CodeGroup>
+
+## Function Signature
+
+```typescript
+function createAuthClient<Option extends BetterAuthClientOptions>(
+	options?: Option | undefined,
+): AuthClient<Option>
+```
+
+## Parameters
+
+<ParamField path="options" type="BetterAuthClientOptions" optional>
+	Configuration options for the authentication client.
+
+	<Expandable title="properties">
+		<ParamField path="baseURL" type="string" optional>
+			Base URL of your authentication server. Defaults to `/api/auth`.
+			
+			```typescript
+			baseURL: "https://api.example.com/auth"
+			```
+		</ParamField>
+
+		<ParamField path="basePath" type="string" optional>
+			Base path for authentication endpoints. Defaults to `/api/auth`.
+		</ParamField>
+
+		<ParamField path="plugins" type="BetterAuthClientPlugin[]" optional>
+			Array of client plugins to extend functionality.
+			
+			```typescript
+			plugins: [
+				organizationClient(),
+				multiSessionClient()
+			]
+			```
+		</ParamField>
+
+		<ParamField path="fetchOptions" type="FetchOptions" optional>
+			Custom fetch options and lifecycle hooks.
+			
+			<Expandable title="properties">
+				<ParamField path="onSuccess" type="(context: SuccessContext) => void | Promise<void>" optional>
+					Called when a request succeeds.
+				</ParamField>
+
+				<ParamField path="onError" type="(context: ErrorContext) => void | Promise<void>" optional>
+					Called when a request fails.
+				</ParamField>
+
+				<ParamField path="onRequest" type="(context: RequestContext) => void | Promise<void>" optional>
+					Called before a request is sent.
+				</ParamField>
+
+				<ParamField path="onResponse" type="(context: ResponseContext) => void | Promise<void>" optional>
+					Called when a response is received.
+				</ParamField>
+			</Expandable>
+		</ParamField>
+
+		<ParamField path="disableDefaultFetchPlugins" type="boolean" optional>
+			Disable default fetch plugins like redirect handling. Defaults to `false`.
+		</ParamField>
+
+		<ParamField path="$InferAuth" type="BetterAuthOptions" optional>
+			Type inference helper to sync client types with server configuration. Use with `InferAuth` utility.
+			
+			```typescript
+			import { InferAuth } from "better-auth/client"
+			import type { auth } from "./auth-server"
+			
+			const client = createAuthClient({
+				$InferAuth: InferAuth<typeof auth>()
+			})
+			```
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+## Return Type
+
+The return type is dynamically inferred based on your configuration and includes:
+
+<ResponseField name="useSession" type="Hook | Atom">
+	Framework-specific hook or atom for accessing session data. Returns different types based on the framework:
+	
+	- **React/Vue/Svelte/Solid**: Hook that returns session state
+	- **Vanilla**: Nanostore atom
+	
+	See the [hooks documentation](/api/client/hooks) for details.
+</ResponseField>
+
+<ResponseField name="$fetch" type="BetterFetch">
+	Low-level fetch instance for making custom API calls.
+	
+	```typescript
+	const { data, error } = await client.$fetch("/custom-endpoint", {
+		method: "POST",
+		body: { key: "value" }
+	})
+	```
+</ResponseField>
+
+<ResponseField name="$store" type="ClientStore">
+	Store instance for managing reactive state and signals.
+	
+	<Expandable title="properties">
+		<ResponseField name="notify" type="(signal?: string) => void">
+			Trigger a signal to notify subscribers of state changes.
+			
+			```typescript
+			// Trigger session refresh
+			client.$store.notify("$sessionSignal")
+			```
+		</ResponseField>
+
+		<ResponseField name="listen" type="(signal: string, listener: (value: boolean) => void) => void">
+			Listen to signal changes. Returns an unsubscribe function.
+			
+			```typescript
+			client.$store.listen("$sessionSignal", (value) => {
+				console.log("Session updated:", value)
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="atoms" type="Record<string, Atom<any>>">
+			Direct access to underlying nanostores atoms for advanced use cases.
+			
+			```typescript
+			const sessionAtom = client.$store.atoms.session
+			```
+		</ResponseField>
+	</Expandable>
+</ResponseField>
+
+<ResponseField name="$Infer" type="object">
+	Type inference utilities for extracting types from the client.
+	
+	<Expandable title="properties">
+		<ResponseField name="Session" type="SessionType">
+			Inferred session type including user and session data.
+			
+			```typescript
+			type Session = typeof client.$Infer.Session
+			// { user: User, session: Session }
+			```
+		</ResponseField>
+	</Expandable>
+</ResponseField>
+
+<ResponseField name="$ERROR_CODES" type="object">
+	Error codes from server and plugins for type-safe error handling.
+	
+	```typescript
+	if (error.code === client.$ERROR_CODES.INVALID_EMAIL) {
+		// Handle invalid email error
+	}
+	```
+</ResponseField>
+
+<ResponseField name="[endpoint methods]" type="(...args: any[]) => Promise<BetterFetchResponse>">
+	Dynamically generated methods for each server endpoint. These are fully type-safe and inferred from your server configuration. See the [methods documentation](/api/client/methods) for a complete list.
+	
+	```typescript
+	// Auto-generated methods
+	await client.signIn.email({ email, password })
+	await client.signUp.email({ email, password, name })
+	await client.signOut()
+	await client.updateUser({ name: "New Name" })
+	```
+</ResponseField>
+
+## Usage Examples
+
+### Basic Setup
+
+```typescript
+import { createAuthClient } from "better-auth/react"
+
+const client = createAuthClient({
+	baseURL: "http://localhost:3000"
+})
+
+export default client
+```
+
+### With Plugins
+
+```typescript
+import { createAuthClient } from "better-auth/react"
+import { organizationClient } from "better-auth/client/plugins"
+
+const client = createAuthClient({
+	baseURL: process.env.NEXT_PUBLIC_API_URL,
+	plugins: [
+		organizationClient()
+	]
+})
+
+export default client
+```
+
+### With Fetch Hooks
+
+```typescript
+import { createAuthClient } from "better-auth/react"
+
+const client = createAuthClient({
+	baseURL: "http://localhost:3000",
+	fetchOptions: {
+		onError: (context) => {
+			console.error("Auth error:", context.error)
+			// Custom error handling
+		},
+		onRequest: (context) => {
+			console.log("Making request to:", context.request.url)
+		},
+		onSuccess: (context) => {
+			console.log("Request succeeded:", context.data)
+		}
+	}
+})
+
+export default client
+```
+
+### Type Inference from Server
+
+```typescript
+import { createAuthClient, InferAuth } from "better-auth/react"
+import type { auth } from "./auth-server"
+
+const client = createAuthClient({
+	baseURL: "http://localhost:3000",
+	$InferAuth: InferAuth<typeof auth>()
+})
+
+// Now all methods are fully typed based on your server config
+export default client
+```
+
+### Making Custom API Calls
+
+```typescript
+// Using $fetch for custom endpoints
+const { data, error } = await client.$fetch("/custom/endpoint", {
+	method: "POST",
+	body: {
+		key: "value"
+	},
+	headers: {
+		"X-Custom-Header": "value"
+	}
+})
+
+if (error) {
+	console.error("Request failed:", error)
+} else {
+	console.log("Response:", data)
+}
+```
+
+## Framework-Specific Behavior
+
+The behavior of `createAuthClient` varies by framework:
+
+- **React**: Returns hooks that use `useSyncExternalStore` for reactivity
+- **Vue**: Returns composables that use Vue refs for reactivity
+- **Svelte**: Returns stores compatible with Svelte's store contract
+- **Solid**: Returns signals using SolidJS's reactive primitives
+- **Vanilla**: Returns raw nanostores atoms
+
+## Notes
+
+<Note>
+The client automatically includes credentials in requests when supported by the environment. This ensures cookies are sent with cross-origin requests.
+</Note>
+
+<Warning>
+Always store the authentication client instance in a separate module and import it where needed. Do not create multiple instances as this can lead to state synchronization issues.
+</Warning>
+
+## Related
+
+- [Client Methods](/api/client/methods)
+- [Client Hooks](/api/client/hooks)

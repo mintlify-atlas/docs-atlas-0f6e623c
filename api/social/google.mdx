@@ -1,0 +1,437 @@
+---
+title: Google Sign In
+description: Configure Google OAuth 2.0 provider for Better Auth
+---
+
+# Google Sign In
+
+Google Sign In allows users to authenticate using their Google account. It's one of the most widely used OAuth providers.
+
+## Setup
+
+<Steps>
+### Create a Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select an existing one
+3. Enable the **Google+ API** (may be enabled by default)
+
+### Configure OAuth Consent Screen
+
+1. Navigate to **APIs & Services > OAuth consent screen**
+2. Choose **External** (for public apps) or **Internal** (for workspace apps)
+3. Fill in the required information:
+   - **App name**: Your application name
+   - **User support email**: Your support email
+   - **Developer contact email**: Your email
+4. Add scopes (optional at this stage)
+5. Add test users if in development mode
+
+### Create OAuth Credentials
+
+1. Go to **APIs & Services > Credentials**
+2. Click **Create Credentials > OAuth client ID**
+3. Select **Web application** as application type
+4. Configure authorized URLs:
+   - **Authorized JavaScript origins**: `https://example.com`
+   - **Authorized redirect URIs**: `https://example.com/api/auth/callback/google`
+5. Click **Create** and copy your **Client ID** and **Client Secret**
+
+### Add Credentials to Environment
+
+```bash
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+```
+</Steps>
+
+## Configuration
+
+### Basic Configuration
+
+```ts
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    },
+  },
+});
+```
+
+### Default Scopes
+
+Google provider requests these scopes by default:
+
+- `email` - Access user's email address
+- `profile` - Access basic profile information
+- `openid` - OpenID Connect authentication
+
+### Custom Scopes
+
+Request additional Google API permissions:
+
+```ts
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  scope: [
+    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/drive.readonly",
+  ],
+}
+```
+
+Common scopes:
+- `https://www.googleapis.com/auth/userinfo.profile` - Basic profile info
+- `https://www.googleapis.com/auth/userinfo.email` - Email address
+- `https://www.googleapis.com/auth/calendar` - Google Calendar access
+- `https://www.googleapis.com/auth/drive` - Google Drive access
+- `https://www.googleapis.com/auth/gmail.readonly` - Read Gmail
+
+See [Google OAuth Scopes](https://developers.google.com/identity/protocols/oauth2/scopes) for the complete list.
+
+## Configuration Options
+
+<ParamField path="clientId" type="string" required>
+  Your Google OAuth Client ID from Google Cloud Console.
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  Your Google OAuth Client Secret from Google Cloud Console.
+</ParamField>
+
+<ParamField path="scope" type="string[]">
+  Additional OAuth scopes beyond the defaults (`email`, `profile`, `openid`).
+  
+  ```ts
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    scope: ["https://www.googleapis.com/auth/calendar.readonly"],
+  }
+  ```
+</ParamField>
+
+<ParamField path="redirectURI" type="string">
+  Custom redirect URI. Must be configured in Google Cloud Console.
+  
+  Default: `{baseURL}/api/auth/callback/google`
+</ParamField>
+
+<ParamField path="prompt" type="'consent' | 'select_account' | 'none' | 'select_account consent'">
+  Control the OAuth consent screen behavior.
+  
+  ```ts
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    prompt: "select_account", // Always show account picker
+  }
+  ```
+</ParamField>
+
+<ParamField path="accessType" type="'online' | 'offline'" default="online">
+  Request refresh tokens for offline access.
+  
+  ```ts
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    accessType: "offline", // Get refresh token
+  }
+  ```
+</ParamField>
+
+<ParamField path="display" type="'page' | 'popup' | 'touch' | 'wap'">
+  UI display mode for the OAuth consent screen.
+  
+  ```ts
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    display: "popup", // Show in popup window
+  }
+  ```
+</ParamField>
+
+<ParamField path="hd" type="string">
+  Restrict sign-in to specific Google Workspace domain.
+  
+  ```ts
+  google: {
+    clientId: process.env.GOOGLE_CLIENT_ID!,
+    clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    hd: "example.com", // Only allow @example.com accounts
+  }
+  ```
+</ParamField>
+
+## User Profile Data
+
+Google provides this profile information via ID token:
+
+```ts
+interface GoogleProfile {
+  sub: string;              // Unique user identifier
+  email: string;            // User's email address
+  email_verified: boolean;  // Email verification status
+  name: string;             // Full name
+  given_name: string;       // First name
+  family_name: string;      // Last name
+  picture: string;          // Profile picture URL
+  locale: string;           // User's locale (e.g., "en")
+  hd?: string;              // Hosted domain (for workspace accounts)
+}
+```
+
+## Client-Side Implementation
+
+```tsx
+import { createAuthClient } from "better-auth/client";
+
+const authClient = createAuthClient();
+
+function GoogleSignInButton() {
+  const handleSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/dashboard",
+    });
+  };
+
+  return (
+    <button onClick={handleSignIn}>
+      <GoogleIcon />
+      Sign in with Google
+    </button>
+  );
+}
+```
+
+## Advanced Configuration
+
+### Restrict to Organization Domain
+
+Only allow users from a specific Google Workspace domain:
+
+```ts
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  hd: "company.com",
+  // Verify domain in profile mapping
+  mapProfileToUser: (profile) => {
+    if (profile.hd !== "company.com") {
+      throw new Error("Only company.com accounts are allowed");
+    }
+    return {
+      name: profile.name,
+      email: profile.email,
+      department: getDepartmentFromEmail(profile.email),
+    };
+  },
+}
+```
+
+### Request Offline Access
+
+Get refresh tokens for accessing Google APIs when the user is offline:
+
+```ts
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  accessType: "offline",
+  prompt: "consent", // Force consent to get refresh token
+  scope: [
+    "https://www.googleapis.com/auth/calendar.readonly",
+  ],
+}
+```
+
+<Note>
+  **Refresh Tokens:** Google only issues refresh tokens on the first authorization or when `prompt: "consent"` is used. Store refresh tokens securely for long-term API access.
+</Note>
+
+### Custom User Mapping
+
+Map Google profile data to your user schema:
+
+```ts
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  mapProfileToUser: (profile) => ({
+    // Split name into parts
+    firstName: profile.given_name,
+    lastName: profile.family_name,
+    // Store locale preference
+    locale: profile.locale,
+    // Add custom fields
+    isWorkspaceUser: !!profile.hd,
+    workspaceDomain: profile.hd,
+  }),
+}
+```
+
+### Login Hints
+
+Pre-fill the sign-in screen with a user's email:
+
+```ts
+await authClient.signIn.social({
+  provider: "google",
+  loginHint: "user@example.com",
+  callbackURL: "/dashboard",
+});
+```
+
+## ID Token Verification
+
+Better Auth automatically verifies Google ID tokens using Google's public keys. You can customize verification:
+
+```ts
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  verifyIdToken: async (token, nonce) => {
+    // Custom verification logic
+    // Better Auth handles standard verification automatically
+    return true;
+  },
+}
+```
+
+## Using Google APIs
+
+Access Google APIs using stored OAuth tokens:
+
+```ts
+import { auth } from "./auth";
+
+// Get user's Google access token
+const session = await auth.api.getSession({ headers: request.headers });
+if (session?.user) {
+  const accounts = await auth.api.getAccounts({ userId: session.user.id });
+  const googleAccount = accounts.find(acc => acc.providerId === "google");
+  
+  if (googleAccount?.accessToken) {
+    // Call Google Calendar API
+    const response = await fetch(
+      "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+      {
+        headers: {
+          Authorization: `Bearer ${googleAccount.accessToken}`,
+        },
+      }
+    );
+    const events = await response.json();
+  }
+}
+```
+
+## Token Refresh
+
+Better Auth automatically refreshes expired access tokens if a refresh token is available:
+
+```ts
+google: {
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  accessType: "offline", // Required for refresh tokens
+  // Custom refresh logic (optional)
+  refreshAccessToken: async (refreshToken) => {
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: process.env.GOOGLE_CLIENT_ID,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+    });
+    return response.json();
+  },
+}
+```
+
+## Google One Tap
+
+For Google One Tap integration, use ID token sign-in:
+
+```tsx
+import { createAuthClient } from "better-auth/client";
+
+const authClient = createAuthClient();
+
+// Initialize Google One Tap
+window.google.accounts.id.initialize({
+  client_id: process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID,
+  callback: async (response) => {
+    // Send ID token to Better Auth
+    await fetch("/api/auth/callback/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken: response.credential }),
+    });
+  },
+});
+
+window.google.accounts.id.prompt();
+```
+
+## Troubleshooting
+
+### "redirect_uri_mismatch" Error
+
+**Cause:** Redirect URI doesn't match Google Cloud Console configuration.
+
+**Solution:**
+1. Check **Authorized redirect URIs** in Google Cloud Console
+2. Ensure exact match including protocol (https) and path
+3. No trailing slashes unless configured with them
+
+### "Access blocked" Error
+
+**Cause:** OAuth consent screen is in testing mode with limited test users.
+
+**Solution:**
+1. Add users to test user list, or
+2. Publish the OAuth consent screen for public access
+
+### Missing Refresh Token
+
+**Cause:** Refresh token only provided on first authorization or with `prompt: "consent"`.
+
+**Solution:**
+1. Set `accessType: "offline"`
+2. Use `prompt: "consent"` to force re-authorization
+3. Revoke access in user's Google account and re-authorize
+
+### "invalid_client" Error
+
+**Cause:** Client ID or Client Secret is incorrect.
+
+**Solution:** Verify credentials in Google Cloud Console match environment variables.
+
+## Rate Limits and Quotas
+
+Google APIs have usage quotas:
+
+- **OAuth requests**: High limit (typically sufficient for most apps)
+- **API requests**: Varies by API (check specific API documentation)
+- **Token endpoint**: 10 requests per second per project
+
+Better Auth's authentication flow is well within normal limits.
+
+## Resources
+
+- [Google Identity Documentation](https://developers.google.com/identity)
+- [Google Cloud Console](https://console.cloud.google.com/)
+- [OAuth 2.0 Scopes](https://developers.google.com/identity/protocols/oauth2/scopes)
+- [API Library](https://console.cloud.google.com/apis/library)

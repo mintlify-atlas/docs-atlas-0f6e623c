@@ -1,0 +1,561 @@
+---
+title: Solid Client
+description: Use Better Auth with SolidJS using signals for authentication and session management.
+---
+
+# Solid Client
+
+The Solid client provides a signal-based API for authentication in SolidJS applications. It integrates seamlessly with Solid's fine-grained reactivity system using Accessors.
+
+## Installation
+
+```bash
+npm install better-auth
+# or
+pnpm add better-auth
+# or
+yarn add better-auth
+```
+
+## Basic Setup
+
+<Steps>
+
+### Create Client Instance
+
+Create a client instance by importing from `better-auth/solid`:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/solid";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000", // Your backend URL
+});
+```
+
+### Configure Options
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/solid";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  basePath: "/api/auth",
+  fetchOptions: {
+    onError(ctx) {
+      console.error("Auth error:", ctx.error);
+    },
+  },
+});
+```
+
+</Steps>
+
+## Signals API
+
+### useSession
+
+The primary function for accessing session state returns a Solid Accessor:
+
+```tsx title="components/UserProfile.tsx"
+import { authClient } from "~/lib/auth-client";
+import { Show } from "solid-js";
+
+export function UserProfile() {
+  const session = authClient.useSession();
+
+  const handleSignOut = async () => {
+    await authClient.signOut();
+  };
+
+  return (
+    <Show
+      when={!session().isPending}
+      fallback={<div>Loading...</div>}
+    >
+      <Show
+        when={session().error}
+        fallback={
+          <Show
+            when={session().data}
+            fallback={<div>Not authenticated</div>}
+          >
+            {(data) => (
+              <div>
+                <h1>Welcome {data().user.name}!</h1>
+                <p>Email: {data().user.email}</p>
+                <button onClick={handleSignOut}>Sign Out</button>
+              </div>
+            )}
+          </Show>
+        }
+      >
+        <div>Error: {session().error?.message}</div>
+      </Show>
+    </Show>
+  );
+}
+```
+
+#### Session Accessor
+
+The `useSession()` function returns a SolidJS Accessor:
+
+```ts
+import type { Accessor } from "solid-js";
+
+interface SessionState {
+  data: {
+    session: Session | null;
+    user: User | null;
+  } | null;
+  isPending: boolean;
+  isRefetching: boolean;
+  error: BetterFetchError | null;
+  refetch: (params?: { query?: SessionQueryParams }) => Promise<void>;
+}
+
+type UseSessionReturn = Accessor<SessionState>;
+```
+
+### Accessing Signal Values
+
+In Solid, call the accessor function to get the current value:
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+import { createMemo } from "solid-js";
+
+function UserGreeting() {
+  const session = authClient.useSession();
+  
+  // Derived value using createMemo
+  const userName = createMemo(() => session().data?.user.name ?? "Guest");
+  
+  return <h1>Hello, {userName()}!</h1>;
+}
+```
+
+### Manual Refetch
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+
+function SessionManager() {
+  const session = authClient.useSession();
+  
+  const refreshSession = async () => {
+    await session().refetch();
+  };
+  
+  const forceRefresh = async () => {
+    await session().refetch({
+      query: { disableCookieCache: true }
+    });
+  };
+  
+  return (
+    <div>
+      <button onClick={refreshSession}>Refresh Session</button>
+      <button onClick={forceRefresh}>Force Refresh</button>
+    </div>
+  );
+}
+```
+
+## Authentication Methods
+
+### Sign Up
+
+```tsx title="pages/SignUp.tsx"
+import { authClient } from "~/lib/auth-client";
+import { createSignal } from "solid-js";
+import { useNavigate } from "@solidjs/router";
+
+export default function SignUp() {
+  const navigate = useNavigate();
+  const [email, setEmail] = createSignal("");
+  const [password, setPassword] = createSignal("");
+  const [name, setName] = createSignal("");
+  const [error, setError] = createSignal("");
+  const [loading, setLoading] = createSignal(false);
+
+  const handleSignUp = async (e: Event) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const { data, error: signUpError } = await authClient.signUp.email({
+      email: email(),
+      password: password(),
+      name: name(),
+    });
+
+    setLoading(false);
+
+    if (signUpError) {
+      setError(signUpError.message ?? "Failed to sign up");
+      return;
+    }
+
+    navigate("/dashboard");
+  };
+
+  return (
+    <form onSubmit={handleSignUp}>
+      <input
+        type="text"
+        value={name()}
+        onInput={(e) => setName(e.currentTarget.value)}
+        placeholder="Name"
+        required
+      />
+      <input
+        type="email"
+        value={email()}
+        onInput={(e) => setEmail(e.currentTarget.value)}
+        placeholder="Email"
+        required
+      />
+      <input
+        type="password"
+        value={password()}
+        onInput={(e) => setPassword(e.currentTarget.value)}
+        placeholder="Password"
+        required
+      />
+      <Show when={error()}>
+        <div class="error">{error()}</div>
+      </Show>
+      <button type="submit" disabled={loading()}>
+        {loading() ? "Signing up..." : "Sign Up"}
+      </button>
+    </form>
+  );
+}
+```
+
+### Sign In
+
+```tsx title="pages/SignIn.tsx"
+import { authClient } from "~/lib/auth-client";
+import { createSignal } from "solid-js";
+import { useNavigate } from "@solidjs/router";
+
+export default function SignIn() {
+  const navigate = useNavigate();
+  const [email, setEmail] = createSignal("");
+  const [password, setPassword] = createSignal("");
+  const [error, setError] = createSignal("");
+  const [loading, setLoading] = createSignal(false);
+
+  const handleSignIn = async (e: Event) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    const { error: signInError } = await authClient.signIn.email({
+      email: email(),
+      password: password(),
+    });
+
+    setLoading(false);
+
+    if (signInError) {
+      setError(signInError.message ?? "Failed to sign in");
+      return;
+    }
+
+    navigate("/dashboard");
+  };
+
+  return (
+    <form onSubmit={handleSignIn}>
+      <input
+        type="email"
+        value={email()}
+        onInput={(e) => setEmail(e.currentTarget.value)}
+        placeholder="Email"
+        required
+      />
+      <input
+        type="password"
+        value={password()}
+        onInput={(e) => setPassword(e.currentTarget.value)}
+        placeholder="Password"
+        required
+      />
+      <Show when={error()}>
+        <div class="error">{error()}</div>
+      </Show>
+      <button type="submit" disabled={loading()}>
+        {loading() ? "Signing in..." : "Sign In"}
+      </button>
+    </form>
+  );
+}
+```
+
+### Social Sign In
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+
+function SocialSignIn() {
+  const handleSocialSignIn = async (provider: "google" | "github") => {
+    await authClient.signIn.social({
+      provider,
+      callbackURL: "/dashboard",
+    });
+  };
+
+  return (
+    <div>
+      <button onClick={() => handleSocialSignIn("google")}>
+        Sign in with Google
+      </button>
+      <button onClick={() => handleSocialSignIn("github")}>
+        Sign in with GitHub
+      </button>
+    </div>
+  );
+}
+```
+
+### Sign Out
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+
+function SignOutButton() {
+  const handleSignOut = async () => {
+    await authClient.signOut();
+    // Session will automatically update
+  };
+
+  return <button onClick={handleSignOut}>Sign Out</button>;
+}
+```
+
+## Protected Routes
+
+### Route Protection with Solid Router
+
+```tsx title="components/ProtectedRoute.tsx"
+import { authClient } from "~/lib/auth-client";
+import { Navigate } from "@solidjs/router";
+import { Show, type ParentComponent } from "solid-js";
+
+export const ProtectedRoute: ParentComponent = (props) => {
+  const session = authClient.useSession();
+
+  return (
+    <Show
+      when={!session().isPending}
+      fallback={<div>Loading...</div>}
+    >
+      <Show
+        when={session().data}
+        fallback={<Navigate href="/sign-in" />}
+      >
+        {props.children}
+      </Show>
+    </Show>
+  );
+};
+```
+
+### Usage in Routes
+
+```tsx title="App.tsx"
+import { Route, Router } from "@solidjs/router";
+import { ProtectedRoute } from "~/components/ProtectedRoute";
+import Dashboard from "~/pages/Dashboard";
+import SignIn from "~/pages/SignIn";
+
+function App() {
+  return (
+    <Router>
+      <Route path="/sign-in" component={SignIn} />
+      <Route
+        path="/dashboard"
+        component={() => (
+          <ProtectedRoute>
+            <Dashboard />
+          </ProtectedRoute>
+        )}
+      />
+    </Router>
+  );
+}
+```
+
+## User Management
+
+### Update User Profile
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+import { createSignal, createEffect } from "solid-js";
+
+function ProfileEditor() {
+  const session = authClient.useSession();
+  const [name, setName] = createSignal("");
+  const [loading, setLoading] = createSignal(false);
+  const [message, setMessage] = createSignal("");
+
+  createEffect(() => {
+    const userName = session().data?.user.name;
+    if (userName) setName(userName);
+  });
+
+  const handleUpdate = async (e: Event) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage("");
+
+    const { error } = await authClient.updateUser({ 
+      name: name() 
+    });
+
+    setLoading(false);
+
+    if (error) {
+      setMessage("Failed to update profile");
+    } else {
+      setMessage("Profile updated!");
+    }
+  };
+
+  return (
+    <form onSubmit={handleUpdate}>
+      <input
+        value={name()}
+        onInput={(e) => setName(e.currentTarget.value)}
+        placeholder="Name"
+      />
+      <button type="submit" disabled={loading()}>
+        {loading() ? "Updating..." : "Update Profile"}
+      </button>
+      <Show when={message()}>
+        <p>{message()}</p>
+      </Show>
+    </form>
+  );
+}
+```
+
+## SolidStart Integration
+
+For full SolidStart integration with SSR support, see the [SolidStart integration guide](/integrations/solid-start).
+
+### Server-Side Session
+
+```ts title="routes/index.tsx"
+import { createAsync } from "@solidjs/router";
+import { getSession } from "~/lib/session";
+
+export const route = {
+  load: () => getSession(),
+};
+
+export default function Home() {
+  const session = createAsync(() => getSession());
+
+  return (
+    <Show when={session()}>
+      {(data) => <div>Welcome {data().user.name}</div>}
+    </Show>
+  );
+}
+```
+
+## Plugin Signals
+
+When using plugins, additional signals become available:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/solid";
+import { organizationClient } from "better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  plugins: [organizationClient()],
+});
+```
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+import { Show } from "solid-js";
+
+function OrganizationDisplay() {
+  // Plugin signals are automatically available
+  const activeOrg = authClient.useActiveOrganization();
+
+  return (
+    <Show when={activeOrg().data}>
+      {(org) => <div>Current Organization: {org().name}</div>}
+    </Show>
+  );
+}
+```
+
+## TypeScript Support
+
+The Solid client provides full TypeScript support:
+
+```ts
+import type { AuthClient } from "better-auth/solid";
+import { createMemo } from "solid-js";
+
+// Infer session type
+type Session = typeof authClient.$Infer.Session;
+
+function useUserRole() {
+  const session = authClient.useSession();
+  
+  return createMemo(() => session().data?.user.role);
+}
+```
+
+## Best Practices
+
+<Note>
+**Reactivity:**
+- Always call accessors as functions: `session()` not `session`
+- Use `createMemo` for derived values to avoid unnecessary computations
+- Use `Show` and `Switch` components for conditional rendering
+- Solid's reactivity is synchronous and fine-grained
+</Note>
+
+<Note>
+**Performance:**
+- Accessors only trigger updates when their dependencies change
+- Session state is shared globally across components
+- Avoid creating unnecessary derived signals
+- Use `untrack` to read values without creating dependencies
+</Note>
+
+<Note>
+**Error Handling:**
+- Always check for errors in authentication responses
+- Use Solid's `ErrorBoundary` for error handling
+- Display user-friendly error messages
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="SolidStart" icon="s" href="/integrations/solid-start">
+    Full-stack integration with SolidStart
+  </Card>
+  <Card title="Solid Router" icon="route" href="/integrations/solid-router">
+    Routing and navigation
+  </Card>
+  <Card title="Plugins" icon="plug" href="/plugins/overview">
+    Extend functionality with plugins
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/client/methods">
+    Complete API reference
+  </Card>
+</CardGroup>

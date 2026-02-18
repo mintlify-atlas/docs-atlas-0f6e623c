@@ -1,0 +1,832 @@
+---
+title: Email OTP
+description: One-time password authentication via email for passwordless sign-in.
+---
+
+Email OTP (One-Time Password) provides passwordless authentication by sending a unique verification code to the user's email. This method is more secure than magic links as the code must be manually entered by the user.
+
+## Installation
+
+<Steps>
+  <Step title="Add the plugin to your auth config">
+    Import the email OTP plugin and add it to your Better Auth configuration.
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth";
+    import { emailOTP } from "better-auth/plugins/email-otp";
+
+    export const auth = betterAuth({
+      plugins: [
+        emailOTP({
+          sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+            // Send email with the OTP code
+            await sendEmail({
+              to: email,
+              subject: `Your verification code: ${otp}`,
+              html: `<p>Your verification code is: <strong>${otp}</strong></p>`,
+            });
+          },
+        }),
+      ],
+    });
+    ```
+  </Step>
+
+  <Step title="Add the client plugin">
+    Add the email OTP client plugin to your auth client.
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client";
+    import { emailOTPClient } from "better-auth/plugins/email-otp/client";
+
+    export const authClient = createAuthClient({
+      plugins: [emailOTPClient()],
+    });
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Sign In with Email OTP
+
+The email OTP authentication flow consists of two steps:
+
+1. **Send OTP**: Request an OTP to be sent to the user's email
+2. **Verify OTP**: Verify the OTP code entered by the user
+
+#### Step 1: Send OTP
+
+```ts
+import { authClient } from "./auth-client";
+
+const { data, error } = await authClient.sendVerificationOTP({
+  email: "user@example.com",
+  type: "sign-in",
+});
+
+if (data) {
+  console.log("OTP sent successfully");
+}
+```
+
+#### Step 2: Verify OTP
+
+```ts
+import { authClient } from "./auth-client";
+
+const { data, error } = await authClient.signIn.emailOtp({
+  email: "user@example.com",
+  otp: "123456",
+});
+
+if (data) {
+  console.log("Signed in successfully");
+}
+```
+
+**Parameters:**
+
+- `email` (string, required): Email address to send the OTP
+- `otp` (string, required): The OTP code entered by the user
+- `type` (string, optional): The type of OTP verification (`"sign-in"`, `"email-verification"`, `"forget-password"`)
+
+### Email Verification with OTP
+
+You can use email OTP for email verification during sign-up:
+
+```ts
+// Send verification OTP
+await authClient.sendVerificationOTP({
+  email: "user@example.com",
+  type: "email-verification",
+});
+
+// Verify the OTP
+await authClient.verifyEmail({
+  email: "user@example.com",
+  otp: "123456",
+});
+```
+
+### Password Reset with OTP
+
+Email OTP can also be used for password reset flows:
+
+```ts
+// Request password reset OTP
+await authClient.requestPasswordReset({
+  email: "user@example.com",
+  type: "forget-password",
+});
+
+// Reset password with OTP
+await authClient.resetPassword({
+  email: "user@example.com",
+  otp: "123456",
+  newPassword: "newSecurePassword123",
+});
+```
+
+## Configuration
+
+### Basic Configuration
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { emailOTP } from "better-auth/plugins/email-otp";
+
+export const auth = betterAuth({
+  plugins: [
+    emailOTP({
+      // Required: Function to send OTP emails
+      sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+        await sendEmail({
+          to: email,
+          subject: `Your verification code: ${otp}`,
+          html: `<p>Your verification code is: <strong>${otp}</strong></p>`,
+        });
+      },
+    }),
+  ],
+});
+```
+
+### Advanced Configuration
+
+```ts title="auth.ts"
+emailOTP({
+  // Send OTP implementation
+  sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+    await sendEmail({
+      to: email,
+      subject: `Your verification code: ${otp}`,
+      html: `<p>Your verification code is: <strong>${otp}</strong></p>`,
+    });
+  },
+  
+  // OTP length (default: 6)
+  otpLength: 6,
+  
+  // Expiration time in seconds (default: 300 = 5 minutes)
+  expiresIn: 300,
+  
+  // Allowed verification attempts (default: 3)
+  allowedAttempts: 3,
+  
+  // Disable new user signup
+  disableSignUp: false,
+  
+  // Send verification OTP on sign-up
+  sendVerificationOnSignUp: true,
+  
+  // Override default email verification to use OTP
+  overrideDefaultEmailVerification: false,
+  
+  // Custom OTP generation
+  generateOTP: ({ email, type }, ctx) => {
+    // Return a custom OTP string
+    return customOTPGenerator();
+  },
+  
+  // OTP storage method (default: "plain")
+  storeOTP: "hashed", // or "plain", "encrypted"
+  
+  // Custom rate limiting
+  rateLimit: {
+    window: 60, // Time window in seconds
+    max: 3, // Max requests per window
+  },
+})
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `sendVerificationOTP` | function | **required** | Function to send the OTP email |
+| `otpLength` | number | 6 | Length of the OTP code |
+| `expiresIn` | number | 300 | Time in seconds until the OTP expires (5 minutes) |
+| `allowedAttempts` | number | 3 | Number of allowed verification attempts |
+| `disableSignUp` | boolean | false | Disable sign up if user is not found |
+| `sendVerificationOnSignUp` | boolean | false | Automatically send verification OTP on sign-up |
+| `overrideDefaultEmailVerification` | boolean | false | Replace default email verification with OTP |
+| `generateOTP` | function | - | Custom function to generate OTP |
+| `storeOTP` | string \\| object | "plain" | How to store the OTP: `"plain"`, `"hashed"`, or `"encrypted"` |
+| `rateLimit` | object | `{ window: 60, max: 3 }` | Rate limit configuration |
+
+### Custom OTP Storage
+
+For enhanced security, you can hash or encrypt OTP codes before storing them:
+
+```ts title="auth.ts"
+emailOTP({
+  sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+    await sendEmail({ to: email, html: `Your code: ${otp}` });
+  },
+  
+  // Use hashed OTP storage
+  storeOTP: "hashed",
+  
+  // Or use encrypted storage (requires encryption key)
+  storeOTP: "encrypted",
+  
+  // Or provide custom hash function
+  storeOTP: {
+    hash: async (otp) => {
+      return await customHashFunction(otp);
+    },
+  },
+  
+  // Or provide custom encryption
+  storeOTP: {
+    encrypt: async (otp) => {
+      return await customEncrypt(otp);
+    },
+    decrypt: async (encryptedOtp) => {
+      return await customDecrypt(encryptedOtp);
+    },
+  },
+})
+```
+
+### Override Default Email Verification
+
+You can replace Better Auth's default email verification with email OTP:
+
+```ts title="auth.ts"
+export const auth = betterAuth({
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+  },
+  plugins: [
+    emailOTP({
+      overrideDefaultEmailVerification: true,
+      sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+        await sendEmail({
+          to: email,
+          subject: "Verify your email",
+          html: `Your verification code is: ${otp}`,
+        });
+      },
+    }),
+  ],
+});
+```
+
+## Client Methods
+
+### Send Verification OTP
+
+```ts
+import { authClient } from "./auth-client";
+
+// For sign-in
+await authClient.sendVerificationOTP({
+  email: "user@example.com",
+  type: "sign-in",
+});
+
+// For email verification
+await authClient.sendVerificationOTP({
+  email: "user@example.com",
+  type: "email-verification",
+});
+
+// For password reset
+await authClient.sendVerificationOTP({
+  email: "user@example.com",
+  type: "forget-password",
+});
+```
+
+### Sign In with Email OTP
+
+```ts
+await authClient.signIn.emailOtp({
+  email: "user@example.com",
+  otp: "123456",
+});
+```
+
+### Verify Email with OTP
+
+```ts
+await authClient.verifyEmail({
+  email: "user@example.com",
+  otp: "123456",
+});
+```
+
+### Check OTP (without verifying)
+
+```ts
+const { data, error } = await authClient.checkVerificationOTP({
+  email: "user@example.com",
+  otp: "123456",
+});
+
+if (data?.valid) {
+  console.log("OTP is valid");
+}
+```
+
+## Examples
+
+### Full Email OTP Sign-In Flow
+
+<Tabs>
+  <Tab title="React">
+    ```tsx
+    import { useState } from "react";
+    import { authClient } from "./auth-client";
+
+    export function EmailOTPForm() {
+      const [email, setEmail] = useState("");
+      const [otp, setOtp] = useState("");
+      const [step, setStep] = useState<"email" | "otp">("email");
+      const [error, setError] = useState("");
+
+      const handleSendOTP = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError("");
+
+        const { error: sendError } = await authClient.sendVerificationOTP({
+          email,
+          type: "sign-in",
+        });
+
+        if (sendError) {
+          setError(sendError.message);
+        } else {
+          setStep("otp");
+        }
+      };
+
+      const handleVerifyOTP = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setError("");
+
+        const { data, error: verifyError } = await authClient.signIn.emailOtp({
+          email,
+          otp,
+        });
+
+        if (verifyError) {
+          setError(verifyError.message);
+        } else {
+          // Signed in successfully
+          console.log("Signed in:", data.user);
+        }
+      };
+
+      if (step === "otp") {
+        return (
+          <form onSubmit={handleVerifyOTP}>
+            <h2>Enter Verification Code</h2>
+            <p>We sent a code to {email}</p>
+            {error && <div className="error">{error}</div>}
+            <input
+              type="text"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value)}
+              placeholder="Enter 6-digit code"
+              maxLength={6}
+              pattern="[0-9]{6}"
+              required
+            />
+            <button type="submit">Verify</button>
+            <button type="button" onClick={() => setStep("email")}>
+              Change Email
+            </button>
+          </form>
+        );
+      }
+
+      return (
+        <form onSubmit={handleSendOTP}>
+          <h2>Sign in with Email OTP</h2>
+          {error && <div className="error">{error}</div>}
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            required
+          />
+          <button type="submit">Send Code</button>
+        </form>
+      );
+    }
+    ```
+  </Tab>
+  <Tab title="Vue">
+    ```vue
+    <script setup lang="ts">
+    import { ref } from 'vue';
+    import { authClient } from './auth-client';
+
+    const email = ref('');
+    const otp = ref('');
+    const step = ref<'email' | 'otp'>('email');
+    const error = ref('');
+
+    const handleSendOTP = async () => {
+      error.value = '';
+
+      const { error: sendError } = await authClient.sendVerificationOTP({
+        email: email.value,
+        type: 'sign-in',
+      });
+
+      if (sendError) {
+        error.value = sendError.message;
+      } else {
+        step.value = 'otp';
+      }
+    };
+
+    const handleVerifyOTP = async () => {
+      error.value = '';
+
+      const { data, error: verifyError } = await authClient.signIn.emailOtp({
+        email: email.value,
+        otp: otp.value,
+      });
+
+      if (verifyError) {
+        error.value = verifyError.message;
+      } else {
+        console.log('Signed in:', data.user);
+      }
+    };
+    </script>
+
+    <template>
+      <form v-if="step === 'otp'" @submit.prevent="handleVerifyOTP">
+        <h2>Enter Verification Code</h2>
+        <p>We sent a code to {{ email }}</p>
+        <div v-if="error" class="error">{{ error }}</div>
+        <input
+          v-model="otp"
+          type="text"
+          placeholder="Enter 6-digit code"
+          maxlength="6"
+          pattern="[0-9]{6}"
+          required
+        />
+        <button type="submit">Verify</button>
+        <button type="button" @click="step = 'email'">
+          Change Email
+        </button>
+      </form>
+      <form v-else @submit.prevent="handleSendOTP">
+        <h2>Sign in with Email OTP</h2>
+        <div v-if="error" class="error">{{ error }}</div>
+        <input
+          v-model="email"
+          type="email"
+          placeholder="Enter your email"
+          required
+        />
+        <button type="submit">Send Code</button>
+      </form>
+    </template>
+    ```
+  </Tab>
+</Tabs>
+
+### Custom Email Template
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { emailOTP } from "better-auth/plugins/email-otp";
+
+export const auth = betterAuth({
+  plugins: [
+    emailOTP({
+      sendVerificationOTP: async ({ email, otp, type }, ctx) => {
+        const templates = {
+          "sign-in": {
+            subject: "Your Sign-In Code",
+            html: `
+              <div style="font-family: Arial, sans-serif;">
+                <h1>Sign In to Your Account</h1>
+                <p>Your verification code is:</p>
+                <h2 style="background: #f0f0f0; padding: 10px; letter-spacing: 5px;">
+                  ${otp}
+                </h2>
+                <p>This code will expire in 5 minutes.</p>
+                <p>If you didn't request this code, please ignore this email.</p>
+              </div>
+            `,
+          },
+          "email-verification": {
+            subject: "Verify Your Email",
+            html: `
+              <div style="font-family: Arial, sans-serif;">
+                <h1>Verify Your Email Address</h1>
+                <p>Enter this code to verify your email:</p>
+                <h2 style="background: #f0f0f0; padding: 10px; letter-spacing: 5px;">
+                  ${otp}
+                </h2>
+              </div>
+            `,
+          },
+          "forget-password": {
+            subject: "Reset Your Password",
+            html: `
+              <div style="font-family: Arial, sans-serif;">
+                <h1>Reset Your Password</h1>
+                <p>Use this code to reset your password:</p>
+                <h2 style="background: #f0f0f0; padding: 10px; letter-spacing: 5px;">
+                  ${otp}
+                </h2>
+              </div>
+            `,
+          },
+        };
+
+        const template = templates[type];
+
+        await sendEmail({
+          to: email,
+          subject: template.subject,
+          html: template.html,
+        });
+      },
+    }),
+  ],
+});
+```
+
+### OTP Input Component
+
+```tsx
+import { useState, useRef } from "react";
+
+export function OTPInput({ length = 6, onComplete }: { 
+  length?: number; 
+  onComplete: (otp: string) => void;
+}) {
+  const [otp, setOtp] = useState<string[]>(new Array(length).fill(""));
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleChange = (index: number, value: string) => {
+    if (isNaN(Number(value))) return;
+
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    // Move to next input
+    if (value && index < length - 1) {
+      inputRefs.current[index + 1]?.focus();
+    }
+
+    // Check if OTP is complete
+    if (newOtp.every(digit => digit !== "")) {
+      onComplete(newOtp.join(""));
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedData = e.clipboardData.getData("text").slice(0, length);
+    const newOtp = [...otp];
+    
+    pastedData.split("").forEach((char, index) => {
+      if (!isNaN(Number(char)) && index < length) {
+        newOtp[index] = char;
+      }
+    });
+    
+    setOtp(newOtp);
+    
+    if (newOtp.every(digit => digit !== "")) {
+      onComplete(newOtp.join(""));
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", gap: "8px" }}>
+      {otp.map((digit, index) => (
+        <input
+          key={index}
+          ref={(el) => (inputRefs.current[index] = el)}
+          type="text"
+          inputMode="numeric"
+          maxLength={1}
+          value={digit}
+          onChange={(e) => handleChange(index, e.target.value)}
+          onKeyDown={(e) => handleKeyDown(index, e)}
+          onPaste={handlePaste}
+          style={{
+            width: "50px",
+            height: "50px",
+            fontSize: "24px",
+            textAlign: "center",
+            border: "2px solid #ddd",
+            borderRadius: "8px",
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+// Usage
+function SignInForm() {
+  const handleOTPComplete = async (otp: string) => {
+    await authClient.signIn.emailOtp({
+      email: "user@example.com",
+      otp,
+    });
+  };
+
+  return <OTPInput length={6} onComplete={handleOTPComplete} />;
+}
+```
+
+## Error Handling
+
+Email OTP authentication can fail for several reasons:
+
+- **Invalid OTP**: The OTP code is incorrect
+- **Expired OTP**: The OTP has expired (default: 5 minutes)
+- **Attempts Exceeded**: Too many failed verification attempts
+- **User Not Found**: The email doesn't exist (when `disableSignUp` is true)
+
+```tsx
+const { error } = await authClient.signIn.emailOtp({
+  email: "user@example.com",
+  otp: "123456",
+});
+
+if (error) {
+  switch (error.status) {
+    case 400:
+      if (error.message.includes("expired")) {
+        console.error("OTP expired. Request a new one.");
+      } else if (error.message.includes("attempts")) {
+        console.error("Too many attempts. Request a new OTP.");
+      } else {
+        console.error("Invalid OTP code.");
+      }
+      break;
+    case 404:
+      console.error("User not found.");
+      break;
+    default:
+      console.error("An error occurred:", error.message);
+  }
+}
+```
+
+## API Reference
+
+### Endpoints
+
+- `POST /email-otp/send-verification-otp` - Send OTP to email
+- `POST /sign-in/email-otp` - Sign in with email and OTP
+- `POST /email-otp/verify-email` - Verify email with OTP
+- `POST /email-otp/check-verification-otp` - Check if OTP is valid (without verifying)
+- `POST /email-otp/request-password-reset` - Request password reset OTP
+- `POST /email-otp/reset-password` - Reset password with OTP
+
+### Server API
+
+```ts
+// Send OTP
+auth.api.sendVerificationOTP({
+  body: {
+    email: "user@example.com",
+    type: "sign-in",
+  },
+});
+
+// Sign in with OTP
+auth.api.signInEmailOTP({
+  body: {
+    email: "user@example.com",
+    otp: "123456",
+  },
+});
+```
+
+### Client API
+
+```ts
+// Send OTP
+authClient.sendVerificationOTP({ email, type })
+
+// Sign in with OTP
+authClient.signIn.emailOtp({ email, otp })
+
+// Verify email with OTP
+authClient.verifyEmail({ email, otp })
+
+// Check OTP validity
+authClient.checkVerificationOTP({ email, otp })
+```
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Use Short Expiration Times">
+    Keep OTP expiration times short (3-5 minutes) to minimize the window of vulnerability.
+    
+    ```ts
+    emailOTP({
+      expiresIn: 180, // 3 minutes
+    })
+    ```
+  </Step>
+
+  <Step title="Limit Verification Attempts">
+    Restrict the number of verification attempts to prevent brute-force attacks.
+    
+    ```ts
+    emailOTP({
+      allowedAttempts: 3,
+    })
+    ```
+  </Step>
+
+  <Step title="Hash OTPs in Database">
+    Store hashed OTPs in the database to protect against database leaks.
+    
+    ```ts
+    emailOTP({
+      storeOTP: "hashed",
+    })
+    ```
+  </Step>
+
+  <Step title="Use Sufficient OTP Length">
+    Use at least 6 digits for OTP codes. Longer codes are more secure.
+    
+    ```ts
+    emailOTP({
+      otpLength: 6, // 6 digits = 1 million combinations
+    })
+    ```
+  </Step>
+
+  <Step title="Implement Rate Limiting">
+    Prevent abuse by limiting how many OTPs can be requested.
+    
+    ```ts
+    emailOTP({
+      rateLimit: {
+        window: 60, // 1 minute
+        max: 3, // Max 3 requests per minute
+      },
+    })
+    ```
+  </Step>
+
+  <Step title="Clear Error Messages">
+    Provide clear but secure error messages that don't leak information about valid email addresses.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### OTP Not Received
+
+- Check spam/junk folder
+- Verify email sending configuration
+- Check rate limiting settings
+- Review server logs for errors
+
+### OTP Expired
+
+- Increase `expiresIn` value if needed
+- Request a new OTP
+
+### Invalid OTP Error
+
+- Ensure the OTP hasn't been used already
+- Verify OTP hasn't expired
+- Check for typos in the OTP entry
+- Verify `storeOTP` configuration matches between send and verify
+
+### Attempts Exceeded
+
+- Wait for the OTP to expire before requesting a new one
+- Clear the verification record from the database if needed
+
+## Related Resources
+
+- [Magic Link](/authentication/magic-link) - Alternative passwordless authentication using links
+- [Email & Password](/authentication/email-password) - Traditional email and password authentication
+- [Phone Number](/authentication/phone-number) - SMS OTP authentication
+- [Rate Limiting](/security/rate-limiting) - Configure rate limiting for authentication endpoints

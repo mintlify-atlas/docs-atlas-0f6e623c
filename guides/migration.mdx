@@ -1,0 +1,795 @@
+---
+title: Migration Guide
+description: Migrate to Better Auth from other authentication solutions including NextAuth.js, Clerk, Supabase, Auth0, and custom implementations.
+---
+
+This guide helps you migrate from popular authentication solutions to Better Auth with minimal disruption.
+
+## Why Migrate to Better Auth?
+
+Better Auth offers:
+- **Full Control**: Own your authentication logic and data
+- **Type Safety**: End-to-end TypeScript support
+- **Flexibility**: Framework-agnostic with adapter support
+- **Extensibility**: Plugin system for custom features
+- **Performance**: Optimized for modern applications
+
+## Migration Strategy
+
+<Steps>
+
+<Step>
+
+### Plan Your Migration
+
+1. **Audit Current Setup**: Document your current auth flows, providers, and custom logic
+2. **Choose Migration Path**: Gradual migration or full replacement
+3. **Set Timeline**: Plan migration phases with minimal user disruption
+4. **Test Strategy**: Set up staging environment for testing
+
+</Step>
+
+<Step>
+
+### Prepare Better Auth
+
+Install and configure Better Auth:
+
+```bash
+npm install better-auth
+npx @better-auth/cli init
+```
+
+</Step>
+
+<Step>
+
+### Migrate Data
+
+Transfer user data from your existing system to Better Auth schema.
+
+</Step>
+
+<Step>
+
+### Update Application Code
+
+Replace authentication calls with Better Auth APIs.
+
+</Step>
+
+<Step>
+
+### Test Thoroughly
+
+Test all authentication flows before going live.
+
+</Step>
+
+</Steps>
+
+## Migrating from NextAuth.js
+
+### Schema Migration
+
+NextAuth and Better Auth have similar database structures, making migration straightforward.
+
+**NextAuth Schema:**
+```sql
+CREATE TABLE users (
+  id TEXT PRIMARY KEY,
+  name TEXT,
+  email TEXT UNIQUE,
+  email_verified TIMESTAMP,
+  image TEXT
+);
+
+CREATE TABLE accounts (
+  id TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id),
+  type TEXT,
+  provider TEXT,
+  provider_account_id TEXT,
+  refresh_token TEXT,
+  access_token TEXT,
+  expires_at INTEGER,
+  token_type TEXT,
+  scope TEXT,
+  id_token TEXT,
+  session_state TEXT
+);
+```
+
+**Better Auth Schema:**
+```sql
+-- Better Auth uses similar structure
+-- Generate schema with:
+npx @better-auth/cli generate
+```
+
+### Data Migration Script
+
+```typescript title="scripts/migrate-from-nextauth.ts"
+import { db as oldDb } from "./old-db"; // NextAuth database
+import { db as newDb } from "./new-db"; // Better Auth database
+import { createHash } from "crypto";
+
+async function migrateUsers() {
+  const users = await oldDb.user.findMany();
+  
+  for (const user of users) {
+    await newDb.insert("user").values({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      emailVerified: user.emailVerified ? true : false,
+      image: user.image,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+  
+  console.log(`Migrated ${users.length} users`);
+}
+
+async function migrateAccounts() {
+  const accounts = await oldDb.account.findMany();
+  
+  for (const account of accounts) {
+    await newDb.insert("account").values({
+      id: account.id,
+      userId: account.userId,
+      accountId: account.providerAccountId,
+      providerId: account.provider,
+      accessToken: account.access_token,
+      refreshToken: account.refresh_token,
+      expiresAt: account.expires_at ? new Date(account.expires_at * 1000) : null,
+      scope: account.scope,
+      idToken: account.id_token,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+  
+  console.log(`Migrated ${accounts.length} accounts`);
+}
+
+async function migrateSessions() {
+  const sessions = await oldDb.session.findMany();
+  
+  for (const session of sessions) {
+    await newDb.insert("session").values({
+      id: session.sessionToken,
+      userId: session.userId,
+      token: session.sessionToken,
+      expiresAt: session.expires,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+  }
+  
+  console.log(`Migrated ${sessions.length} sessions`);
+}
+
+async function main() {
+  console.log("Starting migration from NextAuth to Better Auth...");
+  
+  await migrateUsers();
+  await migrateAccounts();
+  await migrateSessions();
+  
+  console.log("Migration completed!");
+}
+
+main().catch(console.error);
+```
+
+Run migration:
+
+```bash
+ts-node scripts/migrate-from-nextauth.ts
+```
+
+### Code Migration
+
+**Before (NextAuth):**
+```typescript
+import NextAuth from "next-auth";
+import GoogleProvider from "next-auth/providers/google";
+
+export const authOptions = {
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    }),
+  ],
+};
+
+export default NextAuth(authOptions);
+```
+
+**After (Better Auth):**
+```typescript
+import { betterAuth } from "better-auth";
+import { nextCookies } from "better-auth/next-js";
+
+export const auth = betterAuth({
+  database: {
+    // Your database config
+  },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    },
+  },
+  plugins: [nextCookies()],
+});
+```
+
+**Client-side Migration:**
+
+```typescript
+// Before (NextAuth)
+import { signIn, signOut, useSession } from "next-auth/react";
+
+function Component() {
+  const { data: session } = useSession();
+  
+  return (
+    <button onClick={() => signIn("google")}>Sign In</button>
+  );
+}
+
+// After (Better Auth)
+import { authClient } from "./lib/auth-client";
+
+function Component() {
+  const { data: session } = authClient.useSession();
+  
+  return (
+    <button onClick={() => authClient.signIn.social({ provider: "google" })}>
+      Sign In
+    </button>
+  );
+}
+```
+
+## Migrating from Clerk
+
+### Understanding Differences
+
+Clerk is a managed service while Better Auth is self-hosted. Key differences:
+
+- **User Management**: Migrate from Clerk's managed users to your database
+- **Sessions**: Different session management approaches
+- **Organizations**: Map Clerk organizations to Better Auth organization plugin
+
+### Export Clerk Data
+
+Use Clerk's API to export users:
+
+```typescript title="scripts/export-clerk-users.ts"
+import { clerkClient } from "@clerk/clerk-sdk-node";
+import { writeFileSync } from "fs";
+
+async function exportClerkUsers() {
+  const users = await clerkClient.users.getUserList();
+  
+  const exportData = users.map(user => ({
+    id: user.id,
+    email: user.emailAddresses[0]?.emailAddress,
+    firstName: user.firstName,
+    lastName: user.lastName,
+    emailVerified: user.emailAddresses[0]?.verification.status === "verified",
+    imageUrl: user.imageUrl,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  }));
+  
+  writeFileSync(
+    "clerk-users-export.json",
+    JSON.stringify(exportData, null, 2)
+  );
+  
+  console.log(`Exported ${exportData.length} users`);
+}
+
+exportClerkUsers();
+```
+
+### Import to Better Auth
+
+```typescript title="scripts/import-from-clerk.ts"
+import { readFileSync } from "fs";
+import { db } from "./lib/db";
+import { users } from "./lib/schema";
+
+async function importClerkUsers() {
+  const data = JSON.parse(readFileSync("clerk-users-export.json", "utf-8"));
+  
+  for (const user of data) {
+    await db.insert(users).values({
+      id: user.id,
+      email: user.email,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      emailVerified: user.emailVerified,
+      image: user.imageUrl,
+      createdAt: new Date(user.createdAt),
+      updatedAt: new Date(user.updatedAt),
+    });
+  }
+  
+  console.log(`Imported ${data.length} users`);
+}
+
+importClerkUsers();
+```
+
+### Code Migration
+
+**Before (Clerk):**
+```typescript
+import { useUser, useAuth } from "@clerk/nextjs";
+
+function Component() {
+  const { user } = useUser();
+  const { signOut } = useAuth();
+  
+  return (
+    <div>
+      <p>Welcome {user?.firstName}</p>
+      <button onClick={() => signOut()}>Sign Out</button>
+    </div>
+  );
+}
+```
+
+**After (Better Auth):**
+```typescript
+import { authClient } from "./lib/auth-client";
+
+function Component() {
+  const { data: session } = authClient.useSession();
+  
+  return (
+    <div>
+      <p>Welcome {session?.user.name}</p>
+      <button onClick={() => authClient.signOut()}>Sign Out</button>
+    </div>
+  );
+}
+```
+
+## Migrating from Supabase Auth
+
+### Export Supabase Users
+
+```typescript title="scripts/export-supabase-users.ts"
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_KEY! // Service role key
+);
+
+async function exportUsers() {
+  const { data: users, error } = await supabase.auth.admin.listUsers();
+  
+  if (error) throw error;
+  
+  return users.users.map(user => ({
+    id: user.id,
+    email: user.email,
+    emailVerified: user.email_confirmed_at ? true : false,
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
+    metadata: user.user_metadata,
+  }));
+}
+```
+
+### Password Migration
+
+Supabase uses bcrypt for password hashing. Better Auth can maintain compatibility:
+
+```typescript title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import bcrypt from "bcrypt";
+
+export const auth = betterAuth({
+  // ... other config
+  advanced: {
+    customPasswordVerify: async (password: string, hash: string) => {
+      // Support legacy Supabase password hashes
+      return await bcrypt.compare(password, hash);
+    },
+  },
+});
+```
+
+### Code Migration
+
+**Before (Supabase):**
+```typescript
+import { useSupabaseClient, useUser } from "@supabase/auth-helpers-react";
+
+function Component() {
+  const supabase = useSupabaseClient();
+  const user = useUser();
+  
+  const handleSignIn = async () => {
+    await supabase.auth.signInWithPassword({
+      email: "user@example.com",
+      password: "password",
+    });
+  };
+  
+  return <button onClick={handleSignIn}>Sign In</button>;
+}
+```
+
+**After (Better Auth):**
+```typescript
+import { authClient } from "./lib/auth-client";
+
+function Component() {
+  const { data: session } = authClient.useSession();
+  
+  const handleSignIn = async () => {
+    await authClient.signIn.email({
+      email: "user@example.com",
+      password: "password",
+    });
+  };
+  
+  return <button onClick={handleSignIn}>Sign In</button>;
+}
+```
+
+## Migrating from Auth0
+
+### Export Auth0 Users
+
+Use Auth0 Management API:
+
+```typescript title="scripts/export-auth0-users.ts"
+import { ManagementClient } from "auth0";
+
+const management = new ManagementClient({
+  domain: process.env.AUTH0_DOMAIN!,
+  clientId: process.env.AUTH0_CLIENT_ID!,
+  clientSecret: process.env.AUTH0_CLIENT_SECRET!,
+});
+
+async function exportAuth0Users() {
+  const users = await management.getUsers();
+  
+  return users.map(user => ({
+    id: user.user_id,
+    email: user.email,
+    name: user.name,
+    emailVerified: user.email_verified,
+    picture: user.picture,
+    createdAt: user.created_at,
+    updatedAt: user.updated_at,
+  }));
+}
+```
+
+### Handle Social Connections
+
+```typescript title="scripts/migrate-auth0-connections.ts"
+async function migrateAuth0Connections(userId: string, auth0User: any) {
+  const identities = auth0User.identities || [];
+  
+  for (const identity of identities) {
+    if (identity.provider !== "auth0") {
+      await db.insert(accounts).values({
+        id: generateId(),
+        userId: userId,
+        providerId: identity.provider,
+        accountId: identity.user_id,
+        accessToken: identity.access_token,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+    }
+  }
+}
+```
+
+## Migrating from Custom Auth
+
+### Analyze Current Implementation
+
+1. **Identify Tables**: Document your current user, session, and related tables
+2. **Map Fields**: Create mapping between your schema and Better Auth schema
+3. **Custom Logic**: Identify custom authentication logic to replicate
+
+### Schema Mapping Example
+
+```typescript title="scripts/custom-migration.ts"
+import { db as oldDb } from "./old-db";
+import { db as newDb } from "./new-db";
+
+const fieldMapping = {
+  // Old field → New field
+  user_id: "id",
+  user_email: "email",
+  display_name: "name",
+  avatar_url: "image",
+  verified_email: "emailVerified",
+  created_timestamp: "createdAt",
+};
+
+async function migrateCustomUsers() {
+  const oldUsers = await oldDb.query("SELECT * FROM legacy_users");
+  
+  for (const oldUser of oldUsers) {
+    const newUser: any = {};
+    
+    for (const [oldField, newField] of Object.entries(fieldMapping)) {
+      newUser[newField] = oldUser[oldField];
+    }
+    
+    await newDb.insert("user").values(newUser);
+  }
+}
+```
+
+### Preserve Password Hashes
+
+```typescript title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import { createHash } from "crypto";
+
+export const auth = betterAuth({
+  advanced: {
+    customPasswordVerify: async (password: string, hash: string) => {
+      // Support your legacy password hashing
+      const legacyHash = createHash("sha256")
+        .update(password)
+        .digest("hex");
+      
+      if (legacyHash === hash) {
+        // Match found - rehash with bcrypt for future
+        return true;
+      }
+      
+      return false;
+    },
+  },
+});
+```
+
+## Gradual Migration Strategy
+
+### Dual Authentication Period
+
+Run both systems simultaneously:
+
+```typescript title="middleware.ts"
+import { NextResponse } from "next/server";
+import { auth as betterAuth } from "./lib/better-auth";
+import { auth as legacyAuth } from "./lib/legacy-auth";
+
+export async function middleware(request: Request) {
+  // Try Better Auth first
+  let session = await betterAuth.api.getSession({ headers: request.headers });
+  
+  // Fallback to legacy auth
+  if (!session) {
+    const legacySession = await legacyAuth.getSession(request);
+    
+    if (legacySession) {
+      // Migrate user to Better Auth
+      session = await migrateLegacySession(legacySession);
+    }
+  }
+  
+  if (!session) {
+    return NextResponse.redirect("/login");
+  }
+  
+  return NextResponse.next();
+}
+```
+
+## Post-Migration Checklist
+
+<Steps>
+
+<Step>
+
+### Verify Data Integrity
+
+- All users migrated successfully
+- Sessions are working
+- OAuth connections intact
+- Passwords functioning
+
+</Step>
+
+<Step>
+
+### Test Authentication Flows
+
+- Sign up
+- Sign in (email/password)
+- Social sign in
+- Password reset
+- Email verification
+- Session management
+
+</Step>
+
+<Step>
+
+### Monitor for Issues
+
+- Set up error tracking
+- Monitor authentication failures
+- Track migration success rate
+- Collect user feedback
+
+</Step>
+
+<Step>
+
+### Decommission Old System
+
+Once stable:
+- Remove legacy authentication code
+- Archive old authentication database
+- Update documentation
+- Notify team of completion
+
+</Step>
+
+</Steps>
+
+## Common Migration Challenges
+
+### Password Compatibility
+
+**Problem**: Different hashing algorithms
+
+**Solution**: Use custom password verifier during transition:
+
+```typescript
+customPasswordVerify: async (password, hash) => {
+  // Try new format first
+  if (await newHashVerify(password, hash)) return true;
+  
+  // Try legacy format
+  if (await legacyHashVerify(password, hash)) {
+    // Rehash in new format
+    await rehashPassword(userId, password);
+    return true;
+  }
+  
+  return false;
+}
+```
+
+### Session Invalidation
+
+**Problem**: Users logged out after migration
+
+**Solution**: Preserve session tokens during migration:
+
+```typescript
+async function migrateSessions() {
+  const sessions = await legacyDb.sessions.findMany();
+  
+  for (const session of sessions) {
+    await newDb.insert("session").values({
+      token: session.token, // Preserve existing token
+      userId: session.userId,
+      expiresAt: session.expiresAt,
+    });
+  }
+}
+```
+
+### OAuth Connection Loss
+
+**Problem**: Social login connections broken
+
+**Solution**: Migrate OAuth account links:
+
+```typescript
+async function migrateOAuthAccounts() {
+  // Map provider names if different
+  const providerMap = {
+    "oauth2": "google",
+    "github-oauth": "github",
+  };
+  
+  for (const account of legacyAccounts) {
+    await newDb.insert("account").values({
+      providerId: providerMap[account.provider] || account.provider,
+      accountId: account.externalId,
+      userId: account.userId,
+    });
+  }
+}
+```
+
+## Migration Scripts
+
+Complete migration script template:
+
+```typescript title="scripts/migrate.ts"
+import { program } from "commander";
+import { migrateUsers } from "./migrate-users";
+import { migrateAccounts } from "./migrate-accounts";
+import { migrateSessions } from "./migrate-sessions";
+
+program
+  .name("migrate")
+  .description("Migration tool for Better Auth")
+  .version("1.0.0");
+
+program
+  .command("users")
+  .description("Migrate users")
+  .action(async () => {
+    await migrateUsers();
+  });
+
+program
+  .command("accounts")
+  .description("Migrate OAuth accounts")
+  .action(async () => {
+    await migrateAccounts();
+  });
+
+program
+  .command("sessions")
+  .description("Migrate sessions")
+  .action(async () => {
+    await migrateSessions();
+  });
+
+program
+  .command("all")
+  .description("Run all migrations")
+  .action(async () => {
+    console.log("Starting full migration...");
+    await migrateUsers();
+    await migrateAccounts();
+    await migrateSessions();
+    console.log("Migration completed!");
+  });
+
+program.parse();
+```
+
+Run migrations:
+
+```bash
+# Migrate everything
+npm run migrate all
+
+# Or step by step
+npm run migrate users
+npm run migrate accounts
+npm run migrate sessions
+```
+
+## Getting Help
+
+If you encounter issues during migration:
+
+- Check the [Better Auth Discord](https://discord.gg/better-auth)
+- Review [migration examples](https://github.com/better-auth/better-auth/tree/main/examples/migrations)
+- Consult [specific migration guides](/guides) for your platform
+
+## Next Steps
+
+- Review [Deployment Guide](/guides/deployment) for production setup
+- Explore [Testing Strategies](/guides/testing) for validation
+- Learn about [Custom Plugins](/guides/custom-plugin) for additional features

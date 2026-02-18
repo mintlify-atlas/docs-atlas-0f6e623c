@@ -1,0 +1,527 @@
+---
+title: Vue Client
+description: Use Better Auth with Vue.js using composables for authentication and session management.
+---
+
+# Vue Client
+
+The Vue client provides composables (Vue's Composition API) for authentication in Vue 3 applications. It integrates seamlessly with Vue's reactivity system using refs.
+
+## Installation
+
+```bash
+npm install better-auth
+# or
+pnpm add better-auth
+# or
+yarn add better-auth
+```
+
+## Basic Setup
+
+<Steps>
+
+### Create Client Instance
+
+Create a client instance by importing from `better-auth/vue`:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/vue";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000", // Your backend URL
+});
+```
+
+### Configure Options
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/vue";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  basePath: "/api/auth",
+  fetchOptions: {
+    onError(ctx) {
+      console.error("Auth error:", ctx.error);
+    },
+  },
+});
+```
+
+</Steps>
+
+## Composables API
+
+### useSession
+
+The primary composable for accessing session state:
+
+```vue title="components/UserProfile.vue"
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+
+const session = authClient.useSession();
+
+const handleSignOut = async () => {
+  await authClient.signOut();
+};
+</script>
+
+<template>
+  <div v-if="session.isPending">
+    Loading...
+  </div>
+  
+  <div v-else-if="session.error">
+    Error: {{ session.error.message }}
+  </div>
+  
+  <div v-else-if="!session.data">
+    Not authenticated
+  </div>
+  
+  <div v-else>
+    <h1>Welcome {{ session.data.user.name }}!</h1>
+    <p>Email: {{ session.data.user.email }}</p>
+    <button @click="handleSignOut">Sign Out</button>
+  </div>
+</template>
+```
+
+#### Session Object
+
+The `useSession` composable returns a Vue ref with the following structure:
+
+```ts
+import type { DeepReadonly, Ref } from "vue";
+
+interface UseSessionReturn {
+  data: {
+    session: Session | null;
+    user: User | null;
+  } | null;
+  isPending: boolean;
+  isRefetching: boolean;
+  error: BetterFetchError | null;
+  refetch: (params?: { query?: SessionQueryParams }) => Promise<void>;
+}
+
+type SessionRef = DeepReadonly<Ref<UseSessionReturn>>;
+```
+
+### Manual Refetch
+
+```vue
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+
+const session = authClient.useSession();
+
+const refreshSession = async () => {
+  await session.value.refetch();
+};
+
+const forceRefresh = async () => {
+  await session.value.refetch({
+    query: { disableCookieCache: true }
+  });
+};
+</script>
+
+<template>
+  <div>
+    <button @click="refreshSession">Refresh Session</button>
+    <button @click="forceRefresh">Force Refresh</button>
+  </div>
+</template>
+```
+
+## Authentication Methods
+
+### Sign Up
+
+```vue title="pages/SignUp.vue"
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+const email = ref("");
+const password = ref("");
+const name = ref("");
+const error = ref("");
+const loading = ref(false);
+
+const handleSignUp = async () => {
+  error.value = "";
+  loading.value = true;
+
+  const { data, error: signUpError } = await authClient.signUp.email({
+    email: email.value,
+    password: password.value,
+    name: name.value,
+  });
+
+  loading.value = false;
+
+  if (signUpError) {
+    error.value = signUpError.message ?? "Failed to sign up";
+    return;
+  }
+
+  router.push("/dashboard");
+};
+</script>
+
+<template>
+  <form @submit.prevent="handleSignUp">
+    <input
+      v-model="name"
+      type="text"
+      placeholder="Name"
+      required
+    />
+    <input
+      v-model="email"
+      type="email"
+      placeholder="Email"
+      required
+    />
+    <input
+      v-model="password"
+      type="password"
+      placeholder="Password"
+      required
+    />
+    <div v-if="error" class="error">{{ error }}</div>
+    <button type="submit" :disabled="loading">
+      {{ loading ? "Signing up..." : "Sign Up" }}
+    </button>
+  </form>
+</template>
+```
+
+### Sign In
+
+```vue title="pages/SignIn.vue"
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+
+const router = useRouter();
+const email = ref("");
+const password = ref("");
+const error = ref("");
+const loading = ref(false);
+
+const handleSignIn = async () => {
+  error.value = "";
+  loading.value = true;
+
+  const { error: signInError } = await authClient.signIn.email({
+    email: email.value,
+    password: password.value,
+  });
+
+  loading.value = false;
+
+  if (signInError) {
+    error.value = signInError.message ?? "Failed to sign in";
+    return;
+  }
+
+  router.push("/dashboard");
+};
+</script>
+
+<template>
+  <form @submit.prevent="handleSignIn">
+    <input
+      v-model="email"
+      type="email"
+      placeholder="Email"
+      required
+    />
+    <input
+      v-model="password"
+      type="password"
+      placeholder="Password"
+      required
+    />
+    <div v-if="error" class="error">{{ error }}</div>
+    <button type="submit" :disabled="loading">
+      {{ loading ? "Signing in..." : "Sign In" }}
+    </button>
+  </form>
+</template>
+```
+
+### Social Sign In
+
+```vue
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+
+const handleSocialSignIn = async (provider: "google" | "github") => {
+  await authClient.signIn.social({
+    provider,
+    callbackURL: "/dashboard",
+  });
+};
+</script>
+
+<template>
+  <div>
+    <button @click="handleSocialSignIn('google')">
+      Sign in with Google
+    </button>
+    <button @click="handleSocialSignIn('github')">
+      Sign in with GitHub
+    </button>
+  </div>
+</template>
+```
+
+### Sign Out
+
+```vue
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+
+const handleSignOut = async () => {
+  await authClient.signOut();
+  // Session will automatically update
+};
+</script>
+
+<template>
+  <button @click="handleSignOut">Sign Out</button>
+</template>
+```
+
+## Protected Routes
+
+### Navigation Guard
+
+```ts title="router/index.ts"
+import { createRouter, createWebHistory } from "vue-router";
+import { authClient } from "@/lib/auth-client";
+
+const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    {
+      path: "/",
+      component: () => import("@/pages/Home.vue"),
+    },
+    {
+      path: "/sign-in",
+      component: () => import("@/pages/SignIn.vue"),
+    },
+    {
+      path: "/dashboard",
+      component: () => import("@/pages/Dashboard.vue"),
+      meta: { requiresAuth: true },
+    },
+  ],
+});
+
+router.beforeEach((to, from, next) => {
+  const session = authClient.$store.atoms.session.get();
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+
+  if (requiresAuth && !session.data) {
+    next("/sign-in");
+  } else {
+    next();
+  }
+});
+
+export default router;
+```
+
+### Protected Component
+
+```vue title="components/ProtectedContent.vue"
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+import { computed } from "vue";
+
+const session = authClient.useSession();
+const isAuthenticated = computed(() => !!session.value.data);
+</script>
+
+<template>
+  <div v-if="session.isPending">
+    Loading...
+  </div>
+  <div v-else-if="isAuthenticated">
+    <slot />
+  </div>
+  <div v-else>
+    <p>Please sign in to view this content.</p>
+    <router-link to="/sign-in">Sign In</router-link>
+  </div>
+</template>
+```
+
+## User Management
+
+### Update User Profile
+
+```vue
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+import { ref, watch } from "vue";
+
+const session = authClient.useSession();
+const name = ref("");
+const loading = ref(false);
+const message = ref("");
+
+watch(
+  () => session.value.data?.user.name,
+  (newName) => {
+    if (newName) name.value = newName;
+  },
+  { immediate: true }
+);
+
+const handleUpdate = async () => {
+  loading.value = true;
+  message.value = "";
+  
+  const { error } = await authClient.updateUser({ 
+    name: name.value 
+  });
+  
+  loading.value = false;
+  
+  if (error) {
+    message.value = "Failed to update profile";
+  } else {
+    message.value = "Profile updated!";
+  }
+};
+</script>
+
+<template>
+  <form @submit.prevent="handleUpdate">
+    <input
+      v-model="name"
+      placeholder="Name"
+    />
+    <button type="submit" :disabled="loading">
+      {{ loading ? "Updating..." : "Update Profile" }}
+    </button>
+    <p v-if="message">{{ message }}</p>
+  </form>
+</template>
+```
+
+## Nuxt Integration
+
+For Nuxt-specific integration with SSR support:
+
+```vue title="components/UserSession.vue"
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+
+// Use with Nuxt's useFetch for SSR
+const session = await authClient.useSession(useFetch);
+</script>
+
+<template>
+  <div v-if="session.data.value">
+    Welcome {{ session.data.value.user.name }}
+  </div>
+</template>
+```
+
+<Note>
+The Vue client's `useSession` composable accepts an optional `useFetch` function for SSR compatibility with frameworks like Nuxt.
+</Note>
+
+## Plugin Composables
+
+When using plugins, additional composables become available:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/vue";
+import { organizationClient } from "better-auth/client/plugins";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+  plugins: [organizationClient()],
+});
+```
+
+```vue
+<script setup lang="ts">
+import { authClient } from "@/lib/auth-client";
+
+// Plugin composables are automatically available
+const activeOrg = authClient.useActiveOrganization();
+</script>
+
+<template>
+  <div v-if="activeOrg.value.data">
+    Current Organization: {{ activeOrg.value.data.name }}
+  </div>
+</template>
+```
+
+## TypeScript Support
+
+The Vue client provides full TypeScript support:
+
+```ts
+import type { AuthClient } from "better-auth/vue";
+import { computed } from "vue";
+
+// Infer session type
+type Session = typeof authClient.$Infer.Session;
+
+function useUserRole() {
+  const session = authClient.useSession();
+  
+  return computed(() => session.value.data?.user.role);
+}
+```
+
+## Best Practices
+
+<Note>
+**Reactivity Tips:**
+- All composables return Vue refs that are deeply readonly
+- Access values using `.value` property
+- Use `computed` for derived state
+- Composables can only be called in `setup()` or `<script setup>`
+</Note>
+
+<Note>
+**Performance:**
+- Session state is shared globally across all components
+- Composables automatically handle subscription cleanup
+- Avoid unnecessary reactive transformations of session data
+</Note>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Nuxt Integration" icon="n" href="/integrations/nuxt">
+    SSR support with Nuxt
+  </Card>
+  <Card title="Vue Router" icon="route" href="/integrations/vue-router">
+    Route guards and navigation
+  </Card>
+  <Card title="Plugins" icon="plug" href="/plugins/overview">
+    Extend functionality with plugins
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/client/methods">
+    Complete API reference
+  </Card>
+</CardGroup>

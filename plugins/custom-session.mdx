@@ -1,0 +1,495 @@
+---
+title: Custom Session
+description: Extend session data with custom fields and transformations
+---
+
+The custom session plugin allows you to extend the default session response with custom data, enabling you to add computed fields, additional user information, or transform session data to match your application's needs.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { customSession } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        customSession(async ({ user, session }) => {
+          return {
+            user: {
+              firstName: user.name.split(" ")[0],
+              lastName: user.name.split(" ")[1],
+              fullName: user.name
+            },
+            session,
+            metadata: {
+              lastLogin: new Date()
+            }
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { customSessionClient } from "better-auth/client/plugins"
+    import type { auth } from "./auth"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        customSessionClient<typeof auth>()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+The custom session plugin modifies the `/get-session` endpoint to return your custom data structure instead of the default session format.
+
+### Basic Example
+
+Transform user data by splitting names into first and last names:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(async ({ user, session }) => {
+      const [firstName, lastName] = user.name.split(" ")
+      
+      return {
+        user: {
+          id: user.id,
+          firstName,
+          lastName,
+          email: user.email
+        },
+        session: {
+          token: session.token,
+          expiresAt: session.expiresAt
+        }
+      }
+    })
+  ]
+})
+```
+
+Client usage:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.getSession()
+
+if (data) {
+  console.log(data.user.firstName) // "John"
+  console.log(data.user.lastName)  // "Doe"
+}
+```
+
+### Add Computed Fields
+
+Add computed fields based on user data:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(async ({ user, session }) => {
+      const memberSince = new Date(user.createdAt)
+      const daysSinceMember = Math.floor(
+        (Date.now() - memberSince.getTime()) / (1000 * 60 * 60 * 24)
+      )
+      
+      return {
+        user: {
+          ...user,
+          membershipDays: daysSinceMember,
+          isNewMember: daysSinceMember < 30
+        },
+        session
+      }
+    })
+  ]
+})
+```
+
+### Fetch Additional Data
+
+Query your database for related data:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+import { db } from "./db"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(async ({ user, session }, ctx) => {
+      // Fetch user's profile from your database
+      const profile = await db.profile.findUnique({
+        where: { userId: user.id }
+      })
+      
+      // Fetch user's subscription status
+      const subscription = await db.subscription.findFirst({
+        where: { 
+          userId: user.id,
+          status: "active"
+        }
+      })
+      
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          avatar: profile?.avatar,
+          bio: profile?.bio
+        },
+        session,
+        subscription: {
+          tier: subscription?.tier ?? "free",
+          active: !!subscription
+        }
+      }
+    })
+  ]
+})
+```
+
+### Access Request Context
+
+The custom session function receives the endpoint context as the second parameter:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(async ({ user, session }, ctx) => {
+      // Access request headers
+      const userAgent = ctx.headers?.get("user-agent")
+      
+      // Access internal adapter
+      const sessions = await ctx.context.internalAdapter.findSessions([
+        session.token
+      ])
+      
+      return {
+        user,
+        session,
+        metadata: {
+          userAgent,
+          deviceType: userAgent?.includes("Mobile") ? "mobile" : "desktop"
+        }
+      }
+    })
+  ]
+})
+```
+
+## Integration with Multi-Session
+
+The custom session plugin can be used alongside the multi-session plugin to customize the session data returned by `listDeviceSessions`.
+
+<Steps>
+  <Step>
+    ### Enable multi-session integration
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { customSession, multiSession } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        multiSession(),
+        customSession(
+          async ({ user, session }) => {
+            return {
+              user: {
+                id: user.id,
+                displayName: user.name,
+                email: user.email
+              },
+              session,
+              custom: {
+                lastActive: new Date()
+              }
+            }
+          },
+          undefined, // options parameter
+          { shouldMutateListDeviceSessionsEndpoint: true }
+        )
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Use in client
+
+    ```ts
+    import { authClient } from "@/lib/auth-client"
+
+    const { data: sessions } = await authClient.multiSession.listDeviceSessions()
+
+    sessions?.forEach(session => {
+      console.log(session.user.displayName)
+      console.log(session.custom.lastActive)
+    })
+    ```
+  </Step>
+</Steps>
+
+## Configuration Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(
+      async ({ user, session }, ctx) => {
+        return {
+          user,
+          session
+        }
+      },
+      undefined, // BetterAuthOptions (for type inference)
+      {
+        // Mutate multi-session listDeviceSessions endpoint
+        shouldMutateListDeviceSessionsEndpoint: false // Default: false
+      }
+    )
+  ]
+})
+```
+
+### Parameters
+
+The custom session function receives two parameters:
+
+1. **`{ user, session }`**: The current user and session objects
+2. **`ctx`**: The endpoint context with access to:
+   - `ctx.headers`: Request headers
+   - `ctx.context`: Auth context including database adapter
+   - `ctx.request`: Original request object
+   - `ctx.body`: Request body (if applicable)
+
+### Query Parameters
+
+The `/get-session` endpoint accepts optional query parameters:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+// Disable cookie cache and fetch fresh from database
+const { data } = await authClient.getSession({
+  query: {
+    disableCookieCache: true
+  }
+})
+
+// Disable session refresh (don't update lastActive)
+const { data } = await authClient.getSession({
+  query: {
+    disableRefresh: true
+  }
+})
+```
+
+## Type Safety
+
+The custom session plugin automatically infers return types for type-safe client usage:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(async ({ user, session }) => {
+      return {
+        user: {
+          firstName: user.name.split(" ")[0],
+          lastName: user.name.split(" ")[1]
+        },
+        session,
+        metadata: {
+          loginCount: 42
+        }
+      }
+    })
+  ]
+})
+
+// Type is automatically inferred
+type Session = typeof auth.$Infer.Session
+// Session = {
+//   user: { firstName: string; lastName: string }
+//   session: Session
+//   metadata: { loginCount: number }
+// }
+```
+
+Client usage with full type safety:
+
+```ts title="app.ts"
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.getSession()
+
+if (data) {
+  // TypeScript knows these fields exist
+  const firstName: string = data.user.firstName
+  const loginCount: number = data.metadata.loginCount
+}
+```
+
+## Example: Complete Implementation
+
+```tsx title="components/user-profile.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useEffect, useState } from "react"
+
+export function UserProfile() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadSession()
+  }, [])
+
+  const loadSession = async () => {
+    const { data } = await authClient.getSession()
+    setSession(data)
+    setLoading(false)
+  }
+
+  if (loading) {
+    return <div>Loading...</div>
+  }
+
+  if (!session) {
+    return <div>Not authenticated</div>
+  }
+
+  return (
+    <div className="user-profile">
+      <img src={session.user.avatar} alt={session.user.name} />
+      <div>
+        <h2>{session.user.firstName} {session.user.lastName}</h2>
+        <p>{session.user.email}</p>
+        <p>{session.user.bio}</p>
+      </div>
+      
+      <div className="subscription-info">
+        <h3>Subscription</h3>
+        <p>Tier: {session.subscription.tier}</p>
+        <p>Status: {session.subscription.active ? "Active" : "Inactive"}</p>
+      </div>
+      
+      <div className="session-info">
+        <p>Member for {session.user.membershipDays} days</p>
+        <p>Last login: {new Date(session.metadata.lastLogin).toLocaleString()}</p>
+      </div>
+    </div>
+  )
+}
+```
+
+## Use Cases
+
+1. **Computed Fields**: Add derived data without modifying database schema
+2. **Data Aggregation**: Combine data from multiple tables into session
+3. **Display Names**: Transform data for presentation (e.g., split full names)
+4. **Feature Flags**: Include user's feature access in session
+5. **Permissions**: Add role-based permissions to session response
+6. **Analytics**: Include user metrics in session for quick access
+7. **Subscription Status**: Add payment/subscription info to session
+8. **Preferences**: Include user preferences without extra requests
+
+## Best Practices
+
+1. **Keep It Light**: Don't fetch heavy data that slows down every session check
+2. **Cache When Possible**: Cache computed values that don't change often
+3. **Type Safety**: Use TypeScript for type-safe custom session data
+4. **Error Handling**: Handle database query failures gracefully
+5. **Security**: Don't expose sensitive data unnecessarily
+6. **Performance**: Consider using cookie cache for frequently accessed sessions
+7. **Consistency**: Return consistent data structure across all sessions
+
+## Performance Considerations
+
+<Note>
+Custom session functions run on every `/get-session` call. Keep database queries minimal and use caching strategies for expensive operations.
+</Note>
+
+### Cookie Cache
+
+Enable cookie cache to reduce database queries:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  session: {
+    cookieCache: {
+      enabled: true,
+      maxAge: 300 // 5 minutes
+    }
+  },
+  plugins: [
+    customSession(async ({ user, session }) => {
+      // This runs less frequently with cookie cache enabled
+      return {
+        user,
+        session
+      }
+    })
+  ]
+})
+```
+
+### Conditional Data Loading
+
+Only fetch expensive data when needed:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { customSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    customSession(async ({ user, session }, ctx) => {
+      // Check if we need detailed data
+      const needsDetails = ctx.headers?.get("x-load-full-profile") === "true"
+      
+      if (needsDetails) {
+        const profile = await fetchDetailedProfile(user.id)
+        return { user, session, profile }
+      }
+      
+      return { user, session }
+    })
+  ]
+})
+```

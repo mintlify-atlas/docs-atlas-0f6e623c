@@ -1,0 +1,776 @@
+---
+title: 'Context API'
+description: 'Access authentication context and utilities in Better Auth'
+---
+
+## Overview
+
+The `AuthContext` provides access to the authentication system's internal state, adapters, utilities, and configuration. It's available in plugins, endpoints, and server-side operations.
+
+## Accessing Context
+
+### From auth.$context
+
+```typescript
+import { auth } from "./auth"
+
+const ctx = await auth.$context
+
+// Access adapters, configuration, etc.
+const user = await ctx.internalAdapter.findUserById(userId)
+```
+
+### In Plugins
+
+```typescript
+import type { BetterAuthPlugin } from "better-auth"
+
+export const myPlugin = (): BetterAuthPlugin => ({
+	id: "my-plugin",
+	init: async (ctx) => {
+		// Context is passed to init
+		console.log("Base URL:", ctx.baseURL)
+	},
+	endpoints: {
+		myEndpoint: createAuthEndpoint("/my-endpoint", {}, async (ctx) => {
+			// Context available in ctx.context
+			const session = ctx.context.session
+		})
+	}
+})
+```
+
+### In Endpoint Handlers
+
+```typescript
+import { createAuthEndpoint } from "better-auth/api"
+
+export const myEndpoint = createAuthEndpoint("/my-endpoint", {
+	method: "POST"
+}, async (ctx) => {
+	// Access full context
+	const authCtx = ctx.context
+	
+	// Use adapters
+	const user = await authCtx.adapter.findOne({
+		model: "user",
+		where: [{ field: "email", value: email }]
+	})
+})
+```
+
+## AuthContext Properties
+
+### Core Information
+
+<ResponseField name="appName" type="string">
+	Application name from configuration. Defaults to `"Better Auth"`.
+	
+	```typescript
+	ctx.appName // "My App"
+	```
+</ResponseField>
+
+<ResponseField name="baseURL" type="string">
+	Full base URL of the auth server.
+	
+	```typescript
+	ctx.baseURL // "https://example.com/api/auth"
+	```
+</ResponseField>
+
+<ResponseField name="version" type="string">
+	Better Auth version.
+	
+	```typescript
+	ctx.version // "1.0.0"
+	```
+</ResponseField>
+
+<ResponseField name="options" type="BetterAuthOptions">
+	Complete configuration options passed to `betterAuth()`.
+	
+	```typescript
+	const sessionExpiry = ctx.options.session?.expiresIn
+	```
+</ResponseField>
+
+### Session & User
+
+<ResponseField name="session" type="{ session: Session, user: User } | null">
+	Current session data if available.
+	
+	```typescript
+	if (ctx.session) {
+		console.log("User:", ctx.session.user.email)
+		console.log("Session expires:", ctx.session.session.expiresAt)
+	}
+	```
+</ResponseField>
+
+<ResponseField name="newSession" type="{ session: Session, user: User } | null">
+	New session that will be set after the request (when `set-cookie` header is present).
+	
+	```typescript
+	if (ctx.newSession) {
+		console.log("New session created for:", ctx.newSession.user.id)
+	}
+	```
+</ResponseField>
+
+<ResponseField name="setNewSession" type="function">
+	Set a new session for the request.
+	
+	**Parameters:**
+	- `session: { session: Session, user: User } | null`
+	
+	```typescript
+	ctx.setNewSession({
+		session: newSession,
+		user: user
+	})
+	```
+</ResponseField>
+
+### Database Access
+
+<ResponseField name="adapter" type="DBAdapter">
+	ORM-like database adapter for CRUD operations.
+	
+	<Expandable title="Methods">
+		<ResponseField name="create" type="function">
+			Create a record in the database.
+			
+			```typescript
+			const user = await ctx.adapter.create({
+				model: "user",
+				data: {
+					email: "user@example.com",
+					name: "John Doe",
+					emailVerified: false
+				}
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="findOne" type="function">
+			Find a single record.
+			
+			```typescript
+			const user = await ctx.adapter.findOne({
+				model: "user",
+				where: [
+					{ field: "email", value: "user@example.com" }
+				]
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="findMany" type="function">
+			Find multiple records.
+			
+			```typescript
+			const sessions = await ctx.adapter.findMany({
+				model: "session",
+				where: [
+					{ field: "userId", value: userId }
+				],
+				limit: 10
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="update" type="function">
+			Update a record.
+			
+			```typescript
+			await ctx.adapter.update({
+				model: "user",
+				where: [{ field: "id", value: userId }],
+				update: { name: "New Name" }
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="updateMany" type="function">
+			Update multiple records.
+			
+			```typescript
+			await ctx.adapter.updateMany({
+				model: "session",
+				where: [{ field: "userId", value: userId }],
+				update: { expiresAt: newExpiry }
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="delete" type="function">
+			Delete records.
+			
+			```typescript
+			await ctx.adapter.delete({
+				model: "user",
+				where: [{ field: "id", value: userId }]
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="deleteMany" type="function">
+			Delete multiple records.
+			
+			```typescript
+			await ctx.adapter.deleteMany({
+				model: "session",
+				where: [{ field: "userId", value: userId }]
+			})
+			```
+		</ResponseField>
+	</Expandable>
+</ResponseField>
+
+<ResponseField name="internalAdapter" type="InternalAdapter">
+	High-level adapter with pre-built operations for common tasks.
+	
+	<Expandable title="Methods">
+		<ResponseField name="createUser" type="function">
+			Create a user with defaults applied.
+			
+			```typescript
+			const user = await ctx.internalAdapter.createUser({
+				email: "user@example.com",
+				name: "John Doe"
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="createOAuthUser" type="function">
+			Create user with linked OAuth account.
+			
+			```typescript
+			const { user, account } = await ctx.internalAdapter.createOAuthUser(
+				{
+					email: "user@example.com",
+					name: "John Doe"
+				},
+				{
+					providerId: "github",
+					accountId: "123456",
+					accessToken: "token"
+				}
+			)
+			```
+		</ResponseField>
+
+		<ResponseField name="createSession" type="function">
+			Create a session for a user.
+			
+			```typescript
+			const session = await ctx.internalAdapter.createSession(
+				userId,
+				false, // dontRememberMe
+				{ customField: "value" } // override
+			)
+			```
+		</ResponseField>
+
+		<ResponseField name="findSession" type="function">
+			Find session with user data.
+			
+			```typescript
+			const data = await ctx.internalAdapter.findSession(sessionToken)
+			if (data) {
+				console.log(data.session, data.user)
+			}
+			```
+		</ResponseField>
+
+		<ResponseField name="findUserByEmail" type="function">
+			Find user by email with optional accounts.
+			
+			```typescript
+			const result = await ctx.internalAdapter.findUserByEmail(
+				"user@example.com",
+				{ includeAccounts: true }
+			)
+			if (result) {
+				console.log(result.user, result.accounts)
+			}
+			```
+		</ResponseField>
+
+		<ResponseField name="findUserById" type="function">
+			Find user by ID.
+			
+			```typescript
+			const user = await ctx.internalAdapter.findUserById(userId)
+			```
+		</ResponseField>
+
+		<ResponseField name="updateUser" type="function">
+			Update user data.
+			
+			```typescript
+			const updated = await ctx.internalAdapter.updateUser(userId, {
+				name: "New Name"
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="deleteUser" type="function">
+			Delete user and all related data.
+			
+			```typescript
+			await ctx.internalAdapter.deleteUser(userId)
+			```
+		</ResponseField>
+
+		<ResponseField name="listSessions" type="function">
+			List all sessions for a user.
+			
+			```typescript
+			const sessions = await ctx.internalAdapter.listSessions(userId)
+			```
+		</ResponseField>
+
+		<ResponseField name="linkAccount" type="function">
+			Link OAuth account to user.
+			
+			```typescript
+			await ctx.internalAdapter.linkAccount({
+				userId: userId,
+				providerId: "google",
+				accountId: "123456",
+				accessToken: "token"
+			})
+			```
+		</ResponseField>
+	</Expandable>
+</ResponseField>
+
+<ResponseField name="tables" type="BetterAuthDBSchema">
+	Database schema information for all tables.
+	
+	```typescript
+	const userTable = ctx.tables.user
+	console.log(userTable.fields) // { id, email, name, ... }
+	```
+</ResponseField>
+
+### Security & Utilities
+
+<ResponseField name="secret" type="string">
+	Secret key used for encryption and signing.
+	
+	```typescript
+	// Don't expose this!
+	const secret = ctx.secret
+	```
+</ResponseField>
+
+<ResponseField name="trustedOrigins" type="string[]">
+	Resolved list of trusted origins from configuration.
+	
+	```typescript
+	ctx.trustedOrigins // ["https://example.com", "https://*.example.com"]
+	```
+</ResponseField>
+
+<ResponseField name="trustedProviders" type="string[]">
+	Resolved list of trusted OAuth providers for account linking.
+	
+	```typescript
+	ctx.trustedProviders // ["google", "github"]
+	```
+</ResponseField>
+
+<ResponseField name="isTrustedOrigin" type="function">
+	Check if a URL is trusted.
+	
+	**Parameters:**
+	- `url: string` - URL to check
+	- `settings?: { allowRelativePaths: boolean }` - Options
+	
+	**Returns:** `boolean`
+	
+	```typescript
+	if (ctx.isTrustedOrigin(redirectUrl)) {
+		// Safe to redirect
+	}
+	```
+</ResponseField>
+
+<ResponseField name="authCookies" type="BetterAuthCookies">
+	Cookie configuration for authentication.
+	
+	```typescript
+	const sessionCookie = ctx.authCookies.sessionToken
+	```
+</ResponseField>
+
+<ResponseField name="createAuthCookie" type="function">
+	Create a cookie with proper prefix and attributes.
+	
+	**Parameters:**
+	- `cookieName: string` - Cookie name
+	- `overrideAttributes?: Partial<CookieOptions>` - Optional attributes
+	
+	**Returns:** `BetterAuthCookie`
+	
+	```typescript
+	const customCookie = ctx.createAuthCookie("my_cookie", {
+		maxAge: 3600,
+		httpOnly: true
+	})
+	```
+</ResponseField>
+
+### Password Management
+
+<ResponseField name="password" type="object">
+	Password utilities and configuration.
+	
+	<Expandable title="properties">
+		<ResponseField name="hash" type="function">
+			Hash a password.
+			
+			```typescript
+			const hashed = await ctx.password.hash("password123")
+			```
+		</ResponseField>
+
+		<ResponseField name="verify" type="function">
+			Verify password against hash.
+			
+			```typescript
+			const valid = await ctx.password.verify({
+				password: "password123",
+				hash: hashedPassword
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="checkPassword" type="function">
+			Check if user has a password set.
+			
+			```typescript
+			const hasPassword = await ctx.password.checkPassword(userId, ctx)
+			```
+		</ResponseField>
+
+		<ResponseField name="config" type="object">
+			Password configuration.
+			
+			```typescript
+			ctx.password.config.minPasswordLength // 8
+			ctx.password.config.maxPasswordLength // 128
+			```
+		</ResponseField>
+	</Expandable>
+</ResponseField>
+
+### Session Configuration
+
+<ResponseField name="sessionConfig" type="object">
+	Session configuration values.
+	
+	```typescript
+	ctx.sessionConfig.expiresIn // 604800 (7 days in seconds)
+	ctx.sessionConfig.updateAge // 86400 (1 day in seconds)
+	ctx.sessionConfig.freshAge // 86400 (1 day in seconds)
+	ctx.sessionConfig.cookieRefreshCache // { enabled: true, updateAge: 240 }
+	```
+</ResponseField>
+
+### Rate Limiting
+
+<ResponseField name="rateLimit" type="object">
+	Rate limiting configuration.
+	
+	```typescript
+	ctx.rateLimit.enabled // true
+	ctx.rateLimit.window // 10 seconds
+	ctx.rateLimit.max // 100 requests
+	ctx.rateLimit.storage // "database"
+	```
+</ResponseField>
+
+### OAuth Configuration
+
+<ResponseField name="oauthConfig" type="object">
+	OAuth configuration.
+	
+	```typescript
+	ctx.oauthConfig.storeStateStrategy // "cookie" | "database"
+	ctx.oauthConfig.skipStateCookieCheck // false
+	```
+</ResponseField>
+
+<ResponseField name="socialProviders" type="OAuthProvider[]">
+	Configured OAuth providers.
+	
+	```typescript
+	const githubProvider = ctx.socialProviders.find(p => p.id === "github")
+	```
+</ResponseField>
+
+### Utilities
+
+<ResponseField name="generateId" type="function">
+	Generate IDs for database records.
+	
+	**Parameters:**
+	- `options: { model: ModelNames, size?: number }`
+	
+	**Returns:** `string | false`
+	
+	```typescript
+	const userId = ctx.generateId({ model: "user" })
+	```
+</ResponseField>
+
+<ResponseField name="secondaryStorage" type="SecondaryStorage | undefined">
+	Secondary storage instance (Redis, etc.) if configured.
+	
+	```typescript
+	if (ctx.secondaryStorage) {
+		await ctx.secondaryStorage.set("key", "value", 3600)
+	}
+	```
+</ResponseField>
+
+<ResponseField name="logger" type="Logger">
+	Logger instance for debugging and errors.
+	
+	```typescript
+	ctx.logger.info("User signed in")
+	ctx.logger.error("Failed to create session", error)
+	ctx.logger.debug("Debug information")
+	```
+</ResponseField>
+
+### Plugin System
+
+<ResponseField name="getPlugin" type="function">
+	Get a plugin by its ID with full type safety.
+	
+	**Parameters:**
+	- `pluginId: string` - Plugin identifier
+	
+	**Returns:** `Plugin | null`
+	
+	```typescript
+	const orgPlugin = ctx.getPlugin("organization")
+	if (orgPlugin) {
+		// Plugin is installed and typed
+	}
+	```
+</ResponseField>
+
+<ResponseField name="hasPlugin" type="function">
+	Check if a plugin is enabled.
+	
+	**Parameters:**
+	- `pluginId: string` - Plugin identifier
+	
+	**Returns:** `boolean`
+	
+	```typescript
+	if (ctx.hasPlugin("two-factor")) {
+		// Two-factor is enabled
+	}
+	```
+</ResponseField>
+
+### Background Tasks
+
+<ResponseField name="runInBackground" type="function">
+	Run a task in the background without blocking the response.
+	
+	**Parameters:**
+	- `promise: Promise<unknown>` - Async task
+	
+	```typescript
+	ctx.runInBackground(
+		sendEmail(user.email, "Welcome!")
+	)
+	```
+</ResponseField>
+
+<ResponseField name="runInBackgroundOrAwait" type="function">
+	Run task in background if configured, otherwise await.
+	
+	**Parameters:**
+	- `promise: Promise<unknown> | void` - Async task
+	
+	```typescript
+	await ctx.runInBackgroundOrAwait(
+		logAnalytics(event)
+	)
+	```
+</ResponseField>
+
+### Migration & Telemetry
+
+<ResponseField name="runMigrations" type="function">
+	Run database migrations programmatically.
+	
+	```typescript
+	await ctx.runMigrations()
+	```
+</ResponseField>
+
+<ResponseField name="publishTelemetry" type="function">
+	Publish telemetry events.
+	
+	**Parameters:**
+	- `event: { type: string, payload: Record<string, any> }`
+	
+	```typescript
+	await ctx.publishTelemetry({
+		type: "user_signed_up",
+		payload: { method: "email" }
+	})
+	```
+</ResponseField>
+
+### Security Flags
+
+<ResponseField name="skipOriginCheck" type="boolean | string[]">
+	Whether to skip origin validation.
+	
+	```typescript
+	if (typeof ctx.skipOriginCheck === "object") {
+		// Skip for specific paths
+		const shouldSkip = ctx.skipOriginCheck.some(path => 
+			requestPath.startsWith(path)
+		)
+	}
+	```
+</ResponseField>
+
+<ResponseField name="skipCSRFCheck" type="boolean">
+	Whether CSRF protection is disabled.
+	
+	```typescript
+	if (ctx.skipCSRFCheck) {
+		// CSRF checks are disabled
+	}
+	```
+</ResponseField>
+
+## Usage Examples
+
+### Accessing User Data
+
+```typescript
+import { createAuthEndpoint } from "better-auth/api"
+
+export const getUserProfile = createAuthEndpoint(
+	"/profile",
+	{ method: "GET" },
+	async (ctx) => {
+		const session = ctx.context.session
+		
+		if (!session) {
+			return ctx.json({ error: "Unauthorized" }, { status: 401 })
+		}
+		
+		const user = await ctx.context.internalAdapter.findUserById(
+			session.user.id
+		)
+		
+		return ctx.json({ user })
+	}
+)
+```
+
+### Using Database Adapter
+
+```typescript
+export const customEndpoint = createAuthEndpoint(
+	"/custom",
+	{ method: "POST" },
+	async (ctx) => {
+		// Create custom record
+		const record = await ctx.context.adapter.create({
+			model: "customTable",
+			data: {
+				userId: ctx.context.session?.user.id,
+				data: "custom data"
+			}
+		})
+		
+		return ctx.json({ record })
+	}
+)
+```
+
+### Checking Plugins
+
+```typescript
+export const myEndpoint = createAuthEndpoint(
+	"/my-endpoint",
+	{ method: "POST" },
+	async (ctx) => {
+		if (!ctx.context.hasPlugin("organization")) {
+			return ctx.json(
+				{ error: "Organization plugin required" },
+				{ status: 400 }
+			)
+		}
+		
+		const orgPlugin = ctx.context.getPlugin("organization")
+		// Use organization plugin methods
+	}
+)
+```
+
+### Origin Validation
+
+```typescript
+export const redirectEndpoint = createAuthEndpoint(
+	"/redirect",
+	{ method: "GET" },
+	async (ctx) => {
+		const redirectUrl = ctx.query.url
+		
+		if (!ctx.context.isTrustedOrigin(redirectUrl)) {
+			return ctx.json(
+				{ error: "Untrusted redirect URL" },
+				{ status: 400 }
+			)
+		}
+		
+		return ctx.redirect(redirectUrl)
+	}
+)
+```
+
+### Background Tasks
+
+```typescript
+export const signUp = createAuthEndpoint(
+	"/sign-up",
+	{ method: "POST" },
+	async (ctx) => {
+		const user = await ctx.context.internalAdapter.createUser({
+			email: ctx.body.email,
+			name: ctx.body.name
+		})
+		
+		// Send welcome email in background
+		ctx.context.runInBackground(
+			sendWelcomeEmail(user.email)
+		)
+		
+		return ctx.json({ user })
+	}
+)
+```
+
+## Related
+
+- [betterAuth()](/api/server/betterauth)
+- [Configuration](/api/server/configuration)
+- [Handlers](/api/server/handlers)
+- [Plugin Interface](/api-reference/plugins/plugin-interface)

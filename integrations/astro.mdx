@@ -1,0 +1,396 @@
+---
+title: Astro Integration
+description: Integrate Better Auth with Astro for server-side authentication.
+---
+
+Better Auth integrates seamlessly with Astro, providing server-side authentication for static sites and server-rendered pages.
+
+## Prerequisites
+
+Make sure you have a Better Auth instance configured. If not, check out the [installation guide](/installation).
+
+<Note>
+Astro integration requires server-side rendering. Make sure you have an [adapter](https://docs.astro.build/en/guides/server-side-rendering/) installed.
+</Note>
+
+## Installation
+
+<Steps>
+
+### Mount the Handler
+
+Create an API route to handle authentication requests:
+
+```ts title="src/pages/api/auth/[...all].ts"
+import { auth } from "~/lib/auth";
+import type { APIRoute } from "astro";
+
+export const ALL: APIRoute = async ({ request }) => {
+  return auth.handler(request);
+};
+```
+
+This mounts the authentication API at `/api/auth/*` and handles all authentication requests.
+
+<Note>
+You can customize the auth path in your Better Auth config, but `/api/auth` is recommended.
+</Note>
+
+### Create Client Instance
+
+Create a client for making authentication requests:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/client";
+
+export const authClient = createAuthClient({
+  // Optional: customize baseURL if needed
+  // baseURL: import.meta.env.PUBLIC_APP_URL
+});
+```
+
+### Add Client Script
+
+For reactive session management in the browser, add the client to your layout:
+
+```astro title="src/layouts/Layout.astro"
+---
+import { ViewTransitions } from "astro:transitions";
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width" />
+    <ViewTransitions />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
+
+<script>
+  import { authClient } from "~/lib/auth-client";
+  
+  // Make auth client available globally
+  window.authClient = authClient;
+</script>
+```
+
+</Steps>
+
+## Usage
+
+### Server-Side (Astro Components)
+
+Access session data in Astro components:
+
+```astro title="src/pages/dashboard.astro"
+---
+import { auth } from "~/lib/auth";
+import Layout from "~/layouts/Layout.astro";
+
+const session = await auth.api.getSession({
+  headers: Astro.request.headers
+});
+
+if (!session) {
+  return Astro.redirect("/sign-in");
+}
+
+const user = session.user;
+---
+
+<Layout>
+  <h1>Welcome {user.name}!</h1>
+  <p>Email: {user.email}</p>
+</Layout>
+```
+
+### API Endpoints
+
+Create protected API endpoints:
+
+```ts title="src/pages/api/user.ts"
+import { auth } from "~/lib/auth";
+import type { APIRoute } from "astro";
+
+export const GET: APIRoute = async ({ request }) => {
+  const session = await auth.api.getSession({
+    headers: request.headers
+  });
+
+  if (!session) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" }
+    });
+  }
+
+  return new Response(JSON.stringify({ user: session.user }), {
+    headers: { "Content-Type": "application/json" }
+  });
+};
+```
+
+### Client-Side (Islands)
+
+Use the auth client in interactive islands:
+
+```tsx title="src/components/UserProfile.tsx"
+import { authClient } from "~/lib/auth-client";
+import { useEffect, useState } from "react";
+import type { Session } from "~/lib/auth";
+
+export function UserProfile() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    authClient.getSession().then((data) => {
+      setSession(data.data);
+      setLoading(false);
+    });
+  }, []);
+
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session) {
+    return (
+      <button onClick={() => authClient.signIn.social({ provider: "github" })}>
+        Sign In with GitHub
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <p>Welcome {session.user.name}!</p>
+      <button onClick={() => authClient.signOut()}>
+        Sign Out
+      </button>
+    </div>
+  );
+}
+```
+
+```astro title="src/pages/profile.astro"
+---
+import Layout from "~/layouts/Layout.astro";
+import { UserProfile } from "~/components/UserProfile";
+---
+
+<Layout>
+  <UserProfile client:load />
+</Layout>
+```
+
+## Example: Sign In Page
+
+<CodeGroup>
+
+```astro title="src/pages/sign-in.astro (Server Action)"
+---
+import { auth } from "~/lib/auth";
+import Layout from "~/layouts/Layout.astro";
+
+let error: string | null = null;
+
+if (Astro.request.method === "POST") {
+  try {
+    const formData = await Astro.request.formData();
+    const email = formData.get("email") as string;
+    const password = formData.get("password") as string;
+
+    await auth.api.signInEmail({
+      body: { email, password },
+      headers: Astro.request.headers
+    });
+
+    return Astro.redirect("/dashboard");
+  } catch (e) {
+    error = "Invalid credentials";
+  }
+}
+---
+
+<Layout>
+  <h1>Sign In</h1>
+  <form method="POST">
+    {error && <p style="color: red;">{error}</p>}
+    
+    <input
+      type="email"
+      name="email"
+      placeholder="Email"
+      required
+    />
+    <input
+      type="password"
+      name="password"
+      placeholder="Password"
+      required
+    />
+    <button type="submit">Sign In</button>
+  </form>
+</Layout>
+```
+
+```tsx title="src/components/SignInForm.tsx (Client-Side)"
+import { authClient } from "~/lib/auth-client";
+import { useState } from "react";
+
+export function SignInForm() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    
+    await authClient.signIn.email(
+      { email, password },
+      {
+        onSuccess: () => {
+          window.location.href = "/dashboard";
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+        }
+      }
+    );
+  }
+
+  return (
+    <form onSubmit={handleSignIn}>
+      {error && <p style={{ color: "red" }}>{error}</p>}
+      
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+        required
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Password"
+        required
+      />
+      <button type="submit">Sign In</button>
+    </form>
+  );
+}
+```
+
+</CodeGroup>
+
+## Middleware
+
+Protect routes using Astro middleware:
+
+```ts title="src/middleware.ts"
+import { auth } from "~/lib/auth";
+import { defineMiddleware } from "astro:middleware";
+
+const protectedRoutes = ["/dashboard", "/settings"];
+
+export const onRequest = defineMiddleware(async (context, next) => {
+  const isProtectedRoute = protectedRoutes.some((route) =>
+    context.url.pathname.startsWith(route)
+  );
+
+  if (isProtectedRoute) {
+    const session = await auth.api.getSession({
+      headers: context.request.headers
+    });
+
+    if (!session) {
+      return context.redirect("/sign-in");
+    }
+
+    // Optional: attach session to locals
+    context.locals.user = session.user;
+    context.locals.session = session.session;
+  }
+
+  return next();
+});
+```
+
+<Note type="warn">
+Always validate the session in your protected pages, not just in middleware.
+</Note>
+
+### TypeScript Types
+
+Add types for `Astro.locals`:
+
+```ts title="src/env.d.ts"
+/// <reference types="astro/client" />
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  // ... other user fields
+}
+
+interface Session {
+  id: string;
+  userId: string;
+  expiresAt: Date;
+  // ... other session fields
+}
+
+declare namespace App {
+  interface Locals {
+    user?: User;
+    session?: Session;
+  }
+}
+```
+
+## Social Sign In
+
+```tsx title="src/components/SocialSignIn.tsx"
+import { authClient } from "~/lib/auth-client";
+
+export function SocialSignIn() {
+  return (
+    <div>
+      <button onClick={() => authClient.signIn.social({ provider: "github" })}>
+        Continue with GitHub
+      </button>
+      <button onClick={() => authClient.signIn.social({ provider: "google" })}>
+        Continue with Google
+      </button>
+    </div>
+  );
+}
+```
+
+## View Transitions
+
+When using Astro's View Transitions, make sure to refresh the session:
+
+```astro title="src/layouts/Layout.astro"
+<script>
+  import { authClient } from "~/lib/auth-client";
+  
+  document.addEventListener("astro:page-load", () => {
+    // Refresh session on page navigation
+    authClient.getSession();
+  });
+</script>
+```
+
+## Resources
+
+- [Astro Documentation](https://docs.astro.build)
+- [Astro Server-Side Rendering](https://docs.astro.build/en/guides/server-side-rendering/)
+- [Better Auth Core Concepts](/concepts/database)

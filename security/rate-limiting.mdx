@@ -1,0 +1,516 @@
+---
+title: Rate Limiting
+description: Protect your authentication endpoints from brute force and abuse
+---
+
+Rate limiting is a critical security feature that prevents abuse of your authentication endpoints. Better Auth includes built-in rate limiting that's enabled by default, protecting against brute force attacks, credential stuffing, and other malicious activities.
+
+## How It Works
+
+Rate limiting in Better Auth:
+
+- Tracks requests by **IP address** and **endpoint path**
+- Uses a **sliding window** algorithm for accurate rate limiting
+- Applies **special rules** for sensitive endpoints like sign-in and password reset
+- Supports **custom storage** backends for distributed systems
+- Returns **429 Too Many Requests** when limits are exceeded
+
+## Default Configuration
+
+Rate limiting is enabled by default with these settings:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    window: 10, // 10 seconds
+    max: 10, // 10 requests per window
+    storage: "database" // or "memory" or "secondary-storage"
+  }
+})
+```
+
+## Built-in Special Rules
+
+Better Auth automatically applies stricter limits to sensitive endpoints:
+
+### Authentication Endpoints (3 requests per 10 seconds)
+
+- `/sign-in/email`
+- `/sign-in/username`
+- `/sign-in/phone-number`
+- `/sign-up/email`
+- `/change-password`
+- `/change-email`
+
+### Password Reset & Verification (3 requests per 60 seconds)
+
+- `/request-password-reset`
+- `/send-verification-email`
+- `/forget-password`
+- `/email-otp/send-verification-otp`
+- `/email-otp/request-password-reset`
+
+### Two-Factor Endpoints (3 requests per 10 seconds)
+
+- All endpoints starting with `/two-factor/`
+
+## Custom Configuration
+
+### Global Settings
+
+Customize the default rate limits:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    window: 30, // 30 seconds
+    max: 50, // 50 requests per window
+    storage: "database"
+  }
+})
+```
+
+### Per-Endpoint Rules
+
+Define custom rules for specific endpoints:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      "/sign-in/email": {
+        window: 60, // 1 minute
+        max: 3 // Only 3 attempts per minute
+      },
+      "/api/public/*": {
+        window: 10,
+        max: 100 // More lenient for public endpoints
+      },
+      "/admin/*": {
+        window: 10,
+        max: 5 // Strict limits for admin endpoints
+      }
+    }
+  }
+})
+```
+
+### Dynamic Rules
+
+Use a function to determine rate limits based on the request:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      "/sign-in/email": async (request, current) => {
+        // Check if IP is in allowlist
+        const ip = request.headers.get("x-forwarded-for")
+        const isAllowlisted = await checkAllowlist(ip)
+        
+        if (isAllowlisted) {
+          return false // Disable rate limiting
+        }
+        
+        // Apply stricter limits for suspicious IPs
+        const isSuspicious = await checkSuspiciousIP(ip)
+        if (isSuspicious) {
+          return {
+            window: 60,
+            max: 1 // Very strict
+          }
+        }
+        
+        // Use default for everyone else
+        return current
+      }
+    }
+  }
+})
+```
+
+### Wildcard Patterns
+
+Use wildcards to match multiple endpoints:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      "/oauth/*": {
+        window: 10,
+        max: 20
+      },
+      "/api/*/admin": {
+        window: 60,
+        max: 10
+      }
+    }
+  }
+})
+```
+
+## Storage Backends
+
+### Database Storage (Default)
+
+Stores rate limit data in your database:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    storage: "database"
+  }
+})
+```
+
+<Note>
+The database storage requires a `rateLimit` table. Run `npx auth migrate` to create it.
+</Note>
+
+### Memory Storage
+
+Stores rate limit data in memory (resets on restart):
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    storage: "memory"
+  }
+})
+```
+
+<Warning>
+Memory storage is not suitable for production in distributed environments. Each server instance maintains its own memory, so rate limits won't be shared across instances.
+</Warning>
+
+### Secondary Storage
+
+Use Redis or another fast storage backend:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { Redis } from "ioredis"
+
+const redis = new Redis()
+
+export const auth = betterAuth({
+  rateLimit: {
+    storage: "secondary-storage"
+  },
+  secondaryStorage: {
+    async get(key) {
+      return await redis.get(key)
+    },
+    async set(key, value, ttl) {
+      await redis.setex(key, ttl, value)
+    },
+    async delete(key) {
+      await redis.del(key)
+    }
+  }
+})
+```
+
+<Tip>
+Redis is recommended for production deployments with multiple server instances.
+</Tip>
+
+### Custom Storage
+
+Implement your own storage adapter:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    customStorage: {
+      async get(key) {
+        // Retrieve rate limit data for key
+        return await myStorage.get(key)
+      },
+      async set(key, value, update) {
+        // Store or update rate limit data
+        if (update) {
+          await myStorage.update(key, value)
+        } else {
+          await myStorage.create(key, value)
+        }
+      }
+    }
+  }
+})
+```
+
+## IP Address Detection
+
+Better Auth attempts to detect the client's real IP address:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  // Configure trusted proxies for accurate IP detection
+  trustedProxies: ["cloudflare"],
+  // Or specify custom headers
+  advanced: {
+    ipHeaders: ["cf-connecting-ip", "x-forwarded-for"]
+  }
+})
+```
+
+<Warning>
+If Better Auth cannot determine the client IP, rate limiting will be skipped. Configure `trustedProxies` or `ipHeaders` if you're behind a reverse proxy.
+</Warning>
+
+## Plugin Rate Limits
+
+Plugins can define their own rate limits:
+
+```ts title="my-plugin.ts"
+import type { BetterAuthPlugin } from "better-auth"
+
+export const myPlugin = (): BetterAuthPlugin => ({
+  id: "my-plugin",
+  endpoints: {
+    // ... endpoints
+  },
+  rateLimit: [
+    {
+      pathMatcher(path) {
+        return path.startsWith("/my-plugin/")
+      },
+      window: 10,
+      max: 5
+    }
+  ]
+})
+```
+
+## Handling Rate Limit Errors
+
+### Client-Side
+
+Handle 429 responses in your client code:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { error } = await authClient.signIn.email({
+  email: "user@example.com",
+  password: "password"
+})
+
+if (error?.status === 429) {
+  const retryAfter = error.headers?.get("x-retry-after")
+  console.log(`Too many requests. Retry after ${retryAfter} seconds`)
+}
+```
+
+### Server-Side
+
+The rate limiter returns a 429 response with retry information:
+
+```json
+{
+  "message": "Too many requests. Please try again later."
+}
+```
+
+Headers:
+- `X-Retry-After`: Seconds until the rate limit resets
+
+## Disabling Rate Limiting
+
+### Globally
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: false
+  }
+})
+```
+
+### For Specific Endpoints
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      "/public/health": false // Disable for this endpoint
+    }
+  }
+})
+```
+
+## Best Practices
+
+<Steps>
+  <Step>
+    ### Use Redis for production
+    
+    For distributed systems, use Redis or another shared storage backend:
+    
+    ```ts
+    rateLimit: {
+      storage: "secondary-storage"
+    }
+    ```
+  </Step>
+  
+  <Step>
+    ### Apply strict limits to authentication
+    
+    Keep the default strict limits for sign-in and sign-up endpoints to prevent credential stuffing.
+  </Step>
+  
+  <Step>
+    ### Configure trusted proxies
+    
+    Ensure accurate IP detection when behind a reverse proxy:
+    
+    ```ts
+    trustedProxies: ["cloudflare"]
+    ```
+  </Step>
+  
+  <Step>
+    ### Monitor rate limit violations
+    
+    Log and monitor 429 responses to detect potential attacks:
+    
+    ```ts
+    hooks: {
+      after: [
+        {
+          matcher: () => true,
+          handler: async (ctx) => {
+            if (ctx.response.status === 429) {
+              await logSecurityEvent("rate_limit_exceeded", {
+                ip: getIp(ctx.request),
+                path: ctx.path
+              })
+            }
+          }
+        }
+      ]
+    }
+    ```
+  </Step>
+  
+  <Step>
+    ### Adjust limits based on your needs
+    
+    Default limits are conservative. Adjust them based on your legitimate traffic patterns.
+  </Step>
+</Steps>
+
+## Examples
+
+### Progressive Rate Limiting
+
+Increase strictness after failed attempts:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+const failedAttempts = new Map<string, number>()
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      "/sign-in/email": async (request) => {
+        const ip = request.headers.get("x-forwarded-for")
+        const attempts = failedAttempts.get(ip) || 0
+        
+        if (attempts >= 5) {
+          return { window: 300, max: 1 } // 1 per 5 minutes
+        } else if (attempts >= 3) {
+          return { window: 60, max: 2 } // 2 per minute
+        }
+        
+        return { window: 10, max: 3 } // Default
+      }
+    }
+  },
+  hooks: {
+    after: [
+      {
+        matcher: (ctx) => ctx.path === "/sign-in/email",
+        handler: async (ctx) => {
+          const ip = getIp(ctx.request)
+          if (ctx.response.status === 401) {
+            failedAttempts.set(ip, (failedAttempts.get(ip) || 0) + 1)
+          } else if (ctx.response.status === 200) {
+            failedAttempts.delete(ip) // Reset on success
+          }
+        }
+      }
+    ]
+  }
+})
+```
+
+### IP Allowlist
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+
+const allowlistedIPs = new Set(["192.168.1.1", "10.0.0.1"])
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      "/*": async (request) => {
+        const ip = request.headers.get("x-forwarded-for")
+        if (allowlistedIPs.has(ip)) {
+          return false // Disable rate limiting
+        }
+        return { window: 10, max: 10 }
+      }
+    }
+  }
+})
+```
+
+## Database Schema
+
+When using database storage, the `rateLimit` table stores:
+
+- `key` (string): Unique key combining IP and path
+- `count` (number): Number of requests in current window
+- `lastRequest` (timestamp): Time of last request
+
+## Related
+
+- [Two-Factor Authentication](/security/two-factor) - Additional layer of security
+- [Captcha](/security/captcha) - Protect against automated attacks
+- [Password Breach Detection](/security/password-breach) - Prevent compromised passwords

@@ -1,0 +1,394 @@
+---
+title: User Type
+description: Type definitions for user objects in Better Auth
+---
+
+## Overview
+
+The `User` type represents an authenticated user account in Better Auth. It contains core identity information like email, name, and verification status.
+
+**Source:** `/packages/core/src/db/schema/user.ts`
+
+## Base User
+
+The core user schema includes these fields:
+
+```typescript
+interface BaseUser {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+  image?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+```
+
+<ResponseField name="id" type="string" required>
+  Unique identifier for the user
+</ResponseField>
+
+<ResponseField name="email" type="string" required>
+  User's email address. Automatically transformed to lowercase.
+</ResponseField>
+
+<ResponseField name="emailVerified" type="boolean" required default="false">
+  Whether the user's email has been verified
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  User's display name
+</ResponseField>
+
+<ResponseField name="image" type="string | null">
+  URL to user's profile image/avatar
+</ResponseField>
+
+<ResponseField name="createdAt" type="Date" required>
+  Timestamp when the user was created
+</ResponseField>
+
+<ResponseField name="updatedAt" type="Date" required>
+  Timestamp when the user was last updated
+</ResponseField>
+
+## Extended User Type
+
+The `User` type supports additional fields from configuration and plugins:
+
+```typescript
+type User<
+  DBOptions extends BetterAuthOptions["user"] = BetterAuthOptions["user"],
+  Plugins extends BetterAuthOptions["plugins"] = BetterAuthOptions["plugins"]
+> = BaseUser &
+  InferDBFieldsFromOptions<DBOptions> &
+  InferDBFieldsFromPlugins<"user", Plugins>;
+```
+
+### Type Parameters
+
+<ResponseField name="DBOptions" type="BetterAuthOptions['user']">
+  User configuration options, including `additionalFields`
+</ResponseField>
+
+<ResponseField name="Plugins" type="BetterAuthOptions['plugins']">
+  Array of plugins that may add fields to the user schema
+</ResponseField>
+
+## Adding Custom Fields
+
+Extend the user type with additional fields:
+
+```typescript
+import { betterAuth } from "better-auth";
+import { z } from "zod";
+
+const auth = betterAuth({
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        required: true,
+        defaultValue: "user",
+        input: true,
+        returned: true
+      },
+      phoneNumber: {
+        type: "string",
+        required: false,
+        validator: {
+          input: z.string().regex(/^\+?[1-9]\d{1,14}$/)
+        }
+      },
+      bio: {
+        type: "string",
+        required: false
+      },
+      age: {
+        type: "number",
+        required: false,
+        validator: {
+          input: z.number().min(13).max(120)
+        }
+      },
+      preferences: {
+        type: "json",
+        required: false,
+        defaultValue: {}
+      }
+    }
+  }
+});
+```
+
+This creates a user type:
+
+```typescript
+interface ExtendedUser extends BaseUser {
+  role: string;
+  phoneNumber?: string | null;
+  bio?: string | null;
+  age?: number | null;
+  preferences?: Record<string, any> | null;
+}
+```
+
+### Field Configuration
+
+<ResponseField name="type" type="DBFieldType" required>
+  Field data type: `"string"`, `"number"`, `"boolean"`, `"date"`, `"json"`, or array types like `"string[]"` or `"number[]"`
+</ResponseField>
+
+<ResponseField name="required" type="boolean" default="true">
+  Whether the field must be provided when creating a record
+</ResponseField>
+
+<ResponseField name="defaultValue" type="any | (() => any)">
+  Default value for the field. Can be a static value or a function.
+</ResponseField>
+
+<ResponseField name="input" type="boolean" default="true">
+  Whether the field can be provided in user input
+</ResponseField>
+
+<ResponseField name="returned" type="boolean" default="true">
+  Whether the field should be included in API responses
+</ResponseField>
+
+<ResponseField name="validator" type="{ input?: StandardSchema; output?: StandardSchema }">
+  Validation schemas for input and output values
+</ResponseField>
+
+<ResponseField name="transform" type="{ input?: (value) => Awaitable<any>; output?: (value) => Awaitable<any> }">
+  Transform functions to apply before storage (input) and after retrieval (output)
+</ResponseField>
+
+<ResponseField name="unique" type="boolean" default="false">
+  Whether the field must have unique values across all records
+</ResponseField>
+
+<ResponseField name="references" type="{ model: string; field: string; onDelete?: string }">
+  Foreign key reference to another model
+</ResponseField>
+
+<ResponseField name="fieldName" type="string">
+  Custom database column name (if different from the field name)
+</ResponseField>
+
+## Plugin Extensions
+
+Plugins automatically extend the user type:
+
+<CodeGroup>
+```typescript Username Plugin
+import { betterAuth } from "better-auth";
+import { username } from "better-auth/plugins";
+
+const auth = betterAuth({
+  plugins: [
+    username()
+  ]
+});
+
+// User type now includes:
+type UserWithUsername = User & {
+  username: string;
+};
+```
+
+```typescript Phone Number Plugin
+import { betterAuth } from "better-auth";
+import { phoneNumber } from "better-auth/plugins";
+
+const auth = betterAuth({
+  plugins: [
+    phoneNumber()
+  ]
+});
+
+// User type now includes:
+type UserWithPhone = User & {
+  phoneNumber: string;
+  phoneNumberVerified: boolean;
+};
+```
+
+```typescript Two-Factor Plugin
+import { betterAuth } from "better-auth";
+import { twoFactor } from "better-auth/plugins";
+
+const auth = betterAuth({
+  plugins: [
+    twoFactor()
+  ]
+});
+
+// User type now includes:
+type UserWith2FA = User & {
+  twoFactorEnabled: boolean;
+};
+```
+</CodeGroup>
+
+## Type Utilities
+
+### Inferring User Types
+
+Get the complete user type from your auth instance:
+
+```typescript
+import type { auth } from "./auth";
+
+// Inferred user type with all extensions
+type MyUser = typeof auth.$Infer.User;
+
+// Use in functions
+function greetUser(user: MyUser) {
+  return `Hello, ${user.name}!`;
+}
+```
+
+### Manual Type Inference
+
+Build the user type manually:
+
+```typescript
+import type { User, BetterAuthOptions } from "better-auth";
+import type { username, phoneNumber } from "better-auth/plugins";
+
+type MyAuthOptions = BetterAuthOptions & {
+  plugins: [ReturnType<typeof username>, ReturnType<typeof phoneNumber>];
+};
+
+type MyUser = User<
+  MyAuthOptions["user"],
+  MyAuthOptions["plugins"]
+>;
+```
+
+## Zod Schema
+
+The base user schema uses Zod:
+
+```typescript
+import * as z from "zod";
+import { coreSchema } from "./shared";
+
+const userSchema = coreSchema.extend({
+  email: z.string().transform((val) => val.toLowerCase()),
+  emailVerified: z.boolean().default(false),
+  name: z.string(),
+  image: z.string().nullish()
+});
+
+type BaseUser = z.infer<typeof userSchema>;
+```
+
+The `coreSchema` provides standard fields:
+
+```typescript
+const coreSchema = z.object({
+  id: z.string(),
+  createdAt: z.date().default(() => new Date()),
+  updatedAt: z.date().default(() => new Date())
+});
+```
+
+## Additional Types
+
+### AdditionalUserFieldsInput
+
+Infers additional fields that can be provided during user creation:
+
+```typescript
+type AdditionalUserFieldsInput<Options extends BetterAuthOptions> =
+  InferDBFieldsFromPluginsInput<"user", Options["plugins"]> &
+  InferDBFieldsFromOptionsInput<Options["user"]>;
+```
+
+### InferPluginTypes
+
+Extracts types provided by plugins:
+
+```typescript
+type InferPluginTypes<O extends BetterAuthOptions> =
+  O["plugins"] extends Array<infer P>
+    ? UnionToIntersection<
+        P extends BetterAuthPlugin
+          ? P["$Infer"] extends Record<string, any>
+            ? P["$Infer"]
+            : {}
+          : {}
+      >
+    : {};
+```
+
+## Field Transformations
+
+### Input Transformation
+
+Transform values before storing:
+
+```typescript
+const auth = betterAuth({
+  user: {
+    additionalFields: {
+      username: {
+        type: "string",
+        transform: {
+          input: (value) => value.toLowerCase().trim()
+        }
+      },
+      tags: {
+        type: "json",
+        transform: {
+          input: (value) => {
+            // Ensure tags is always an array
+            return Array.isArray(value) ? value : [];
+          }
+        }
+      }
+    }
+  }
+});
+```
+
+### Output Transformation
+
+Transform values when reading:
+
+```typescript
+const auth = betterAuth({
+  user: {
+    additionalFields: {
+      privateData: {
+        type: "json",
+        transform: {
+          output: async (value) => {
+            // Decrypt or filter sensitive data
+            return filterSensitiveFields(value);
+          }
+        }
+      }
+    }
+  }
+});
+```
+
+## Related Types
+
+<CardGroup cols={2}>
+  <Card title="Session Type" href="/api/types/session" icon="clock">
+    Session type definition
+  </Card>
+  <Card title="Plugin Type" href="/api/types/plugin" icon="puzzle-piece">
+    Plugin interface and types
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Database Integration](/concepts/database) - Learn about database schemas
+- [TypeScript Support](/concepts/typescript) - Type-safe auth configuration
+- [Custom Plugin Guide](/guides/creating-custom-plugin) - Create plugins that extend user types

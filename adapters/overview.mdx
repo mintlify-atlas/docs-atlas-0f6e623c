@@ -15,8 +15,8 @@ Better Auth supports multiple database systems through official and community ad
 
 - **[Prisma](/adapters/prisma)** - Type-safe ORM for Node.js and TypeScript
 - **[Drizzle](/adapters/drizzle)** - Lightweight and performant TypeScript ORM
-- **[MongoDB](/adapters/mongodb)** - Popular NoSQL document database
 - **[Kysely](/adapters/kysely)** - Type-safe SQL query builder supporting multiple dialects
+- **[MongoDB](/adapters/mongodb)** - Popular NoSQL document database
 
 ### Database Dialects via Kysely
 
@@ -52,6 +52,7 @@ All official adapters support:
 - **Transactions** - Database transaction support where available
 - **Custom Field Names** - Ability to customize table and field names
 - **Joins (Experimental)** - Performance-optimized database joins (v1.4.0+)
+- **Debug Logging** - Optional detailed logging for troubleshooting
 
 ## Basic Usage Pattern
 
@@ -116,9 +117,9 @@ export const auth = betterAuth({
 });
 ```
 
-<Note type="warn">
+<Warning>
 Make sure your database schema has the necessary relations defined. You may need to regenerate your schema with `npx auth@latest generate`.
-</Note>
+</Warning>
 
 ### Transactions
 
@@ -132,13 +133,17 @@ export const auth = betterAuth({
 });
 ```
 
+<Note>
+Transactions ensure that multiple database operations either all succeed or all fail together, maintaining data consistency.
+</Note>
+
 ## Custom Adapters
 
 Need to use a database not officially supported? You can create a [custom adapter](/adapters/custom) to integrate with any database system.
 
 ## Community Adapters
 
-The Better Auth community has created adapters for additional databases including Convex, SurrealDB, Firebase, and more. Check out the [community adapters](/adapters/custom#community-adapters) page for a full list.
+The Better Auth community has created adapters for additional databases including Convex, SurrealDB, Firebase, and more. Check out the [community adapters](/adapters/custom#community-adapters) section for a full list.
 
 ## Next Steps
 
@@ -146,6 +151,6 @@ Choose your adapter to get started:
 
 - [Prisma](/adapters/prisma) - Best for comprehensive ORM features
 - [Drizzle](/adapters/drizzle) - Best for performance and flexibility
-- [MongoDB](/adapters/mongodb) - Best for NoSQL and document storage
 - [Kysely](/adapters/kysely) - Best for raw SQL and multiple dialects
+- [MongoDB](/adapters/mongodb) - Best for NoSQL and document storage
 - [Custom Adapter](/adapters/custom) - Build your own adapter

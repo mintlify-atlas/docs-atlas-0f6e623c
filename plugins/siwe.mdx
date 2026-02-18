@@ -1,0 +1,508 @@
+---
+title: Sign-In with Ethereum (SIWE)
+description: Web3 authentication using Ethereum wallet signatures
+---
+
+The SIWE (Sign-In with Ethereum) plugin enables users to authenticate using their Ethereum wallet. Users sign a cryptographic message with their wallet, which is then verified on the server without requiring passwords.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Install the SIWE library
+
+    ```bash
+    npm install siwe
+    ```
+  </Step>
+
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { siwe } from "better-auth/plugins"
+    import { SiweMessage } from "siwe"
+
+    export const auth = betterAuth({
+      plugins: [
+        siwe({
+          domain: "example.com",
+          async getNonce() {
+            // Generate a cryptographically secure nonce
+            return crypto.randomBytes(16).toString("base64")
+          },
+          async verifyMessage({ message, signature, address }) {
+            const siweMessage = new SiweMessage(message)
+            const result = await siweMessage.verify({ signature })
+            return result.success
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+      ```bash
+      npx auth migrate
+      ```
+      </Tab>
+      <Tab value="generate">
+      ```bash
+      npx auth generate
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { siweClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        siweClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Get Nonce
+
+Request a nonce for wallet signature:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.siwe.nonce({
+  walletAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+  chainId: 1 // Optional, defaults to 1 (Ethereum mainnet)
+})
+
+const nonce = data?.nonce
+```
+
+### Sign Message with Wallet
+
+Create and sign a SIWE message:
+
+```ts
+import { SiweMessage } from "siwe"
+import { authClient } from "@/lib/auth-client"
+
+// Get nonce from server
+const { data: nonceData } = await authClient.siwe.nonce({
+  walletAddress: address,
+  chainId: 1
+})
+
+// Create SIWE message
+const siweMessage = new SiweMessage({
+  domain: window.location.host,
+  address,
+  statement: "Sign in to Example App",
+  uri: window.location.origin,
+  version: "1",
+  chainId: 1,
+  nonce: nonceData?.nonce
+})
+
+// Prepare message for signing
+const message = siweMessage.prepareMessage()
+
+// Sign with wallet (e.g., using ethers.js or wagmi)
+const signature = await signer.signMessage(message)
+```
+
+### Verify and Sign In
+
+Verify the signature and create a session:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.siwe.verify({
+  message,
+  signature,
+  walletAddress: address,
+  chainId: 1
+})
+
+if (data?.success) {
+  console.log("Signed in:", data.user)
+}
+```
+
+### With Email (Non-Anonymous)
+
+Require email address for user accounts:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { siwe } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    siwe({
+      domain: "example.com",
+      anonymous: false, // Require email
+      async getNonce() {
+        return crypto.randomBytes(16).toString("base64")
+      },
+      async verifyMessage({ message, signature, address }) {
+        const siweMessage = new SiweMessage(message)
+        const result = await siweMessage.verify({ signature })
+        return result.success
+      }
+    })
+  ]
+})
+```
+
+Then provide email when verifying:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.siwe.verify({
+  message,
+  signature,
+  walletAddress: address,
+  chainId: 1,
+  email: "user@example.com"
+})
+```
+
+### ENS Lookup (Optional)
+
+Resolve ENS names and avatars for user profiles:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { siwe } from "better-auth/plugins"
+import { ethers } from "ethers"
+
+export const auth = betterAuth({
+  plugins: [
+    siwe({
+      domain: "example.com",
+      async getNonce() {
+        return crypto.randomBytes(16).toString("base64")
+      },
+      async verifyMessage({ message, signature, address }) {
+        const siweMessage = new SiweMessage(message)
+        const result = await siweMessage.verify({ signature })
+        return result.success
+      },
+      async ensLookup({ walletAddress }) {
+        const provider = new ethers.providers.JsonRpcProvider(
+          "https://mainnet.infura.io/v3/YOUR_INFURA_KEY"
+        )
+        
+        const name = await provider.lookupAddress(walletAddress)
+        const avatar = name 
+          ? await provider.getAvatar(name)
+          : null
+        
+        return {
+          name: name || walletAddress,
+          avatar: avatar || ""
+        }
+      }
+    })
+  ]
+})
+```
+
+## Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { siwe } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    siwe({
+      // Required: domain for SIWE message
+      domain: "example.com",
+      
+      // Required: function to generate nonce
+      async getNonce() {
+        return crypto.randomBytes(16).toString("base64")
+      },
+      
+      // Required: function to verify signature
+      async verifyMessage({ message, signature, address, chainId, cacao }) {
+        const siweMessage = new SiweMessage(message)
+        const result = await siweMessage.verify({ signature })
+        return result.success
+      },
+      
+      // Optional: email domain for anonymous users
+      emailDomainName: "myapp.com",
+      
+      // Optional: allow anonymous authentication
+      anonymous: true, // Default: true
+      
+      // Optional: ENS lookup for user info
+      async ensLookup({ walletAddress }) {
+        return {
+          name: "user.eth",
+          avatar: "https://example.com/avatar.png"
+        }
+      }
+    })
+  ]
+})
+```
+
+## Schema
+
+The plugin adds a new `walletAddress` table:
+
+- `id` (string): Unique identifier
+- `userId` (string): References user.id
+- `address` (string): Ethereum wallet address (checksummed)
+- `chainId` (number): Chain ID (e.g., 1 for Ethereum mainnet)
+- `isPrimary` (boolean): Whether this is the user's primary wallet
+- `createdAt` (date): Creation timestamp
+
+<Callout type="info">
+A user can have multiple wallet addresses across different chains. The same address on different chains creates separate records.
+</Callout>
+
+## Multi-Chain Support
+
+Users can sign in with the same wallet address on different chains:
+
+```ts
+// Sign in on Ethereum mainnet (chainId: 1)
+await authClient.siwe.verify({
+  message,
+  signature,
+  walletAddress: "0x...",
+  chainId: 1
+})
+
+// Sign in on Polygon (chainId: 137)
+await authClient.siwe.verify({
+  message,
+  signature,
+  walletAddress: "0x...",
+  chainId: 137
+})
+```
+
+The same user will be linked to both wallet-chain combinations.
+
+## Example: Complete Implementation
+
+```tsx title="app/connect-wallet/page.tsx"
+import { authClient } from "@/lib/auth-client"
+import { SiweMessage } from "siwe"
+import { useAccount, useSignMessage } from "wagmi"
+import { useState } from "react"
+
+export default function ConnectWalletPage() {
+  const { address, chainId } = useAccount()
+  const { signMessageAsync } = useSignMessage()
+  const [error, setError] = useState("")
+  const [loading, setLoading] = useState(false)
+  
+  const handleSignIn = async () => {
+    if (!address || !chainId) {
+      setError("Please connect your wallet")
+      return
+    }
+    
+    setLoading(true)
+    setError("")
+    
+    try {
+      // Get nonce
+      const { data: nonceData, error: nonceError } = await authClient.siwe.nonce({
+        walletAddress: address,
+        chainId
+      })
+      
+      if (nonceError || !nonceData?.nonce) {
+        setError("Failed to get nonce")
+        return
+      }
+      
+      // Create SIWE message
+      const siweMessage = new SiweMessage({
+        domain: window.location.host,
+        address,
+        statement: "Sign in with Ethereum to Example App",
+        uri: window.location.origin,
+        version: "1",
+        chainId,
+        nonce: nonceData.nonce
+      })
+      
+      const message = siweMessage.prepareMessage()
+      
+      // Sign message
+      const signature = await signMessageAsync({ message })
+      
+      // Verify and sign in
+      const { data, error: verifyError } = await authClient.siwe.verify({
+        message,
+        signature,
+        walletAddress: address,
+        chainId
+      })
+      
+      if (verifyError) {
+        setError(verifyError.message)
+      } else if (data?.success) {
+        // Redirect to dashboard
+        window.location.href = "/dashboard"
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to sign in")
+    } finally {
+      setLoading(false)
+    }
+  }
+  
+  return (
+    <div>
+      <h2>Sign In with Ethereum</h2>
+      
+      {address ? (
+        <div>
+          <p>Connected: {address}</p>
+          <button onClick={handleSignIn} disabled={loading}>
+            {loading ? "Signing..." : "Sign In"}
+          </button>
+        </div>
+      ) : (
+        <p>Please connect your wallet first</p>
+      )}
+      
+      {error && <p style={{ color: "red" }}>{error}</p>}
+    </div>
+  )
+}
+```
+
+## Integration Examples
+
+### With wagmi and viem
+
+```tsx title="components/siwe-connect.tsx"
+import { useAccount, useSignMessage } from "wagmi"
+import { SiweMessage } from "siwe"
+import { authClient } from "@/lib/auth-client"
+
+export function SiweConnect() {
+  const { address, chainId } = useAccount()
+  const { signMessageAsync } = useSignMessage()
+  
+  const handleConnect = async () => {
+    if (!address || !chainId) return
+    
+    const { data: nonceData } = await authClient.siwe.nonce({
+      walletAddress: address,
+      chainId
+    })
+    
+    const message = new SiweMessage({
+      domain: window.location.host,
+      address,
+      uri: window.location.origin,
+      version: "1",
+      chainId,
+      nonce: nonceData?.nonce,
+      statement: "Sign in to continue"
+    }).prepareMessage()
+    
+    const signature = await signMessageAsync({ message })
+    
+    await authClient.siwe.verify({
+      message,
+      signature,
+      walletAddress: address,
+      chainId
+    })
+  }
+  
+  return <button onClick={handleConnect}>Sign In</button>
+}
+```
+
+### With ethers.js
+
+```ts
+import { ethers } from "ethers"
+import { SiweMessage } from "siwe"
+import { authClient } from "@/lib/auth-client"
+
+async function signInWithEthers() {
+  const provider = new ethers.providers.Web3Provider(window.ethereum)
+  const signer = provider.getSigner()
+  const address = await signer.getAddress()
+  const chainId = (await provider.getNetwork()).chainId
+  
+  // Get nonce
+  const { data: nonceData } = await authClient.siwe.nonce({
+    walletAddress: address,
+    chainId
+  })
+  
+  // Create and sign message
+  const siweMessage = new SiweMessage({
+    domain: window.location.host,
+    address,
+    uri: window.location.origin,
+    version: "1",
+    chainId,
+    nonce: nonceData?.nonce
+  })
+  
+  const message = siweMessage.prepareMessage()
+  const signature = await signer.signMessage(message)
+  
+  // Verify
+  await authClient.siwe.verify({
+    message,
+    signature,
+    walletAddress: address,
+    chainId
+  })
+}
+```
+
+## Security Considerations
+
+1. **Nonce Expiration**: Nonces expire after 15 minutes
+2. **One-Time Use**: Each nonce can only be used once
+3. **Domain Verification**: Messages must be signed for the correct domain
+4. **Chain ID**: Verify the chain ID matches the expected network
+5. **Address Verification**: Wallet addresses are checksummed for consistency
+6. **HTTPS Required**: Always use HTTPS in production
+
+<Callout type="warn">
+Never trust client-provided addresses. The server always verifies the signature and recovers the actual signer address.
+</Callout>
+
+## Use Cases
+
+1. **DApps**: Authenticate users in decentralized applications
+2. **NFT Platforms**: Verify wallet ownership for NFT access
+3. **DAOs**: Enable governance voting with wallet authentication
+4. **Web3 Services**: Provide gasless authentication for blockchain users
+5. **Token Gating**: Restrict content based on wallet holdings

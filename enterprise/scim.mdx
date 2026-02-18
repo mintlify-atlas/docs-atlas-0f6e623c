@@ -1,0 +1,572 @@
+---
+title: SCIM
+description: System for Cross-domain Identity Management for automated user provisioning
+---
+
+The SCIM (System for Cross-domain Identity Management) plugin enables automated user provisioning and deprovisioning from identity providers like Okta, Azure AD, and OneLogin. Synchronize users and groups from your IdP directly into your application.
+
+## Features
+
+- **SCIM 2.0 Compliance**: Full implementation of SCIM 2.0 protocol
+- **User Provisioning**: Automatic user creation and updates
+- **Deprovisioning**: Remove user access when deactivated in IdP
+- **Group Sync**: Synchronize organization memberships
+- **Token Management**: Secure bearer token authentication
+- **Provider Ownership**: Link SCIM connections to specific users
+- **Resource Endpoints**: Users, Groups, ServiceProviderConfig, Schemas, ResourceTypes
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Install the SCIM package
+    
+    ```bash
+    npm install @better-auth/scim
+    ```
+  </Step>
+
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { scim } from "@better-auth/scim"
+
+    export const auth = betterAuth({
+      plugins: [
+        scim({
+          // Optional: Link SCIM providers to users
+          providerOwnership: {
+            enabled: true
+          },
+          // Optional: Secure token storage
+          storeSCIMToken: "hashed"
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    ```bash
+    npx auth migrate
+    ```
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { scimClient } from "@better-auth/scim/client"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        scimClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Configuration
+
+### Token Storage
+
+Configure how SCIM tokens are stored:
+
+```ts
+scim({
+  // Plain text (not recommended for production)
+  storeSCIMToken: "plain",
+  
+  // Hashed with bcrypt (recommended)
+  storeSCIMToken: "hashed",
+  
+  // Encrypted (reversible)
+  storeSCIMToken: "encrypted",
+  
+  // Custom hash function
+  storeSCIMToken: {
+    hash: async (token) => {
+      return await yourHashFunction(token)
+    }
+  },
+  
+  // Custom encryption
+  storeSCIMToken: {
+    encrypt: async (token) => {
+      return await encrypt(token, process.env.ENCRYPTION_KEY)
+    },
+    decrypt: async (encrypted) => {
+      return await decrypt(encrypted, process.env.ENCRYPTION_KEY)
+    }
+  }
+})
+```
+
+<Warning>
+  Always use `hashed` or `encrypted` storage in production. Plain text tokens should only be used during development.
+</Warning>
+
+### Provider Ownership
+
+Link SCIM provider connections to specific users:
+
+```ts
+scim({
+  providerOwnership: {
+    enabled: true
+  }
+})
+```
+
+When enabled, the user who generates the SCIM token becomes the owner, and the `scimProvider` table includes a `userId` field.
+
+## Setup
+
+### Generate a SCIM Token
+
+Generate a bearer token for your identity provider:
+
+```ts
+const { token, scimProvider } = await auth.api.generateSCIMToken({
+  providerId: "okta-scim",
+  organizationId: "org_123"
+})
+
+// Provide this token to your IdP
+console.log("SCIM Bearer Token:", token)
+console.log("SCIM Base URL:", "https://your-app.com/api/auth/scim/v2")
+```
+
+<Info>
+  Store the token securely. It will only be shown once during generation. If using hashed storage, the plain token cannot be retrieved later.
+</Info>
+
+### Lifecycle Hooks
+
+Run custom logic before and after token generation:
+
+```ts
+scim({
+  beforeSCIMTokenGenerated: async ({ user, member, scimToken }) => {
+    // Validate permissions
+    if (member?.role !== "owner" && member?.role !== "admin") {
+      throw new Error("Only owners and admins can generate SCIM tokens")
+    }
+    
+    // Audit logging
+    await logAuditEvent({
+      action: "scim_token_generation_requested",
+      userId: user.id,
+      organizationId: member?.organizationId
+    })
+  },
+  
+  afterSCIMTokenGenerated: async ({ user, member, scimToken, scimProvider }) => {
+    // Send notification
+    await sendEmail({
+      to: user.email,
+      subject: "SCIM Token Generated",
+      body: `A new SCIM token was generated for provider ${scimProvider.providerId}`
+    })
+    
+    // Audit logging
+    await logAuditEvent({
+      action: "scim_token_generated",
+      userId: user.id,
+      providerId: scimProvider.providerId
+    })
+  }
+})
+```
+
+### Configure Your IdP
+
+Provide these details to your identity provider:
+
+| Field | Value |
+|-------|-------|
+| **SCIM Base URL** | `https://your-app.com/api/auth/scim/v2` |
+| **Bearer Token** | The token from `generateSCIMToken` |
+| **Unique Identifier Field** | `userName` |
+| **Supported Features** | Create Users, Update Users, Delete Users |
+
+#### Okta Configuration
+
+1. Go to **Applications** > **Your App** > **Provisioning**
+2. Select **Configure API Integration**
+3. Enable **API Integration**
+4. Set **SCIM 2.0 Base URL**: `https://your-app.com/api/auth/scim/v2`
+5. Set **OAuth Bearer Token**: `<your-scim-token>`
+6. Click **Test API Credentials**
+7. Enable provisioning features: **Create Users**, **Update User Attributes**, **Deactivate Users**
+
+#### Azure AD Configuration
+
+1. Go to **Enterprise Applications** > **Your App** > **Provisioning**
+2. Set **Provisioning Mode**: Automatic
+3. Set **Tenant URL**: `https://your-app.com/api/auth/scim/v2`
+4. Set **Secret Token**: `<your-scim-token>`
+5. Click **Test Connection**
+6. Configure attribute mappings
+7. Start provisioning
+
+## SCIM Endpoints
+
+The plugin automatically exposes these standard SCIM endpoints:
+
+### Service Provider Config
+
+```
+GET /api/auth/scim/v2/ServiceProviderConfig
+```
+
+Returns capabilities and supported features.
+
+### Schemas
+
+```
+GET /api/auth/scim/v2/Schemas
+GET /api/auth/scim/v2/Schemas/{id}
+```
+
+Returns supported SCIM schemas.
+
+### Resource Types
+
+```
+GET /api/auth/scim/v2/ResourceTypes
+GET /api/auth/scim/v2/ResourceTypes/{id}
+```
+
+Returns supported resource types (User, Group).
+
+### Users
+
+```
+GET    /api/auth/scim/v2/Users
+GET    /api/auth/scim/v2/Users/{id}
+POST   /api/auth/scim/v2/Users
+PUT    /api/auth/scim/v2/Users/{id}
+PATCH  /api/auth/scim/v2/Users/{id}
+DELETE /api/auth/scim/v2/Users/{id}
+```
+
+### Groups
+
+```
+GET    /api/auth/scim/v2/Groups
+GET    /api/auth/scim/v2/Groups/{id}
+```
+
+<Info>
+  Groups are read-only and map to organizations in Better Auth. Users are automatically added to organizations based on the SCIM provider's `organizationId`.
+</Info>
+
+## User Provisioning
+
+### Create User
+
+When a user is assigned in your IdP, a POST request creates the user:
+
+```json
+POST /api/auth/scim/v2/Users
+Authorization: Bearer <scim-token>
+
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+  "userName": "user@example.com",
+  "name": {
+    "givenName": "John",
+    "familyName": "Doe",
+    "formatted": "John Doe"
+  },
+  "emails": [
+    {
+      "value": "user@example.com",
+      "primary": true
+    }
+  ],
+  "active": true
+}
+```
+
+Better Auth will:
+1. Create the user if they don't exist
+2. Add them to the organization linked to the SCIM provider
+3. Send a verification email (if configured)
+
+### Update User
+
+When user attributes change in your IdP:
+
+```json
+PUT /api/auth/scim/v2/Users/{id}
+Authorization: Bearer <scim-token>
+
+{
+  "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+  "userName": "user@example.com",
+  "name": {
+    "givenName": "John",
+    "familyName": "Smith"
+  },
+  "active": true
+}
+```
+
+### Partial Update (PATCH)
+
+PATCH operations support RFC 7644 operations:
+
+```json
+PATCH /api/auth/scim/v2/Users/{id}
+Authorization: Bearer <scim-token>
+
+{
+  "schemas": ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+  "Operations": [
+    {
+      "op": "replace",
+      "path": "active",
+      "value": false
+    }
+  ]
+}
+```
+
+### Deactivate User
+
+When a user is deactivated or unassigned in your IdP:
+
+```
+DELETE /api/auth/scim/v2/Users/{id}
+Authorization: Bearer <scim-token>
+```
+
+This removes the user's membership from the organization. The user account remains but loses access to that organization.
+
+## Filtering and Pagination
+
+### Filter Users
+
+SCIM filtering is supported:
+
+```
+GET /api/auth/scim/v2/Users?filter=userName eq "user@example.com"
+GET /api/auth/scim/v2/Users?filter=emails.value eq "user@example.com"
+```
+
+Supported filter operators:
+- `eq` (equals)
+- `ne` (not equals)
+- `sw` (starts with)
+- `ew` (ends with)
+- `co` (contains)
+
+### Pagination
+
+```
+GET /api/auth/scim/v2/Users?startIndex=1&count=100
+```
+
+## Managing SCIM Providers
+
+### List Providers
+
+```ts
+const providers = await auth.api.listSCIMProviderConnections({
+  organizationId: "org_123"
+})
+```
+
+### Get Provider
+
+```ts
+const provider = await auth.api.getSCIMProviderConnection({
+  providerId: "okta-scim"
+})
+```
+
+### Delete Provider
+
+```ts
+await auth.api.deleteSCIMProviderConnection({
+  providerId: "okta-scim"
+})
+```
+
+<Warning>
+  Deleting a SCIM provider does not remove provisioned users. They remain in the organization but will no longer be managed by the IdP.
+</Warning>
+
+## Attribute Mapping
+
+SCIM attributes are mapped to Better Auth user fields:
+
+| SCIM Attribute | Better Auth Field |
+|----------------|-------------------|
+| `userName` | `email` |
+| `emails[0].value` | `email` |
+| `name.givenName` | `name` (first part) |
+| `name.familyName` | `name` (last part) |
+| `name.formatted` | `name` |
+| `active` | Used for deactivation |
+| `id` | User ID (returned, not stored) |
+| `externalId` | IdP user ID |
+
+## Testing
+
+### Default SCIM Providers
+
+Configure test providers for development:
+
+```ts
+scim({
+  defaultSCIM: [
+    {
+      providerId: "test-scim",
+      scimToken: "test-token-123",
+      organizationId: "org_test"
+    }
+  ]
+})
+```
+
+Default providers take precedence over database providers.
+
+### Manual Testing
+
+Test SCIM endpoints with curl:
+
+```bash
+# Get service provider config
+curl https://your-app.com/api/auth/scim/v2/ServiceProviderConfig \
+  -H "Authorization: Bearer <scim-token>"
+
+# List users
+curl https://your-app.com/api/auth/scim/v2/Users \
+  -H "Authorization: Bearer <scim-token>"
+
+# Create user
+curl -X POST https://your-app.com/api/auth/scim/v2/Users \
+  -H "Authorization: Bearer <scim-token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+    "userName": "test@example.com",
+    "name": {"givenName": "Test", "familyName": "User"},
+    "emails": [{"value": "test@example.com", "primary": true}],
+    "active": true
+  }'
+```
+
+## Database Schema
+
+The SCIM plugin adds the `scimProvider` table:
+
+```sql
+CREATE TABLE scim_provider (
+  id TEXT PRIMARY KEY,
+  provider_id TEXT NOT NULL UNIQUE,
+  scim_token TEXT NOT NULL UNIQUE,
+  organization_id TEXT,
+  user_id TEXT, -- if providerOwnership is enabled
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+## Error Handling
+
+SCIM errors follow RFC 7644 format:
+
+```json
+{
+  "schemas": ["urn:ietf:params:scim:api:messages:2.0:Error"],
+  "status": "400",
+  "scimType": "invalidValue",
+  "detail": "Invalid email address format"
+}
+```
+
+Common error types:
+- `invalidValue`: Invalid attribute value
+- `uniqueness`: Uniqueness constraint violation
+- `noTarget`: Resource not found
+- `invalidFilter`: Invalid filter syntax
+
+## Security Considerations
+
+### Token Security
+
+- Always use HTTPS in production
+- Rotate SCIM tokens periodically
+- Use hashed or encrypted token storage
+- Implement rate limiting on SCIM endpoints
+
+### Access Control
+
+Restrict who can generate SCIM tokens:
+
+```ts
+scim({
+  beforeSCIMTokenGenerated: async ({ user, member }) => {
+    // Only organization owners can generate tokens
+    if (member?.role !== "owner") {
+      throw new Error("Only organization owners can generate SCIM tokens")
+    }
+  }
+})
+```
+
+### Audit Logging
+
+Log all SCIM operations:
+
+```ts
+scim({
+  afterSCIMTokenGenerated: async ({ user, scimProvider }) => {
+    await auditLog.create({
+      action: "scim_token_generated",
+      userId: user.id,
+      providerId: scimProvider.providerId,
+      timestamp: new Date()
+    })
+  }
+})
+```
+
+## Integration with Organization Plugin
+
+SCIM works seamlessly with the organization plugin:
+
+```ts
+import { betterAuth } from "better-auth"
+import { organization } from "better-auth/plugins"
+import { scim } from "@better-auth/scim"
+
+export const auth = betterAuth({
+  plugins: [
+    organization({
+      allowUserToCreateOrganization: true
+    }),
+    scim({
+      providerOwnership: { enabled: true },
+      storeSCIMToken: "hashed"
+    })
+  ]
+})
+```
+
+Users provisioned via SCIM are automatically added as members of the organization linked to the SCIM provider.
+
+## API Reference
+
+For complete type definitions and all available options, see:
+- [SCIM Types](https://github.com/better-auth/better-auth/blob/main/packages/scim/src/types.ts)
+- [SCIM Routes](https://github.com/better-auth/better-auth/blob/main/packages/scim/src/routes.ts)

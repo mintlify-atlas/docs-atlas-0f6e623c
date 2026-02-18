@@ -1,0 +1,671 @@
+---
+title: Adapter Type
+description: Type definitions for database adapters in Better Auth
+---
+
+## Overview
+
+The adapter types define the interface between Better Auth and your database. Adapters provide a unified API for database operations across different databases and ORMs.
+
+**Source:** `/packages/core/src/db/adapter/index.ts`
+
+## DBAdapter Interface
+
+The core database adapter interface:
+
+```typescript
+interface DBAdapter<Options extends BetterAuthOptions = BetterAuthOptions> {
+  id: string;
+  create: <T extends Record<string, any>, R = T>(data: {
+    model: string;
+    data: Omit<T, "id">;
+    select?: string[];
+    forceAllowId?: boolean;
+  }) => Promise<R>;
+  findOne: <T>(data: {
+    model: string;
+    where: Where[];
+    select?: string[];
+    join?: JoinOption;
+  }) => Promise<T | null>;
+  findMany: <T>(data: {
+    model: string;
+    where?: Where[];
+    limit?: number;
+    select?: string[];
+    sortBy?: { field: string; direction: "asc" | "desc" };
+    offset?: number;
+    join?: JoinOption;
+  }) => Promise<T[]>;
+  count: (data: {
+    model: string;
+    where?: Where[];
+  }) => Promise<number>;
+  update: <T>(data: {
+    model: string;
+    where: Where[];
+    update: Record<string, any>;
+  }) => Promise<T | null>;
+  updateMany: (data: {
+    model: string;
+    where: Where[];
+    update: Record<string, any>;
+  }) => Promise<number>;
+  delete: <T>(data: {
+    model: string;
+    where: Where[];
+  }) => Promise<void>;
+  deleteMany: (data: {
+    model: string;
+    where: Where[];
+  }) => Promise<number>;
+  transaction: <R>(
+    callback: (trx: DBTransactionAdapter<Options>) => Promise<R>
+  ) => Promise<R>;
+  createSchema?: (options: Options, file?: string) => Promise<DBAdapterSchemaCreation>;
+  options?: {
+    adapterConfig: DBAdapterFactoryConfig<Options>;
+  } & CustomAdapter["options"];
+}
+```
+
+## Core Methods
+
+### create
+
+Create a new record:
+
+<ResponseField name="model" type="string" required>
+  The model/table name
+</ResponseField>
+
+<ResponseField name="data" type="Omit<T, 'id'>" required>
+  Data to insert (without ID, unless `forceAllowId` is true)
+</ResponseField>
+
+<ResponseField name="select" type="string[]">
+  Fields to return in the response
+</ResponseField>
+
+<ResponseField name="forceAllowId" type="boolean" default="false">
+  Allow providing a custom ID in the data
+</ResponseField>
+
+```typescript
+const user = await adapter.create({
+  model: "user",
+  data: {
+    email: "user@example.com",
+    name: "John Doe",
+    emailVerified: false
+  },
+  select: ["id", "email", "name"]
+});
+```
+
+### findOne
+
+Find a single record:
+
+<ResponseField name="model" type="string" required>
+  The model/table name
+</ResponseField>
+
+<ResponseField name="where" type="Where[]" required>
+  Filter conditions
+</ResponseField>
+
+<ResponseField name="select" type="string[]">
+  Fields to return
+</ResponseField>
+
+<ResponseField name="join" type="JoinOption">
+  Related models to join
+</ResponseField>
+
+```typescript
+const user = await adapter.findOne({
+  model: "user",
+  where: [
+    {
+      field: "email",
+      value: "user@example.com",
+      operator: "eq"
+    }
+  ],
+  select: ["id", "email", "name"]
+});
+```
+
+### findMany
+
+Find multiple records:
+
+<ResponseField name="model" type="string" required>
+  The model/table name
+</ResponseField>
+
+<ResponseField name="where" type="Where[]">
+  Filter conditions
+</ResponseField>
+
+<ResponseField name="limit" type="number">
+  Maximum number of records to return
+</ResponseField>
+
+<ResponseField name="offset" type="number">
+  Number of records to skip
+</ResponseField>
+
+<ResponseField name="sortBy" type="{ field: string; direction: 'asc' | 'desc' }">
+  Sort configuration
+</ResponseField>
+
+<ResponseField name="select" type="string[]">
+  Fields to return
+</ResponseField>
+
+<ResponseField name="join" type="JoinOption">
+  Related models to join
+</ResponseField>
+
+```typescript
+const users = await adapter.findMany({
+  model: "user",
+  where: [
+    {
+      field: "emailVerified",
+      value: true,
+      operator: "eq"
+    }
+  ],
+  limit: 10,
+  sortBy: {
+    field: "createdAt",
+    direction: "desc"
+  }
+});
+```
+
+### count
+
+Count records:
+
+```typescript
+const userCount = await adapter.count({
+  model: "user",
+  where: [
+    {
+      field: "emailVerified",
+      value: true
+    }
+  ]
+});
+```
+
+### update
+
+Update a single record:
+
+<Note>
+May not return updated data if multiple where clauses are provided.
+</Note>
+
+```typescript
+const updatedUser = await adapter.update({
+  model: "user",
+  where: [
+    {
+      field: "id",
+      value: "user-123"
+    }
+  ],
+  update: {
+    name: "Jane Doe",
+    updatedAt: new Date()
+  }
+});
+```
+
+### updateMany
+
+Update multiple records:
+
+```typescript
+const updatedCount = await adapter.updateMany({
+  model: "session",
+  where: [
+    {
+      field: "expiresAt",
+      value: new Date(),
+      operator: "lt"
+    }
+  ],
+  update: {
+    active: false
+  }
+});
+```
+
+### delete
+
+Delete a single record:
+
+```typescript
+await adapter.delete({
+  model: "user",
+  where: [
+    {
+      field: "id",
+      value: "user-123"
+    }
+  ]
+});
+```
+
+### deleteMany
+
+Delete multiple records:
+
+```typescript
+const deletedCount = await adapter.deleteMany({
+  model: "session",
+  where: [
+    {
+      field: "expiresAt",
+      value: new Date(),
+      operator: "lt"
+    }
+  ]
+});
+```
+
+### transaction
+
+Execute operations in a transaction:
+
+```typescript
+const result = await adapter.transaction(async (trx) => {
+  const user = await trx.create({
+    model: "user",
+    data: {
+      email: "user@example.com",
+      name: "John Doe"
+    }
+  });
+  
+  await trx.create({
+    model: "account",
+    data: {
+      userId: user.id,
+      providerId: "credential",
+      accountId: user.email
+    }
+  });
+  
+  return user;
+});
+```
+
+## Where Clause
+
+Filter conditions for queries:
+
+```typescript
+type Where = {
+  field: string;
+  value: string | number | boolean | string[] | number[] | Date | null;
+  operator?: WhereOperator;
+  connector?: "AND" | "OR";
+};
+
+type WhereOperator =
+  | "eq"         // Equal
+  | "ne"         // Not equal
+  | "lt"         // Less than
+  | "lte"        // Less than or equal
+  | "gt"         // Greater than
+  | "gte"        // Greater than or equal
+  | "in"         // In array
+  | "not_in"     // Not in array
+  | "contains"   // Contains substring
+  | "starts_with" // Starts with
+  | "ends_with"; // Ends with
+```
+
+<Expandable title="Where Clause Examples">
+```typescript
+// Equality
+const where1: Where = {
+  field: "email",
+  value: "user@example.com",
+  operator: "eq" // default
+};
+
+// Comparison
+const where2: Where = {
+  field: "age",
+  value: 18,
+  operator: "gte"
+};
+
+// In array
+const where3: Where = {
+  field: "role",
+  value: ["admin", "moderator"],
+  operator: "in"
+};
+
+// String matching
+const where4: Where = {
+  field: "name",
+  value: "John",
+  operator: "starts_with"
+};
+
+// Multiple conditions with OR
+const whereConditions: Where[] = [
+  {
+    field: "role",
+    value: "admin",
+    connector: "OR"
+  },
+  {
+    field: "role",
+    value: "moderator"
+  }
+];
+```
+</Expandable>
+
+## Join Configuration
+
+Join related tables:
+
+```typescript
+type JoinOption = {
+  [model: string]: boolean | { limit?: number };
+};
+
+type JoinConfig = {
+  [model: string]: {
+    on: {
+      from: string; // Column in main table
+      to: string;   // Column in joined table
+    };
+    limit?: number;
+    relation?: "one-to-one" | "one-to-many" | "many-to-many";
+  };
+};
+```
+
+<Expandable title="Join Examples">
+```typescript
+// Simple join
+const user = await adapter.findOne({
+  model: "user",
+  where: [{ field: "id", value: "user-123" }],
+  join: {
+    session: true // Join all sessions
+  }
+});
+
+// Join with limit
+const userWithRecentSessions = await adapter.findOne({
+  model: "user",
+  where: [{ field: "id", value: "user-123" }],
+  join: {
+    session: { limit: 5 } // Only last 5 sessions
+  }
+});
+
+// Multiple joins
+const userWithRelations = await adapter.findOne({
+  model: "user",
+  where: [{ field: "id", value: "user-123" }],
+  join: {
+    session: true,
+    account: true
+  }
+});
+```
+</Expandable>
+
+## Adapter Factory
+
+Create custom adapters using the factory:
+
+```typescript
+interface DBAdapterFactoryConfig<Options extends BetterAuthOptions = BetterAuthOptions> {
+  adapterId: string;
+  adapterName?: string;
+  usePlural?: boolean;
+  debugLogs?: DBAdapterDebugLogOption;
+  supportsNumericIds?: boolean;
+  supportsUUIDs?: boolean;
+  supportsJSON?: boolean;
+  supportsDates?: boolean;
+  supportsBooleans?: boolean;
+  supportsArrays?: boolean;
+  transaction?: false | (<R>(callback: (trx: DBTransactionAdapter<Options>) => Promise<R>) => Promise<R>);
+  disableIdGeneration?: boolean;
+  mapKeysTransformInput?: Record<string, string>;
+  mapKeysTransformOutput?: Record<string, string>;
+  customTransformInput?: (props: TransformInputProps) => any;
+  customTransformOutput?: (props: TransformOutputProps) => any;
+  customIdGenerator?: (props: { model: string }) => string;
+  disableTransformOutput?: boolean;
+  disableTransformInput?: boolean;
+  disableTransformJoin?: boolean;
+}
+```
+
+<Expandable title="Example: Custom Adapter Factory">
+```typescript
+import { createAdapterFactory } from "better-auth/adapters";
+
+const myAdapter = createAdapterFactory({
+  config: {
+    adapterId: "my-adapter",
+    adapterName: "My Custom Adapter",
+    supportsJSON: true,
+    supportsDates: true,
+    supportsBooleans: true,
+    transaction: async (callback) => {
+      // Implement transaction logic
+      return await callback(transactionAdapter);
+    }
+  },
+  adapter: ({ options, schema, getModelName, getFieldName }) => {
+    return {
+      create: async ({ model, data, select }) => {
+        const tableName = getModelName(model);
+        // Implement create logic
+        return await db.insert(tableName, data);
+      },
+      findOne: async ({ model, where, select, join }) => {
+        const tableName = getModelName(model);
+        // Implement findOne logic
+        return await db.findOne(tableName, where);
+      },
+      // ... implement other methods
+    };
+  }
+});
+```
+</Expandable>
+
+## Schema Creation
+
+Generate database schemas:
+
+```typescript
+interface DBAdapterSchemaCreation {
+  code: string;     // Schema code to generate
+  path: string;     // File path (relative or absolute)
+  append?: boolean; // Append to existing file
+  overwrite?: boolean; // Overwrite existing file
+}
+```
+
+<Expandable title="Example: Schema Generation">
+```typescript
+const myAdapter: DBAdapter = {
+  id: "my-adapter",
+  // ... other methods
+  createSchema: async (options, file) => {
+    const schema = generateSchemaCode(options);
+    
+    return {
+      code: schema,
+      path: file || "./db/schema.ts",
+      overwrite: true
+    };
+  }
+};
+```
+</Expandable>
+
+## Transaction Adapter
+
+Adapter interface within transactions (without nested transactions):
+
+```typescript
+type DBTransactionAdapter<Options extends BetterAuthOptions = BetterAuthOptions> =
+  Omit<DBAdapter<Options>, "transaction">;
+```
+
+Transactions cannot be nested, so the transaction adapter omits the `transaction` method.
+
+## Custom Adapter
+
+Interface for implementing custom adapters:
+
+```typescript
+interface CustomAdapter {
+  create: <T extends Record<string, any>>(data: {
+    model: string;
+    data: T;
+    select?: string[];
+  }) => Promise<T>;
+  update: <T>(data: {
+    model: string;
+    where: CleanedWhere[];
+    update: T;
+  }) => Promise<T | null>;
+  updateMany: (data: {
+    model: string;
+    where: CleanedWhere[];
+    update: Record<string, any>;
+  }) => Promise<number>;
+  findOne: <T>(data: {
+    model: string;
+    where: CleanedWhere[];
+    select?: string[];
+    join?: JoinConfig;
+  }) => Promise<T | null>;
+  findMany: <T>(data: {
+    model: string;
+    where?: CleanedWhere[];
+    limit: number;
+    select?: string[];
+    sortBy?: { field: string; direction: "asc" | "desc" };
+    offset?: number;
+    join?: JoinConfig;
+  }) => Promise<T[]>;
+  delete: (data: {
+    model: string;
+    where: CleanedWhere[];
+  }) => Promise<void>;
+  deleteMany: (data: {
+    model: string;
+    where: CleanedWhere[];
+  }) => Promise<number>;
+  count: (data: {
+    model: string;
+    where?: CleanedWhere[];
+  }) => Promise<number>;
+  createSchema?: (props: {
+    file?: string;
+    tables: BetterAuthDBSchema;
+  }) => Promise<DBAdapterSchemaCreation>;
+  options?: Record<string, any>;
+}
+```
+
+## Debug Logging
+
+Configure adapter debug logs:
+
+```typescript
+type DBAdapterDebugLogOption =
+  | boolean
+  | {
+      logCondition?: () => boolean;
+      create?: boolean;
+      update?: boolean;
+      updateMany?: boolean;
+      findOne?: boolean;
+      findMany?: boolean;
+      delete?: boolean;
+      deleteMany?: boolean;
+      count?: boolean;
+    };
+```
+
+<Expandable title="Example: Debug Configuration">
+```typescript
+const adapter = myAdapter(db, {
+  debugLogs: {
+    // Only log create and update operations
+    create: true,
+    update: true,
+    findOne: false,
+    findMany: false
+  }
+});
+
+// Or enable all logs conditionally
+const adapter2 = myAdapter(db, {
+  debugLogs: {
+    logCondition: () => process.env.NODE_ENV === "development"
+  }
+});
+```
+</Expandable>
+
+## Built-in Adapters
+
+Better Auth includes adapters for popular databases:
+
+<CardGroup cols={2}>
+  <Card title="Kysely" icon="database">
+    Built-in adapter using Kysely (full mode)
+  </Card>
+  <Card title="Drizzle" icon="database">
+    ORM adapter for Drizzle ORM
+  </Card>
+  <Card title="Prisma" icon="database">
+    ORM adapter for Prisma
+  </Card>
+  <Card title="MongoDB" icon="database">
+    NoSQL adapter for MongoDB
+  </Card>
+</CardGroup>
+
+## Related Types
+
+<CardGroup cols={2}>
+  <Card title="User Type" href="/api/types/user" icon="user">
+    User schema definition
+  </Card>
+  <Card title="Session Type" href="/api/types/session" icon="clock">
+    Session schema definition
+  </Card>
+</CardGroup>
+
+## See Also
+
+- [Database Integration](/concepts/database) - Database setup and configuration
+- [Creating Custom Adapter](/guides/creating-custom-adapter) - Build your own adapter
+- [CLI Reference](/concepts/cli) - Schema generation commands

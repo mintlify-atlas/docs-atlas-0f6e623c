@@ -1,0 +1,464 @@
+---
+title: Access Control (RBAC)
+description: Implement role-based access control with flexible permissions
+---
+
+`RBAC` `Permissions` `Authorization` `Roles`
+
+The Access Control plugin provides a flexible role-based access control (RBAC) system for managing permissions in your application. Define custom roles, assign permissions, and enforce authorization rules with type-safe APIs.
+
+## Core Concepts
+
+Access control in Better Auth is built around three key concepts:
+
+- **Statements**: Define available resources and actions (e.g., `user: ["create", "delete"]`)
+- **Roles**: Collections of permissions based on statements
+- **Authorization**: Check if a role has permission to perform specific actions
+
+## Installation
+
+The access control functionality is built into Better Auth and can be used standalone or with the admin and organization plugins.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { createAccessControl } from "better-auth/plugins"
+
+// Define your access control statements
+const ac = createAccessControl({
+  user: ["create", "read", "update", "delete"],
+  post: ["create", "read", "update", "delete", "publish"],
+  settings: ["read", "update"]
+} as const)
+
+export const auth = betterAuth({
+  // ... other config
+})
+```
+
+## Defining Access Control
+
+### Create Statements
+
+Statements define the resources and actions available in your system:
+
+```ts
+const statements = {
+  user: ["create", "read", "update", "delete"],
+  post: ["create", "read", "update", "delete", "publish"],
+  settings: ["read", "update"],
+  analytics: ["view", "export"]
+} as const
+
+const ac = createAccessControl(statements)
+```
+
+### Create Roles
+
+Create roles with specific permissions based on your statements:
+
+```ts
+// Admin role with full permissions
+const adminRole = ac.newRole({
+  user: ["create", "read", "update", "delete"],
+  post: ["create", "read", "update", "delete", "publish"],
+  settings: ["read", "update"],
+  analytics: ["view", "export"]
+})
+
+// Editor role with limited permissions
+const editorRole = ac.newRole({
+  user: ["read"],
+  post: ["create", "read", "update", "publish"],
+  settings: ["read"],
+  analytics: ["view"]
+})
+
+// Viewer role with read-only access
+const viewerRole = ac.newRole({
+  user: ["read"],
+  post: ["read"],
+  settings: ["read"],
+  analytics: ["view"]
+})
+```
+
+## Authorization
+
+### Check Permissions
+
+Use the `authorize` method to check if a role has permission to perform actions:
+
+```ts
+// Check single resource permission
+const result = adminRole.authorize({
+  user: ["delete"]
+})
+
+if (result.success) {
+  // User can delete
+} else {
+  console.error(result.error)
+}
+```
+
+### Multiple Actions
+
+Check multiple actions on the same resource:
+
+```ts
+const result = editorRole.authorize({
+  post: ["update", "publish"]
+})
+```
+
+### Multiple Resources
+
+Check permissions across multiple resources:
+
+```ts
+const result = adminRole.authorize({
+  user: ["delete"],
+  post: ["publish"],
+  settings: ["update"]
+})
+```
+
+### Logical Connectors
+
+Use `OR` or `AND` connectors to control how permissions are evaluated:
+
+<CodeGroup>
+
+```ts title="AND (default)"
+// All permissions must be granted
+const result = role.authorize({
+  user: ["create", "delete"],
+  post: ["publish"]
+}, "AND")
+```
+
+```ts title="OR"
+// At least one permission must be granted
+const result = role.authorize({
+  user: ["create", "delete"]
+}, "OR")
+```
+
+```ts title="Complex"
+// Mix connectors for complex logic
+const result = role.authorize({
+  user: {
+    actions: ["create", "delete"],
+    connector: "OR"
+  },
+  post: ["publish"]
+}, "AND")
+```
+
+</CodeGroup>
+
+## Response Format
+
+The `authorize` method returns a typed response:
+
+```ts
+type AuthorizeResponse =
+  | { success: true; error?: never }
+  | { success: false; error: string }
+```
+
+### Example Usage
+
+```ts
+const result = role.authorize({
+  user: ["delete"]
+})
+
+if (result.success) {
+  // Proceed with the action
+  await deleteUser(userId)
+} else {
+  // Handle unauthorized access
+  throw new Error(result.error)
+}
+```
+
+## Integration with Admin Plugin
+
+The access control system integrates seamlessly with the admin plugin:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
+import { createAccessControl } from "better-auth/plugins"
+
+const ac = createAccessControl({
+  user: ["create", "list", "set-role", "ban", "impersonate", "delete"],
+  session: ["list", "revoke", "delete"]
+} as const)
+
+const adminRole = ac.newRole({
+  user: ["create", "list", "set-role", "ban", "impersonate", "delete"],
+  session: ["list", "revoke", "delete"]
+})
+
+const moderatorRole = ac.newRole({
+  user: ["list", "ban"],
+  session: ["list", "revoke"]
+})
+
+export const auth = betterAuth({
+  plugins: [
+    admin({
+      ac,
+      roles: {
+        admin: adminRole,
+        moderator: moderatorRole,
+        user: ac.newRole({ user: [], session: [] })
+      }
+    })
+  ]
+})
+```
+
+## Integration with Organization Plugin
+
+Use access control for organization-level permissions:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { organization } from "better-auth/plugins"
+import { createAccessControl } from "better-auth/plugins"
+
+const ac = createAccessControl({
+  organization: ["update", "delete"],
+  member: ["create", "update", "delete"],
+  invitation: ["create", "cancel"],
+  team: ["create", "update", "delete"]
+} as const)
+
+const ownerRole = ac.newRole({
+  organization: ["update", "delete"],
+  member: ["create", "update", "delete"],
+  invitation: ["create", "cancel"],
+  team: ["create", "update", "delete"]
+})
+
+const adminRole = ac.newRole({
+  organization: ["update"],
+  member: ["create", "update", "delete"],
+  invitation: ["create", "cancel"],
+  team: ["create", "update", "delete"]
+})
+
+const memberRole = ac.newRole({
+  organization: [],
+  member: [],
+  invitation: [],
+  team: []
+})
+
+export const auth = betterAuth({
+  plugins: [
+    organization({
+      ac,
+      roles: {
+        owner: ownerRole,
+        admin: adminRole,
+        member: memberRole
+      }
+    })
+  ]
+})
+```
+
+## Type Safety
+
+The access control system is fully type-safe. TypeScript will validate:
+
+- Resource names match your statements
+- Actions exist for the specified resource
+- Role permissions are subsets of available statements
+
+```ts
+const ac = createAccessControl({
+  user: ["create", "delete"],
+  post: ["create", "read"]
+} as const)
+
+// ✅ Valid
+const role = ac.newRole({
+  user: ["create"],
+  post: ["read"]
+})
+
+// ❌ TypeScript error: "update" is not a valid action for "user"
+const invalidRole = ac.newRole({
+  user: ["create", "update"]
+})
+
+// ❌ TypeScript error: "comment" is not a valid resource
+const invalidRole2 = ac.newRole({
+  comment: ["create"]
+})
+```
+
+## Best Practices
+
+<Note>
+**Principle of Least Privilege**: Grant users only the permissions they need to perform their job functions.
+</Note>
+
+### Define Clear Statements
+
+Create clear, semantic statements that represent actual operations in your application:
+
+```ts
+const ac = createAccessControl({
+  // Good: Clear, action-based permissions
+  user: ["create", "read", "update", "delete"],
+  invoice: ["create", "view", "approve", "pay"],
+  
+  // Avoid: Generic or ambiguous permissions
+  // data: ["access", "modify"]
+} as const)
+```
+
+### Use Hierarchical Roles
+
+Design roles that build on each other:
+
+```ts
+// Base role with minimal permissions
+const viewer = ac.newRole({
+  user: ["read"],
+  post: ["read"]
+})
+
+// Editor adds write permissions
+const editor = ac.newRole({
+  user: ["read"],
+  post: ["read", "create", "update"]
+})
+
+// Admin has full control
+const admin = ac.newRole({
+  user: ["read", "create", "update", "delete"],
+  post: ["read", "create", "update", "delete"]
+})
+```
+
+### Centralize Authorization Logic
+
+Create helper functions to centralize permission checks:
+
+```ts
+function requirePermission(
+  role: Role,
+  permissions: Record<string, string[]>
+) {
+  const result = role.authorize(permissions)
+  if (!result.success) {
+    throw new Error(`Unauthorized: ${result.error}`)
+  }
+}
+
+// Usage
+requirePermission(userRole, { post: ["delete"] })
+```
+
+## Examples
+
+### Blog Platform
+
+```ts
+const blogAc = createAccessControl({
+  post: ["create", "read", "update", "delete", "publish"],
+  comment: ["create", "read", "update", "delete", "moderate"],
+  user: ["read", "update"]
+} as const)
+
+const roles = {
+  owner: blogAc.newRole({
+    post: ["create", "read", "update", "delete", "publish"],
+    comment: ["create", "read", "update", "delete", "moderate"],
+    user: ["read", "update"]
+  }),
+  author: blogAc.newRole({
+    post: ["create", "read", "update", "publish"],
+    comment: ["create", "read", "update", "moderate"],
+    user: ["read", "update"]
+  }),
+  subscriber: blogAc.newRole({
+    post: ["read"],
+    comment: ["create", "read"],
+    user: ["read", "update"]
+  })
+}
+```
+
+### E-commerce Platform
+
+```ts
+const ecommerceAc = createAccessControl({
+  product: ["create", "read", "update", "delete"],
+  order: ["create", "read", "update", "cancel", "refund"],
+  customer: ["read", "update", "delete"],
+  inventory: ["read", "update"],
+  analytics: ["view", "export"]
+} as const)
+
+const roles = {
+  admin: ecommerceAc.newRole({
+    product: ["create", "read", "update", "delete"],
+    order: ["create", "read", "update", "cancel", "refund"],
+    customer: ["read", "update", "delete"],
+    inventory: ["read", "update"],
+    analytics: ["view", "export"]
+  }),
+  manager: ecommerceAc.newRole({
+    product: ["read", "update"],
+    order: ["read", "update", "cancel"],
+    customer: ["read", "update"],
+    inventory: ["read", "update"],
+    analytics: ["view"]
+  }),
+  staff: ecommerceAc.newRole({
+    product: ["read"],
+    order: ["read", "update"],
+    customer: ["read"],
+    inventory: ["read"],
+    analytics: []
+  })
+}
+```
+
+## API Reference
+
+### `createAccessControl(statements)`
+
+Creates an access control instance with the specified statements.
+
+**Parameters:**
+- `statements`: Object defining resources and their available actions
+
+**Returns:** Access control instance with `newRole` and `statements` properties
+
+### `ac.newRole(permissions)`
+
+Creates a new role with specific permissions.
+
+**Parameters:**
+- `permissions`: Object mapping resources to allowed actions (must be a subset of statements)
+
+**Returns:** Role instance with `authorize` and `statements` methods
+
+### `role.authorize(request, connector?)`
+
+Checks if the role has permission to perform the specified actions.
+
+**Parameters:**
+- `request`: Object specifying resources and actions to check
+- `connector`: Optional logical connector (`"AND"` or `"OR"`, defaults to `"AND"`)
+
+**Returns:** `AuthorizeResponse` object with `success` boolean and optional `error` string

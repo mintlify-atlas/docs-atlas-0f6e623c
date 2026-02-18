@@ -1,0 +1,647 @@
+---
+title: Custom OAuth Provider
+description: Create custom OAuth 2.0 providers for Better Auth
+---
+
+# Custom OAuth Provider
+
+While Better Auth includes 30+ built-in social providers, you can create custom OAuth 2.0 providers to integrate with any OAuth-compatible service.
+
+## When to Create a Custom Provider
+
+Create a custom provider when:
+
+- You need to integrate with an OAuth provider not included in Better Auth
+- You're using a proprietary or internal OAuth server
+- You need to customize the OAuth flow beyond what configuration options provide
+- You're integrating with a service that implements OAuth 2.0 but isn't a "social" provider
+
+## OAuth Provider Interface
+
+Custom providers must implement the `OAuthProvider` interface:
+
+```ts
+import type { OAuthProvider, ProviderOptions } from "better-auth/oauth2";
+
+interface OAuthProvider<Profile = any> {
+  id: string;                          // Unique provider identifier
+  name: string;                        // Display name
+  createAuthorizationURL: (data: {    // Generate OAuth authorization URL
+    state: string;
+    codeVerifier: string;
+    scopes?: string[];
+    redirectURI: string;
+    loginHint?: string;
+  }) => Promise<URL> | URL;
+  validateAuthorizationCode: (data: { // Exchange code for tokens
+    code: string;
+    codeVerifier?: string;
+    redirectURI: string;
+  }) => Promise<OAuth2Tokens | null>;
+  getUserInfo: (token: OAuth2Tokens) => Promise<{ // Fetch user profile
+    user: OAuth2UserInfo;
+    data: Profile;
+  } | null>;
+  refreshAccessToken?: (refreshToken: string) => Promise<OAuth2Tokens>;
+  verifyIdToken?: (token: string, nonce?: string) => Promise<boolean>;
+  options?: ProviderOptions<Profile>;
+}
+```
+
+## Creating a Custom Provider
+
+### Step 1: Define Profile Interface
+
+Define the shape of user data from your provider:
+
+```ts
+interface CustomProviderProfile {
+  id: string;
+  email: string;
+  name: string;
+  avatar?: string;
+  // Add provider-specific fields
+  username?: string;
+  bio?: string;
+}
+```
+
+### Step 2: Define Options Interface
+
+Extend `ProviderOptions` with provider-specific configuration:
+
+```ts
+import type { ProviderOptions } from "better-auth/oauth2";
+
+interface CustomProviderOptions extends ProviderOptions<CustomProviderProfile> {
+  clientId: string;
+  clientSecret?: string;
+  // Add custom options
+  apiBaseUrl?: string;
+  additionalParam?: string;
+}
+```
+
+### Step 3: Implement the Provider
+
+Create the provider function:
+
+```ts
+import type { OAuthProvider } from "better-auth/oauth2";
+import {
+  createAuthorizationURL,
+  validateAuthorizationCode,
+  refreshAccessToken,
+} from "better-auth/oauth2";
+import { betterFetch } from "@better-fetch/fetch";
+
+export const customProvider = (
+  options: CustomProviderOptions
+): OAuthProvider<CustomProviderProfile> => {
+  const baseUrl = options.apiBaseUrl || "https://api.example.com";
+  const authEndpoint = `${baseUrl}/oauth/authorize`;
+  const tokenEndpoint = `${baseUrl}/oauth/token`;
+
+  return {
+    id: "custom-provider",
+    name: "Custom Provider",
+    
+    createAuthorizationURL({ state, codeVerifier, scopes, redirectURI }) {
+      // Set default scopes
+      const _scopes = options.disableDefaultScope
+        ? []
+        : ["read:user", "read:email"];
+      
+      if (options.scope) _scopes.push(...options.scope);
+      if (scopes) _scopes.push(...scopes);
+
+      return createAuthorizationURL({
+        id: "custom-provider",
+        options,
+        authorizationEndpoint: authEndpoint,
+        scopes: _scopes,
+        state,
+        codeVerifier,
+        redirectURI,
+      });
+    },
+
+    validateAuthorizationCode: async ({ code, codeVerifier, redirectURI }) => {
+      return validateAuthorizationCode({
+        code,
+        codeVerifier,
+        redirectURI,
+        options,
+        tokenEndpoint,
+      });
+    },
+
+    async getUserInfo(token) {
+      if (options.getUserInfo) {
+        return options.getUserInfo(token);
+      }
+
+      // Fetch user profile from provider API
+      const { data: profile, error } = await betterFetch<CustomProviderProfile>(
+        `${baseUrl}/api/user`,
+        {
+          headers: {
+            Authorization: `Bearer ${token.accessToken}`,
+          },
+        }
+      );
+
+      if (error || !profile) {
+        return null;
+      }
+
+      // Map profile to Better Auth user format
+      const userMap = await options.mapProfileToUser?.(profile);
+      
+      return {
+        user: {
+          id: profile.id,
+          name: profile.name,
+          email: profile.email,
+          image: profile.avatar,
+          emailVerified: true, // Adjust based on your provider
+          ...userMap,
+        },
+        data: profile,
+      };
+    },
+
+    refreshAccessToken: options.refreshAccessToken
+      ? options.refreshAccessToken
+      : async (refreshToken) => {
+          return refreshAccessToken({
+            refreshToken,
+            options,
+            tokenEndpoint,
+          });
+        },
+
+    options,
+  };
+};
+```
+
+### Step 4: Use the Custom Provider
+
+Register your custom provider with Better Auth:
+
+```ts
+import { betterAuth } from "better-auth";
+import { customProvider } from "./custom-provider";
+
+export const auth = betterAuth({
+  socialProviders: {
+    customProvider: customProvider({
+      clientId: process.env.CUSTOM_PROVIDER_CLIENT_ID!,
+      clientSecret: process.env.CUSTOM_PROVIDER_CLIENT_SECRET!,
+      apiBaseUrl: "https://api.example.com",
+    }),
+  },
+});
+```
+
+## Helper Functions
+
+Better Auth provides helper functions to simplify common OAuth operations:
+
+### createAuthorizationURL
+
+Generates an OAuth 2.0 authorization URL with PKCE support:
+
+```ts
+import { createAuthorizationURL } from "better-auth/oauth2";
+
+const url = createAuthorizationURL({
+  id: "provider-id",
+  options: {
+    clientId: "client-id",
+    redirectURI: "https://example.com/callback",
+  },
+  authorizationEndpoint: "https://provider.com/oauth/authorize",
+  scopes: ["read", "write"],
+  state: "random-state",
+  codeVerifier: "code-verifier", // For PKCE
+  // Optional parameters
+  prompt: "consent",
+  loginHint: "user@example.com",
+  responseMode: "query", // or "form_post"
+  responseType: "code", // or "code id_token"
+});
+```
+
+### validateAuthorizationCode
+
+Exchanges authorization code for access tokens:
+
+```ts
+import { validateAuthorizationCode } from "better-auth/oauth2";
+
+const tokens = await validateAuthorizationCode({
+  code: "authorization-code",
+  codeVerifier: "code-verifier", // For PKCE
+  redirectURI: "https://example.com/callback",
+  options: {
+    clientId: "client-id",
+    clientSecret: "client-secret",
+  },
+  tokenEndpoint: "https://provider.com/oauth/token",
+});
+```
+
+### refreshAccessToken
+
+Refreshes expired access tokens:
+
+```ts
+import { refreshAccessToken } from "better-auth/oauth2";
+
+const newTokens = await refreshAccessToken({
+  refreshToken: "refresh-token",
+  options: {
+    clientId: "client-id",
+    clientSecret: "client-secret",
+  },
+  tokenEndpoint: "https://provider.com/oauth/token",
+});
+```
+
+### generateCodeChallenge
+
+Generates PKCE code challenge from verifier:
+
+```ts
+import { generateCodeChallenge } from "better-auth/oauth2";
+
+const challenge = await generateCodeChallenge(codeVerifier);
+```
+
+## Advanced Patterns
+
+### ID Token Verification
+
+For OpenID Connect providers that issue ID tokens:
+
+```ts
+import { decodeJwt, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
+import { betterFetch } from "@better-fetch/fetch";
+
+export const customProvider = (options: CustomProviderOptions) => {
+  return {
+    // ... other methods
+    
+    async verifyIdToken(token: string, nonce?: string) {
+      if (options.disableIdTokenSignIn) {
+        return false;
+      }
+
+      if (options.verifyIdToken) {
+        return options.verifyIdToken(token, nonce);
+      }
+
+      try {
+        const { kid, alg } = decodeProtectedHeader(token);
+        if (!kid || !alg) return false;
+
+        // Fetch public keys from provider
+        const { data } = await betterFetch<{ keys: any[] }>(
+          "https://provider.com/.well-known/jwks.json"
+        );
+
+        const jwk = data.keys.find(key => key.kid === kid);
+        if (!jwk) return false;
+
+        const publicKey = await importJWK(jwk, alg);
+        const { payload } = await jwtVerify(token, publicKey, {
+          algorithms: [alg],
+          issuer: "https://provider.com",
+          audience: options.clientId,
+        });
+
+        if (nonce && payload.nonce !== nonce) {
+          return false;
+        }
+
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    async getUserInfo(token) {
+      // For OIDC providers, decode ID token instead of API call
+      if (token.idToken) {
+        const profile = decodeJwt(token.idToken) as CustomProviderProfile;
+        return {
+          user: {
+            id: profile.id,
+            name: profile.name,
+            email: profile.email,
+            emailVerified: true,
+          },
+          data: profile,
+        };
+      }
+
+      // Fallback to API call
+      // ...
+    },
+  };
+};
+```
+
+### Custom Token Endpoint Handling
+
+Some providers use non-standard token responses:
+
+```ts
+import { createAuthorizationCodeRequest, getOAuth2Tokens } from "better-auth/oauth2";
+import { betterFetch } from "@better-fetch/fetch";
+
+validateAuthorizationCode: async ({ code, codeVerifier, redirectURI }) => {
+  const { body, headers } = createAuthorizationCodeRequest({
+    code,
+    codeVerifier,
+    redirectURI,
+    options,
+  });
+
+  const { data, error } = await betterFetch(
+    "https://provider.com/oauth/token",
+    {
+      method: "POST",
+      body,
+      headers,
+    }
+  );
+
+  if (error || !data) {
+    return null;
+  }
+
+  // Transform non-standard response to standard format
+  return getOAuth2Tokens({
+    access_token: data.accessToken,  // Non-standard field name
+    refresh_token: data.refreshToken,
+    expires_in: data.expiresIn,
+    token_type: data.tokenType,
+  });
+}
+```
+
+### Client Credentials Flow
+
+For machine-to-machine authentication:
+
+```ts
+import { clientCredentialsToken } from "better-auth/oauth2";
+
+const tokens = await clientCredentialsToken({
+  clientId: "client-id",
+  clientSecret: "client-secret",
+  scopes: ["api:read", "api:write"],
+  tokenEndpoint: "https://provider.com/oauth/token",
+});
+```
+
+## Real-World Example: Shopify OAuth
+
+Here's a complete example implementing Shopify OAuth:
+
+```ts
+import type { OAuthProvider, ProviderOptions } from "better-auth/oauth2";
+import { createAuthorizationURL, validateAuthorizationCode } from "better-auth/oauth2";
+import { betterFetch } from "@better-fetch/fetch";
+
+interface ShopifyProfile {
+  id: string;
+  email: string;
+  email_verified: boolean;
+  first_name: string;
+  last_name: string;
+  shop_owner: boolean;
+  shop: {
+    id: string;
+    name: string;
+    domain: string;
+  };
+}
+
+interface ShopifyOptions extends ProviderOptions<ShopifyProfile> {
+  clientId: string;
+  clientSecret: string;
+  shop: string; // Shop domain (e.g., "myshop.myshopify.com")
+}
+
+export const shopify = (options: ShopifyOptions): OAuthProvider<ShopifyProfile> => {
+  const shop = options.shop;
+  const authEndpoint = `https://${shop}/admin/oauth/authorize`;
+  const tokenEndpoint = `https://${shop}/admin/oauth/access_token`;
+
+  return {
+    id: "shopify",
+    name: "Shopify",
+
+    createAuthorizationURL({ state, redirectURI, scopes }) {
+      const _scopes = options.disableDefaultScope
+        ? []
+        : ["read_customers", "read_orders"];
+      
+      if (options.scope) _scopes.push(...options.scope);
+      if (scopes) _scopes.push(...scopes);
+
+      return createAuthorizationURL({
+        id: "shopify",
+        options,
+        authorizationEndpoint: authEndpoint,
+        scopes: _scopes,
+        state,
+        redirectURI,
+        // Shopify uses comma-separated scopes
+        additionalParams: {
+          scope: _scopes.join(","),
+        },
+      });
+    },
+
+    validateAuthorizationCode: async ({ code, redirectURI }) => {
+      // Shopify doesn't use PKCE
+      return validateAuthorizationCode({
+        code,
+        redirectURI,
+        options,
+        tokenEndpoint,
+      });
+    },
+
+    async getUserInfo(token) {
+      const { data: shop, error } = await betterFetch<ShopifyProfile["shop"]>(
+        `https://${options.shop}/admin/api/2024-01/shop.json`,
+        {
+          headers: {
+            "X-Shopify-Access-Token": token.accessToken!,
+          },
+        }
+      );
+
+      if (error || !shop) {
+        return null;
+      }
+
+      // Shopify provides shop data, not user data
+      // We'll use shop owner info as "user"
+      const profile: ShopifyProfile = {
+        id: shop.id,
+        email: shop.email,
+        email_verified: true,
+        first_name: "",
+        last_name: "",
+        shop_owner: true,
+        shop,
+      };
+
+      return {
+        user: {
+          id: profile.id,
+          name: profile.shop.name,
+          email: profile.email,
+          emailVerified: profile.email_verified,
+        },
+        data: profile,
+      };
+    },
+
+    // Shopify tokens don't expire
+    // No refresh needed
+
+    options,
+  };
+};
+```
+
+Use it in Better Auth:
+
+```ts
+import { betterAuth } from "better-auth";
+import { shopify } from "./shopify-provider";
+
+export const auth = betterAuth({
+  socialProviders: {
+    shopify: shopify({
+      clientId: process.env.SHOPIFY_API_KEY!,
+      clientSecret: process.env.SHOPIFY_API_SECRET!,
+      shop: "myshop.myshopify.com",
+      scope: ["read_products", "write_orders"],
+    }),
+  },
+});
+```
+
+## Testing Custom Providers
+
+Test your custom provider thoroughly:
+
+```ts
+import { describe, it, expect } from "vitest";
+import { customProvider } from "./custom-provider";
+
+describe("Custom Provider", () => {
+  it("should create authorization URL", async () => {
+    const provider = customProvider({
+      clientId: "test-client-id",
+      clientSecret: "test-secret",
+    });
+
+    const url = await provider.createAuthorizationURL({
+      state: "test-state",
+      codeVerifier: "test-verifier",
+      redirectURI: "https://example.com/callback",
+    });
+
+    expect(url.toString()).toContain("client_id=test-client-id");
+    expect(url.toString()).toContain("state=test-state");
+  });
+
+  it("should validate authorization code", async () => {
+    // Mock token endpoint
+    // Test token exchange
+  });
+
+  it("should fetch user info", async () => {
+    // Mock user API endpoint
+    // Test user data retrieval
+  });
+});
+```
+
+## Best Practices
+
+<Note>
+  **Security First:**
+  - Always use HTTPS for OAuth endpoints
+  - Implement PKCE when supported by the provider
+  - Validate state parameters to prevent CSRF
+  - Verify ID tokens using provider's public keys
+  - Never expose client secrets in client-side code
+</Note>
+
+<Note>
+  **Error Handling:**
+  - Return `null` from methods when operations fail
+  - Log errors for debugging but don't expose sensitive details to users
+  - Handle rate limits and network errors gracefully
+  - Provide clear error messages in the UI
+</Note>
+
+<Note>
+  **Token Management:**
+  - Store tokens securely (Better Auth handles this)
+  - Implement token refresh when available
+  - Check token expiration before API calls
+  - Handle token revocation properly
+</Note>
+
+## Troubleshooting
+
+### Provider Not Appearing in Type Definitions
+
+Extend Better Auth types:
+
+```ts
+// better-auth.d.ts
+import "better-auth";
+
+declare module "better-auth" {
+  interface SocialProviders {
+    customProvider: typeof import("./custom-provider").customProvider;
+  }
+}
+```
+
+### Authorization URL Generation Issues
+
+Check that all required parameters are included:
+- `client_id`
+- `redirect_uri`
+- `response_type`
+- `state`
+- `scope`
+
+### Token Exchange Failures
+
+Verify:
+- Token endpoint URL is correct
+- Client credentials are accurate
+- Content-Type header is appropriate
+- Request body format matches provider expectations
+
+## Resources
+
+- [OAuth 2.0 Specification](https://oauth.net/2/)
+- [PKCE RFC 7636](https://tools.ietf.org/html/rfc7636)
+- [OpenID Connect Specification](https://openid.net/specs/openid-connect-core-1_0.html)
+- [Better Auth OAuth Helpers](/api/oauth)

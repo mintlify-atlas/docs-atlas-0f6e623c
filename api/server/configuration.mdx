@@ -1,0 +1,736 @@
+---
+title: 'Configuration Options'
+description: 'Complete reference for Better Auth configuration options'
+---
+
+## BetterAuthOptions
+
+Complete type definition for all Better Auth configuration options.
+
+```typescript
+type BetterAuthOptions = {
+	appName?: string
+	baseURL?: string
+	basePath?: string
+	secret?: string
+	database?: DatabaseConfig
+	plugins?: BetterAuthPlugin[]
+	// ... and many more options
+}
+```
+
+## Core Configuration
+
+### App Settings
+
+<ParamField path="appName" type="string" default="Better Auth">
+	The name of your application. Used in email templates and UI components.
+	
+	```typescript
+	appName: "Acme Corp"
+	```
+</ParamField>
+
+<ParamField path="baseURL" type="string" optional>
+	Base URL where your auth server is hosted. Checks `process.env.BETTER_AUTH_URL` if not set.
+	
+	```typescript
+	baseURL: "https://api.example.com"
+	```
+</ParamField>
+
+<ParamField path="basePath" type="string" default="/api/auth">
+	Base path for authentication routes.
+	
+	```typescript
+	basePath: "/auth"
+	// Routes will be at /auth/sign-in, /auth/sign-up, etc.
+	```
+</ParamField>
+
+<ParamField path="secret" type="string" required>
+	Secret for encryption, signing, and hashing. Required in production.
+	
+	Environment variables checked:
+	- `process.env.BETTER_AUTH_SECRET`
+	- `process.env.AUTH_SECRET`
+	
+	```bash
+	# Generate a secure secret
+	openssl rand -base64 32
+	```
+</ParamField>
+
+### Database Configuration
+
+<ParamField path="database" type="DatabaseConfig" optional>
+	Database configuration. Accepts multiple formats:
+	
+	<Expandable title="Kysely Dialect">
+		```typescript
+		import { PostgresDialect } from "kysely"
+		import { Pool } from "pg"
+		
+		database: new PostgresDialect({
+			pool: new Pool({
+				connectionString: process.env.DATABASE_URL
+			})
+		})
+		```
+	</Expandable>
+
+	<Expandable title="Kysely Instance">
+		```typescript
+		import { Kysely } from "kysely"
+		
+		database: {
+			db: new Kysely<DB>({ /* ... */ }),
+			type: "postgres",
+			casing: "snake"
+		}
+		```
+	</Expandable>
+
+	<Expandable title="Database Pool">
+		```typescript
+		import { Pool } from "pg"
+		
+		database: new Pool({
+			connectionString: process.env.DATABASE_URL
+		})
+		```
+	</Expandable>
+
+	<Expandable title="Database Adapter">
+		```typescript
+		import { drizzleAdapter } from "better-auth/adapters/drizzle"
+		import { db } from "./db"
+		
+		database: drizzleAdapter(db, {
+			provider: "pg"
+		})
+		```
+	</Expandable>
+</ParamField>
+
+<ParamField path="secondaryStorage" type="SecondaryStorage" optional>
+	Secondary storage for sessions and rate limits. Useful for Redis or other fast storage.
+	
+	```typescript
+	import { createKVStorage } from "better-auth/storage"
+	import { redis } from "./redis"
+	
+	secondaryStorage: createKVStorage({
+		get: async (key) => await redis.get(key),
+		set: async (key, value, ttl) => {
+			await redis.set(key, value, "EX", ttl)
+		},
+		delete: async (key) => await redis.del(key)
+	})
+	```
+</ParamField>
+
+## Authentication Methods
+
+### Email & Password
+
+<ParamField path="emailAndPassword" type="object" optional>
+	Email and password authentication configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="enabled" type="boolean" required>
+			Enable email/password authentication.
+		</ParamField>
+
+		<ParamField path="disableSignUp" type="boolean" default={false}>
+			Disable new user registration while keeping sign-in enabled.
+		</ParamField>
+
+		<ParamField path="requireEmailVerification" type="boolean" default={false}>
+			Require email verification before session creation. Users cannot sign in until verified.
+		</ParamField>
+
+		<ParamField path="minPasswordLength" type="number" default={8}>
+			Minimum password length requirement.
+		</ParamField>
+
+		<ParamField path="maxPasswordLength" type="number" default={128}>
+			Maximum password length requirement.
+		</ParamField>
+
+		<ParamField path="autoSignIn" type="boolean" default={true}>
+			Automatically sign in user after successful registration.
+		</ParamField>
+
+		<ParamField path="revokeSessionsOnPasswordReset" type="boolean" default={false}>
+			Revoke all existing sessions when password is reset.
+		</ParamField>
+
+		<ParamField path="sendResetPassword" type="function" optional>
+			Callback to send password reset emails.
+			
+			```typescript
+			sendResetPassword: async ({ user, url, token }, request) => {
+				await transporter.sendMail({
+					to: user.email,
+					subject: "Reset Your Password",
+					html: `Click here to reset: <a href="${url}">${url}</a>`
+				})
+			}
+			```
+		</ParamField>
+
+		<ParamField path="resetPasswordTokenExpiresIn" type="number" default={3600}>
+			Reset password token expiration in seconds (default: 1 hour).
+		</ParamField>
+
+		<ParamField path="password" type="object" optional>
+			Custom password hashing configuration.
+			
+			```typescript
+			password: {
+				hash: async (password) => {
+					return await bcrypt.hash(password, 12)
+				},
+				verify: async ({ hash, password }) => {
+					return await bcrypt.compare(password, hash)
+				}
+			}
+			```
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+### Social Providers
+
+<ParamField path="socialProviders" type="SocialProviders" optional>
+	Configure OAuth social providers.
+	
+	```typescript
+	socialProviders: {
+		github: {
+			clientId: process.env.GITHUB_CLIENT_ID,
+			clientSecret: process.env.GITHUB_CLIENT_SECRET,
+			// Optional: customize scopes
+			scopes: ["user:email"]
+		},
+		google: {
+			clientId: process.env.GOOGLE_CLIENT_ID,
+			clientSecret: process.env.GOOGLE_CLIENT_SECRET
+		},
+		discord: {
+			clientId: process.env.DISCORD_CLIENT_ID,
+			clientSecret: process.env.DISCORD_CLIENT_SECRET
+		}
+	}
+	```
+	
+	Supported providers: `github`, `google`, `discord`, `facebook`, `twitter`, `microsoft`, `spotify`, `apple`, and more.
+</ParamField>
+
+### Email Verification
+
+<ParamField path="emailVerification" type="object" optional>
+	Email verification configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="sendVerificationEmail" type="function" optional>
+			Callback to send verification emails.
+			
+			```typescript
+			sendVerificationEmail: async ({ user, url, token }, request) => {
+				await sendEmail({
+					to: user.email,
+					subject: "Verify Your Email",
+					html: `Click to verify: <a href="${url}">${url}</a>`
+				})
+			}
+			```
+		</ParamField>
+
+		<ParamField path="sendOnSignUp" type="boolean" optional>
+			Automatically send verification email on sign up. If `undefined`, follows `requireEmailVerification`.
+		</ParamField>
+
+		<ParamField path="sendOnSignIn" type="boolean" default={false}>
+			Send verification email on sign in if email is not verified.
+		</ParamField>
+
+		<ParamField path="autoSignInAfterVerification" type="boolean" default={false}>
+			Automatically sign in user after email verification.
+		</ParamField>
+
+		<ParamField path="expiresIn" type="number" default={3600}>
+			Verification token expiration in seconds (default: 1 hour).
+		</ParamField>
+
+		<ParamField path="beforeEmailVerification" type="function" optional>
+			Hook called before email is verified.
+			
+			```typescript
+			beforeEmailVerification: async (user, request) => {
+				console.log(`${user.email} is about to be verified`)
+			}
+			```
+		</ParamField>
+
+		<ParamField path="afterEmailVerification" type="function" optional>
+			Hook called after email is verified.
+			
+			```typescript
+			afterEmailVerification: async (user, request) => {
+				await sendWelcomeEmail(user.email)
+			}
+			```
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+## Session Management
+
+<ParamField path="session" type="object" optional>
+	Session configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="expiresIn" type="number" default={604800}>
+			Session expiration time in seconds (default: 7 days).
+			
+			```typescript
+			expiresIn: 60 * 60 * 24 * 30 // 30 days
+			```
+		</ParamField>
+
+		<ParamField path="updateAge" type="number" default={86400}>
+			How often to refresh the session in seconds (default: 1 day). Set to `0` to refresh on every request.
+			
+			```typescript
+			updateAge: 60 * 60 * 12 // 12 hours
+			```
+		</ParamField>
+
+		<ParamField path="disableSessionRefresh" type="boolean" default={false}>
+			Completely disable session refresh regardless of `updateAge`.
+		</ParamField>
+
+		<ParamField path="deferSessionRefresh" type="boolean" default={false}>
+			Defer session refresh writes to POST requests. Useful for read-replica databases.
+		</ParamField>
+
+		<ParamField path="storeSessionInDatabase" type="boolean" default={false}>
+			Store session in database when secondary storage is provided.
+		</ParamField>
+
+		<ParamField path="freshAge" type="number" default={86400}>
+			Age threshold for considering a session "fresh" for sensitive operations (default: 1 day).
+		</ParamField>
+
+		<ParamField path="cookieCache" type="object" optional>
+			Enable session caching in cookies for reduced database queries.
+			
+			<Expandable title="properties">
+				<ParamField path="enabled" type="boolean" default={false}>
+					Enable cookie caching.
+				</ParamField>
+
+				<ParamField path="maxAge" type="number" default={300}>
+					Cache expiration in seconds (default: 5 minutes).
+				</ParamField>
+
+				<ParamField path="strategy" type="'compact' | 'jwt' | 'jwe'" default="compact">
+					Encoding strategy:
+					- `compact`: Base64url with HMAC signature
+					- `jwt`: JWT with HMAC (no encryption)
+					- `jwe`: Encrypted JWT (most secure)
+				</ParamField>
+
+				<ParamField path="refreshCache" type="boolean | object" default={false}>
+					Automatically refresh cache before expiry for stateless scenarios.
+					
+					```typescript
+					refreshCache: {
+						updateAge: 60 // Refresh when 60s remaining
+					}
+					```
+				</ParamField>
+			</Expandable>
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+## Model Configuration
+
+### User Configuration
+
+<ParamField path="user" type="object" optional>
+	User model and feature configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="modelName" type="string" default="user">
+			Database table name for users.
+		</ParamField>
+
+		<ParamField path="fields" type="object" optional>
+			Map user fields to database columns.
+			
+			```typescript
+			fields: {
+				email: "email_address",
+				name: "full_name"
+			}
+			```
+		</ParamField>
+
+		<ParamField path="additionalFields" type="object" optional>
+			Add custom fields to user model.
+			
+			```typescript
+			additionalFields: {
+				role: {
+					type: "string",
+					required: true,
+					defaultValue: "user"
+				},
+				bio: {
+					type: "string",
+					required: false
+				}
+			}
+			```
+		</ParamField>
+
+		<ParamField path="changeEmail" type="object" optional>
+			Email change configuration.
+			
+			```typescript
+			changeEmail: {
+				enabled: true,
+				sendChangeEmailConfirmation: async ({ user, newEmail, url }) => {
+					await sendEmail(newEmail, `Confirm: ${url}`)
+				}
+			}
+			```
+		</ParamField>
+
+		<ParamField path="deleteUser" type="object" optional>
+			User deletion configuration.
+			
+			```typescript
+			deleteUser: {
+				enabled: true,
+				sendDeleteAccountVerification: async ({ user, url }) => {
+					await sendEmail(user.email, `Confirm deletion: ${url}`)
+				},
+				beforeDelete: async (user) => {
+					// Cleanup user data
+				},
+				afterDelete: async (user) => {
+					// Log deletion
+				}
+			}
+			```
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+### Account Configuration
+
+<ParamField path="account" type="object" optional>
+	OAuth account configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="updateAccountOnSignIn" type="boolean" default={true}>
+			Update OAuth tokens on sign-in with latest data.
+		</ParamField>
+
+		<ParamField path="encryptOAuthTokens" type="boolean" default={false}>
+			Encrypt OAuth tokens in database using AES-256-GCM.
+		</ParamField>
+
+		<ParamField path="storeStateStrategy" type="'cookie' | 'database'" default="cookie">
+			Where to store OAuth state during flow.
+		</ParamField>
+
+		<ParamField path="accountLinking" type="object" optional>
+			Account linking configuration.
+			
+			```typescript
+			accountLinking: {
+				enabled: true,
+				trustedProviders: ["google", "github"],
+				allowDifferentEmails: false
+			}
+			```
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+## Security Configuration
+
+### Rate Limiting
+
+<ParamField path="rateLimit" type="object" optional>
+	Rate limiting configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="enabled" type="boolean" default="production only">
+			Enable rate limiting. Defaults to enabled in production only.
+		</ParamField>
+
+		<ParamField path="window" type="number" default={10}>
+			Time window in seconds.
+		</ParamField>
+
+		<ParamField path="max" type="number" default={100}>
+			Maximum requests per window.
+		</ParamField>
+
+		<ParamField path="storage" type="'memory' | 'database' | 'secondary-storage'" optional>
+			Where to store rate limit data. Defaults to memory or secondary storage if configured.
+		</ParamField>
+
+		<ParamField path="customRules" type="object" optional>
+			Custom rate limit rules per endpoint.
+			
+			```typescript
+			customRules: {
+				"/sign-in": {
+					window: 60,
+					max: 5 // 5 attempts per minute
+				},
+				"/sign-up": {
+					window: 3600,
+					max: 3 // 3 registrations per hour
+				}
+			}
+			```
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+### Trusted Origins
+
+<ParamField path="trustedOrigins" type="string[] | function" optional>
+	List of trusted origins for CORS and redirect validation. Supports wildcards.
+	
+	```typescript
+	// Static list
+	trustedOrigins: [
+		"https://example.com",
+		"https://*.example.com",
+		"http://localhost:3000"
+	]
+	
+	// Dynamic function
+	trustedOrigins: async (request) => {
+		if (!request) return []
+		const tenant = getTenantFromRequest(request)
+		return tenant.allowedOrigins
+	}
+	```
+</ParamField>
+
+### Advanced Security
+
+<ParamField path="advanced" type="object" optional>
+	Advanced security configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="useSecureCookies" type="boolean" default={false}>
+			Force secure cookies (HTTPS only).
+		</ParamField>
+
+		<ParamField path="disableCSRFCheck" type="boolean" default={false}>
+			Disable CSRF protection. **Not recommended.**
+		</ParamField>
+
+		<ParamField path="disableOriginCheck" type="boolean" default={false}>
+			Disable origin validation for redirects. **Security risk.**
+		</ParamField>
+
+		<ParamField path="ipAddress" type="object" optional>
+			IP address tracking configuration.
+			
+			```typescript
+			ipAddress: {
+				ipAddressHeaders: ["x-client-ip", "x-forwarded-for"],
+				disableIpTracking: false,
+				ipv6Subnet: 64
+			}
+			```
+		</ParamField>
+
+		<ParamField path="crossSubDomainCookies" type="object" optional>
+			Share cookies across subdomains.
+			
+			```typescript
+			crossSubDomainCookies: {
+				enabled: true,
+				domain: ".example.com",
+				additionalCookies: ["custom_cookie"]
+			}
+			```
+		</ParamField>
+
+		<ParamField path="cookies" type="object" optional>
+			Customize cookie names and attributes.
+			
+			```typescript
+			cookies: {
+				session_token: {
+					name: "auth_token",
+					attributes: {
+						sameSite: "lax",
+						secure: true
+					}
+				}
+			}
+			```
+		</ParamField>
+
+		<ParamField path="trustedProxyHeaders" type="boolean" default={false}>
+			Trust proxy headers (`x-forwarded-host`, `x-forwarded-proto`) for base URL inference. **Use with caution.**
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+## Lifecycle Hooks
+
+### Database Hooks
+
+<ParamField path="databaseHooks" type="object" optional>
+	Hooks for database operations.
+	
+	```typescript
+	databaseHooks: {
+		user: {
+			create: {
+				before: async (user, context) => {
+					// Validate or modify user data
+					return { data: { ...user, role: "user" } }
+				},
+				after: async (user, context) => {
+					await sendWelcomeEmail(user.email)
+				}
+			},
+			update: {
+				before: async (data, context) => {
+					// Validate updates
+					if (data.email) {
+						throw new Error("Email cannot be changed here")
+					}
+				}
+			},
+			delete: {
+				before: async (user, context) => {
+					// Prevent deletion of admin users
+					if (user.role === "admin") return false
+				},
+				after: async (user, context) => {
+					// Clean up user resources
+					await deleteUserFiles(user.id)
+				}
+			}
+		},
+		session: {
+			create: {
+				after: async (session, context) => {
+					await logSessionCreated(session)
+				}
+			}
+		}
+	}
+	```
+</ParamField>
+
+### API Hooks
+
+<ParamField path="hooks" type="object" optional>
+	Request lifecycle hooks.
+	
+	```typescript
+	hooks: {
+		before: async (ctx) => {
+			// Run before request processing
+			console.log("Request:", ctx.request.url)
+		},
+		after: async (ctx) => {
+			// Run after request processing
+			console.log("Response:", ctx.response.status)
+		}
+	}
+	```
+</ParamField>
+
+## Error Handling
+
+<ParamField path="onAPIError" type="object" optional>
+	API error handling configuration.
+	
+	```typescript
+	onAPIError: {
+		throw: false, // Throw errors instead of logging
+		onError: async (error, ctx) => {
+			// Custom error handler
+			await logErrorToService(error)
+		},
+		errorURL: "/auth/error",
+		customizeDefaultErrorPage: {
+			colors: {
+				primary: "#3b82f6"
+			}
+		}
+	}
+	```
+</ParamField>
+
+## Miscellaneous
+
+<ParamField path="plugins" type="BetterAuthPlugin[]" optional>
+	Array of Better Auth plugins.
+	
+	```typescript
+	import { twoFactor, organization, admin } from "better-auth/plugins"
+	
+	plugins: [
+		twoFactor(),
+		organization(),
+		admin()
+	]
+	```
+</ParamField>
+
+<ParamField path="disabledPaths" type="string[]" optional>
+	Disable specific auth endpoints.
+	
+	```typescript
+	disabledPaths: ["/sign-up", "/reset-password"]
+	```
+</ParamField>
+
+<ParamField path="logger" type="Logger" optional>
+	Custom logger instance.
+	
+	```typescript
+	logger: {
+		level: "debug",
+		disabled: false
+	}
+	```
+</ParamField>
+
+<ParamField path="telemetry" type="object" optional>
+	Telemetry configuration.
+	
+	```typescript
+	telemetry: {
+		enabled: false,
+		debug: false
+	}
+	```
+</ParamField>
+
+## Related
+
+- [betterAuth()](/api/server/betterauth)
+- [Context API](/api/server/context)
+- [Handlers](/api/server/handlers)

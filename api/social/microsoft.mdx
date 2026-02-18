@@ -1,0 +1,469 @@
+---
+title: Microsoft Entra ID OAuth
+description: Configure Microsoft Entra ID (Azure AD) OAuth provider for Better Auth
+---
+
+# Microsoft Entra ID OAuth
+
+Microsoft Entra ID (formerly Azure Active Directory) OAuth allows users to sign in with their Microsoft accounts, including personal accounts (Outlook, Hotmail) and organizational accounts (Microsoft 365, Azure AD).
+
+## Setup
+
+<Steps>
+### Create an Azure AD Application
+
+1. Go to [Azure Portal](https://portal.azure.com/)
+2. Navigate to **Microsoft Entra ID** (or **Azure Active Directory**)
+3. Select **App registrations** > **New registration**
+4. Configure your application:
+   - **Name**: Your application name
+   - **Supported account types**: Choose based on your needs:
+     - Single tenant (organization only)
+     - Multi-tenant (any organization)
+     - Multi-tenant + personal accounts
+   - **Redirect URI**: Select **Web** and enter `https://example.com/api/auth/callback/microsoft`
+5. Click **Register**
+
+### Get Credentials
+
+1. On the app's **Overview** page, copy:
+   - **Application (client) ID**
+   - **Directory (tenant) ID**
+2. Go to **Certificates & secrets**
+3. Click **New client secret**
+4. Add a description and set expiration
+5. Copy the **Value** (client secret)
+
+### Configure API Permissions
+
+1. Go to **API permissions**
+2. Click **Add a permission** > **Microsoft Graph**
+3. Select **Delegated permissions**
+4. Add these permissions:
+   - `openid`
+   - `profile`
+   - `email`
+   - `User.Read`
+   - `offline_access` (for refresh tokens)
+5. Click **Add permissions**
+
+### Add Credentials to Environment
+
+```bash
+MICROSOFT_CLIENT_ID=your_application_id
+MICROSOFT_CLIENT_SECRET=your_client_secret
+MICROSOFT_TENANT_ID=your_tenant_id # or "common"
+```
+</Steps>
+
+## Configuration
+
+### Basic Configuration
+
+```ts
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  socialProviders: {
+    microsoft: {
+      clientId: process.env.MICROSOFT_CLIENT_ID!,
+      clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+      tenantId: "common", // or your specific tenant ID
+    },
+  },
+});
+```
+
+### Tenant Configuration
+
+The `tenantId` determines which accounts can sign in:
+
+<ParamField path="tenantId" type="string" default="common">
+  - `"common"` - Personal and organizational accounts
+  - `"organizations"` - Any organizational account
+  - `"consumers"` - Personal Microsoft accounts only
+  - `"your-tenant-id"` - Specific organization only
+  
+  ```ts
+  microsoft: {
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    tenantId: "organizations", // Business accounts only
+  }
+  ```
+</ParamField>
+
+### Default Scopes
+
+Microsoft provider requests these scopes by default:
+
+- `openid` - OpenID Connect authentication
+- `profile` - Basic profile information
+- `email` - Email address
+- `User.Read` - Read user profile from Microsoft Graph
+- `offline_access` - Refresh tokens
+
+### Custom Scopes
+
+Request additional Microsoft Graph permissions:
+
+```ts
+microsoft: {
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  tenantId: "common",
+  scope: [
+    "Calendars.Read",
+    "Mail.Read",
+    "Files.Read",
+  ],
+}
+```
+
+Common scopes:
+- `User.Read` - Read user profile
+- `User.ReadBasic.All` - Read all users' basic profiles
+- `Mail.Read` - Read user mail
+- `Calendars.Read` - Read user calendars
+- `Files.Read` - Read user files
+- `Sites.Read.All` - Read SharePoint sites
+
+See [Microsoft Graph Permissions](https://learn.microsoft.com/en-us/graph/permissions-reference) for the complete list.
+
+## Configuration Options
+
+<ParamField path="clientId" type="string" required>
+  Your Azure AD Application (client) ID.
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  Your Azure AD client secret.
+</ParamField>
+
+<ParamField path="tenantId" type="string" default="common">
+  Azure AD tenant ID or account type (`common`, `organizations`, `consumers`).
+</ParamField>
+
+<ParamField path="authority" type="string" default="https://login.microsoftonline.com">
+  Authentication authority URL. Use `https://<tenant>.ciamlogin.com` for CIAM scenarios.
+  
+  ```ts
+  microsoft: {
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    authority: "https://mytenant.ciamlogin.com",
+  }
+  ```
+</ParamField>
+
+<ParamField path="profilePhotoSize" type="48 | 64 | 96 | 120 | 240 | 360 | 432 | 504 | 648" default={48}>
+  Size of profile photo to fetch from Microsoft Graph.
+  
+  ```ts
+  microsoft: {
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    profilePhotoSize: 240,
+  }
+  ```
+</ParamField>
+
+<ParamField path="disableProfilePhoto" type="boolean" default={false}>
+  Skip fetching profile photos to improve sign-in performance.
+  
+  ```ts
+  microsoft: {
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    disableProfilePhoto: true,
+  }
+  ```
+</ParamField>
+
+<ParamField path="scope" type="string[]">
+  Additional scopes beyond defaults.
+</ParamField>
+
+<ParamField path="redirectURI" type="string">
+  Custom redirect URI. Must match Azure AD configuration.
+  
+  Default: `{baseURL}/api/auth/callback/microsoft`
+</ParamField>
+
+<ParamField path="prompt" type="'select_account' | 'consent' | 'login' | 'none'">
+  Control the OAuth consent screen behavior.
+  
+  ```ts
+  microsoft: {
+    clientId: process.env.MICROSOFT_CLIENT_ID!,
+    clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+    prompt: "select_account", // Always show account picker
+  }
+  ```
+</ParamField>
+
+## User Profile Data
+
+Microsoft Entra ID provides this profile information via ID token:
+
+```ts
+interface MicrosoftEntraIDProfile {
+  sub: string;                    // Subject identifier
+  oid: string;                    // Object ID (immutable user ID)
+  email: string;                  // Email address
+  email_verified?: boolean;       // Optional claim (must configure)
+  name: string;                   // Full name
+  given_name: string;             // First name
+  family_name: string;            // Last name
+  preferred_username: string;     // Primary username
+  picture: string;                // Profile photo (base64)
+  tid: string;                    // Tenant ID
+  upn: string;                    // User Principal Name
+  roles?: string[];               // Assigned roles
+  groups?: string;                // Group claims
+  // Many more optional claims available
+}
+```
+
+<Warning>
+  **Email Verification:** The `email_verified` claim is NOT included by default. You must configure it as an optional claim in your Azure AD app registration. Without it, Better Auth defaults to `false` but checks `verified_primary_email` and `verified_secondary_email` arrays as fallback.
+</Warning>
+
+### Configuring Optional Claims
+
+To include `email_verified` claim:
+
+1. In Azure Portal, go to your app registration
+2. Select **Token configuration** > **Add optional claim**
+3. Choose **ID** token type
+4. Select `email_verified` and any other claims you need
+5. Save changes
+
+## Client-Side Implementation
+
+```tsx
+import { createAuthClient } from "better-auth/client";
+
+const authClient = createAuthClient();
+
+function MicrosoftSignInButton() {
+  const handleSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "microsoft",
+      callbackURL: "/dashboard",
+    });
+  };
+
+  return (
+    <button onClick={handleSignIn}>
+      <MicrosoftIcon />
+      Sign in with Microsoft
+    </button>
+  );
+}
+```
+
+## Advanced Configuration
+
+### Organization-Specific Sign-In
+
+Restrict to a specific organization:
+
+```ts
+microsoft: {
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  tenantId: "12345678-1234-1234-1234-123456789abc", // Your tenant ID
+  mapProfileToUser: (profile) => {
+    // Verify tenant
+    if (profile.tid !== "12345678-1234-1234-1234-123456789abc") {
+      throw new Error("Only organization members allowed");
+    }
+    return {
+      name: profile.name,
+      email: profile.email,
+      department: profile.upn.split('@')[1],
+    };
+  },
+}
+```
+
+### Custom User Mapping with Roles
+
+```ts
+microsoft: {
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  tenantId: "common",
+  mapProfileToUser: (profile) => ({
+    // Use preferred_username for display
+    name: profile.name,
+    username: profile.preferred_username,
+    // Map Azure AD roles to app roles
+    role: profile.roles?.includes("Admin") ? "admin" : "user",
+    // Store tenant info
+    tenantId: profile.tid,
+    isOrganizationAccount: profile.tid !== undefined,
+  }),
+}
+```
+
+### Login Hints
+
+Pre-fill the sign-in screen:
+
+```ts
+await authClient.signIn.social({
+  provider: "microsoft",
+  loginHint: "user@company.com",
+  callbackURL: "/dashboard",
+});
+```
+
+## Using Microsoft Graph API
+
+Access Microsoft Graph using stored OAuth tokens:
+
+```ts
+import { auth } from "./auth";
+
+// Get user's Microsoft access token
+const session = await auth.api.getSession({ headers: request.headers });
+if (session?.user) {
+  const accounts = await auth.api.getAccounts({ userId: session.user.id });
+  const msAccount = accounts.find(acc => acc.providerId === "microsoft");
+  
+  if (msAccount?.accessToken) {
+    // Call Microsoft Graph API
+    const response = await fetch(
+      "https://graph.microsoft.com/v1.0/me/messages",
+      {
+        headers: {
+          Authorization: `Bearer ${msAccount.accessToken}`,
+        },
+      }
+    );
+    const messages = await response.json();
+  }
+}
+```
+
+## Token Refresh
+
+Better Auth automatically refreshes expired access tokens:
+
+```ts
+microsoft: {
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  tenantId: "common",
+  // Refresh tokens are handled automatically
+  // Custom logic (optional):
+  refreshAccessToken: async (refreshToken) => {
+    const tenantId = process.env.MICROSOFT_TENANT_ID || "common";
+    const response = await fetch(
+      `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: process.env.MICROSOFT_CLIENT_ID!,
+          client_secret: process.env.MICROSOFT_CLIENT_SECRET!,
+          refresh_token: refreshToken,
+          grant_type: "refresh_token",
+          scope: "openid profile email User.Read offline_access",
+        }),
+      }
+    );
+    return response.json();
+  },
+}
+```
+
+<Note>
+  **Refresh Token Scopes:** When refreshing tokens, you must include all the original scopes in the refresh request.
+</Note>
+
+## CIAM (Customer Identity Access Management)
+
+For Azure AD B2C or CIAM scenarios:
+
+```ts
+microsoft: {
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  tenantId: "your-tenant-id",
+  authority: "https://your-tenant.ciamlogin.com",
+}
+```
+
+## Troubleshooting
+
+### "AADSTS50011" - Redirect URI mismatch
+
+**Cause:** Redirect URI doesn't match Azure AD configuration.
+
+**Solution:**
+1. Check **Authentication** > **Redirect URIs** in Azure Portal
+2. Ensure exact match including protocol and path
+3. URI must use HTTPS in production
+
+### "AADSTS65001" - User consent required
+
+**Cause:** User hasn't consented to requested permissions.
+
+**Solution:**
+1. Use `prompt: "consent"` to force consent screen
+2. Have admin grant tenant-wide consent in Azure Portal
+3. Ensure permissions are added in **API permissions**
+
+### Missing email_verified Claim
+
+**Cause:** Optional claim not configured.
+
+**Solution:** Add `email_verified` as optional claim in Azure AD app registration under **Token configuration**.
+
+### "invalid_client" Error
+
+**Cause:** Client secret expired or incorrect.
+
+**Solution:**
+1. Check secret expiration in Azure Portal
+2. Generate new secret if expired
+3. Update environment variables
+
+### Profile Photo Not Loading
+
+**Cause:** User doesn't have a profile photo or missing permissions.
+
+**Solution:**
+1. Set `disableProfilePhoto: true` to skip
+2. Ensure `User.Read` permission is granted
+3. Handle missing photos gracefully in UI
+
+## Multi-Tenant Applications
+
+For SaaS applications supporting multiple organizations:
+
+```ts
+microsoft: {
+  clientId: process.env.MICROSOFT_CLIENT_ID!,
+  clientSecret: process.env.MICROSOFT_CLIENT_SECRET!,
+  tenantId: "organizations", // Any organization
+  mapProfileToUser: (profile) => ({
+    name: profile.name,
+    email: profile.email,
+    // Store organization info
+    organizationId: profile.tid,
+    organizationName: profile.upn.split('@')[1],
+  }),
+}
+```
+
+## Resources
+
+- [Microsoft Entra ID Documentation](https://learn.microsoft.com/en-us/entra/identity/)
+- [Azure Portal](https://portal.azure.com/)
+- [Microsoft Graph API](https://learn.microsoft.com/en-us/graph/)
+- [Optional Claims Reference](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference)
+- [Graph Permissions Reference](https://learn.microsoft.com/en-us/graph/permissions-reference)

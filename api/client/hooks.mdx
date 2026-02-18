@@ -1,0 +1,655 @@
+---
+title: 'Client Hooks'
+description: 'Reactive hooks and stores for Better Auth client'
+---
+
+## Overview
+
+Better Auth provides framework-specific hooks and reactive primitives for managing authentication state. The implementation varies by framework but provides a consistent API across all platforms.
+
+## useSession
+
+The primary hook for accessing and monitoring session state.
+
+### React
+
+#### Signature
+
+```typescript
+function useSession(): {
+	data: { user: User, session: Session } | null
+	error: BetterFetchError | null
+	isPending: boolean
+	isRefetching: boolean
+	refetch: (queryParams?: { query?: SessionQueryParams }) => Promise<void>
+}
+```
+
+#### Return Type
+
+<ResponseField name="data" type="{ user: User, session: Session } | null">
+	The current session data including user and session information. `null` if not authenticated.
+	
+	```typescript
+	type SessionData = {
+		user: {
+			id: string
+			email: string
+			name: string
+			emailVerified: boolean
+			image?: string | null
+			createdAt: Date
+			updatedAt: Date
+		}
+		session: {
+			id: string
+			userId: string
+			expiresAt: Date
+			token: string
+			ipAddress?: string
+			userAgent?: string
+		}
+	}
+	```
+</ResponseField>
+
+<ResponseField name="error" type="BetterFetchError | null">
+	Error object if session fetch failed.
+	
+	```typescript
+	type BetterFetchError = {
+		message: string
+		status: number
+		statusText: string
+		code?: string
+		data?: any
+	}
+	```
+</ResponseField>
+
+<ResponseField name="isPending" type="boolean">
+	`true` during initial session fetch, `false` once complete. Useful for showing loading states.
+</ResponseField>
+
+<ResponseField name="isRefetching" type="boolean">
+	`true` when refetching an existing session, `false` otherwise. Useful for showing refresh indicators.
+</ResponseField>
+
+<ResponseField name="refetch" type="(queryParams?: { query?: SessionQueryParams }) => Promise<void>">
+	Function to manually refetch session data.
+	
+	<Expandable title="parameters">
+		<ParamField path="query.disableCookieCache" type="boolean" optional>
+			Bypass cookie cache and fetch fresh session data.
+		</ParamField>
+		
+		<ParamField path="query.disableRefresh" type="boolean" optional>
+			Disable automatic session refresh.
+		</ParamField>
+	</Expandable>
+</ResponseField>
+
+#### Usage
+
+```tsx
+import client from "./auth-client"
+
+function UserProfile() {
+	const { data: session, isPending, error } = client.useSession()
+
+	if (isPending) {
+		return <div>Loading...</div>
+	}
+
+	if (error) {
+		return <div>Error: {error.message}</div>
+	}
+
+	if (!session) {
+		return <div>Not logged in</div>
+	}
+
+	return (
+		<div>
+			<h1>Welcome, {session.user.name}</h1>
+			<p>Email: {session.user.email}</p>
+			<p>Verified: {session.user.emailVerified ? "Yes" : "No"}</p>
+		</div>
+	)
+}
+```
+
+#### Manual Refetch
+
+```tsx
+function SessionManager() {
+	const { data: session, refetch, isRefetching } = client.useSession()
+
+	const handleRefresh = async () => {
+		await refetch({
+			query: {
+				disableCookieCache: true
+			}
+		})
+	}
+
+	return (
+		<div>
+			<button onClick={handleRefresh} disabled={isRefetching}>
+				{isRefetching ? "Refreshing..." : "Refresh Session"}
+			</button>
+		</div>
+	)
+}
+```
+
+### Vue
+
+#### Signature
+
+```typescript
+function useSession(): {
+	data: Ref<{ user: User, session: Session } | null>
+	error: Ref<BetterFetchError | null>
+	isPending: Ref<boolean>
+	isRefetching: Ref<boolean>
+	refetch: (queryParams?: { query?: SessionQueryParams }) => Promise<void>
+}
+```
+
+#### Usage
+
+```vue
+<script setup>
+import client from "./auth-client"
+
+const { data: session, isPending, error } = client.useSession()
+</script>
+
+<template>
+	<div v-if="isPending">Loading...</div>
+	<div v-else-if="error">Error: {{ error.message }}</div>
+	<div v-else-if="!session">Not logged in</div>
+	<div v-else>
+		<h1>Welcome, {{ session.user.name }}</h1>
+		<p>Email: {{ session.user.email }}</p>
+	</div>
+</template>
+```
+
+### Svelte
+
+#### Signature
+
+```typescript
+function useSession(): Readable<{
+	data: { user: User, session: Session } | null
+	error: BetterFetchError | null
+	isPending: boolean
+	isRefetching: boolean
+	refetch: (queryParams?: { query?: SessionQueryParams }) => Promise<void>
+}>
+```
+
+#### Usage
+
+```svelte
+<script>
+	import client from "./auth-client"
+	
+	const session = client.useSession()
+</script>
+
+{#if $session.isPending}
+	<div>Loading...</div>
+{:else if $session.error}
+	<div>Error: {$session.error.message}</div>
+{:else if !$session.data}
+	<div>Not logged in</div>
+{:else}
+	<div>
+		<h1>Welcome, {$session.data.user.name}</h1>
+		<p>Email: {$session.data.user.email}</p>
+	</div>
+{/if}
+```
+
+### Solid
+
+#### Signature
+
+```typescript
+function useSession(): Accessor<{
+	data: { user: User, session: Session } | null
+	error: BetterFetchError | null
+	isPending: boolean
+	isRefetching: boolean
+	refetch: (queryParams?: { query?: SessionQueryParams }) => Promise<void>
+}>
+```
+
+#### Usage
+
+```tsx
+import { Show } from "solid-js"
+import client from "./auth-client"
+
+function UserProfile() {
+	const session = client.useSession()
+
+	return (
+		<Show when={!session().isPending} fallback={<div>Loading...</div>}>
+			<Show when={session().data} fallback={<div>Not logged in</div>}>
+				{(sessionData) => (
+					<div>
+						<h1>Welcome, {sessionData().user.name}</h1>
+						<p>Email: {sessionData().user.email}</p>
+					</div>
+				)}
+			</Show>
+		</Show>
+	)
+}
+```
+
+### Vanilla (Nanostores)
+
+#### Signature
+
+```typescript
+const useSession: Atom<{
+	data: { user: User, session: Session } | null
+	error: BetterFetchError | null
+	isPending: boolean
+	isRefetching: boolean
+	refetch: (queryParams?: { query?: SessionQueryParams }) => Promise<void>
+}>
+```
+
+#### Usage
+
+```typescript
+import client from "./auth-client"
+
+// Subscribe to changes
+const unsubscribe = client.useSession.subscribe((state) => {
+	console.log("Session:", state.data)
+	console.log("Pending:", state.isPending)
+})
+
+// Get current value
+const currentSession = client.useSession.get()
+
+// Cleanup
+unsubscribe()
+```
+
+## Plugin Hooks
+
+When using plugins, additional hooks are automatically generated based on the plugin's atoms.
+
+### Dynamic Hook Naming
+
+Plugin hooks follow the naming convention: `use` + PascalCase(atomName)
+
+```typescript
+import { createAuthClient } from "better-auth/react"
+import { organizationClient } from "better-auth/client/plugins"
+
+const client = createAuthClient({
+	plugins: [organizationClient()]
+})
+
+// Auto-generated from organization plugin
+const organization = client.useActiveOrganization()
+```
+
+### Example: Organization Plugin
+
+```tsx
+import client from "./auth-client"
+
+function OrganizationSelector() {
+	const organization = client.useActiveOrganization()
+
+	return (
+		<div>
+			{organization && (
+				<>
+					<h2>{organization.name}</h2>
+					<p>Role: {organization.role}</p>
+				</>
+			)}
+		</div>
+	)
+}
+```
+
+### Example: Multi-Session Plugin
+
+```tsx
+import client from "./auth-client"
+
+function SessionList() {
+	const sessions = client.useListSessions()
+
+	return (
+		<ul>
+			{sessions.map((session) => (
+				<li key={session.id}>
+					<p>Device: {session.userAgent}</p>
+					<p>IP: {session.ipAddress}</p>
+					<p>Active: {session.id === currentSession.id ? "Yes" : "No"}</p>
+				</li>
+			))}
+		</ul>
+	)
+}
+```
+
+## useStore (React Only)
+
+Low-level hook for subscribing to nanostores atoms. Useful for advanced use cases.
+
+### Signature
+
+```typescript
+function useStore<SomeStore extends Store>(
+	store: SomeStore,
+	options?: UseStoreOptions<SomeStore>
+): StoreValue<SomeStore>
+```
+
+### Parameters
+
+<ParamField path="store" type="Store" required>
+	A nanostores atom to subscribe to.
+</ParamField>
+
+<ParamField path="options" type="UseStoreOptions" optional>
+	Optional configuration for selective updates.
+	
+	<Expandable title="properties">
+		<ParamField path="keys" type="string[]" optional>
+			Only re-render when specific keys change (for map stores).
+		</ParamField>
+		
+		<ParamField path="deps" type="DependencyList" optional>
+			Custom dependency array. Defaults to `[store, options.keys]`.
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+### Usage
+
+```tsx
+import { useStore } from "better-auth/react"
+import client from "./auth-client"
+
+function SessionDebug() {
+	// Access raw session atom
+	const sessionAtom = client.$store.atoms.session
+	const sessionState = useStore(sessionAtom)
+
+	return (
+		<pre>
+			{JSON.stringify(sessionState, null, 2)}
+		</pre>
+	)
+}
+```
+
+### Selective Updates (Map Stores)
+
+```tsx
+import { useStore } from "better-auth/react"
+
+function UserName() {
+	// Only re-render when 'name' changes
+	const sessionAtom = client.$store.atoms.session
+	const session = useStore(sessionAtom, {
+		keys: ["data"]
+	})
+
+	return <span>{session.data?.user.name}</span>
+}
+```
+
+## Automatic Session Refresh
+
+Better Auth automatically manages session refresh based on your server configuration.
+
+### Default Behavior
+
+- Sessions are automatically refreshed when they approach expiration
+- Session state updates on authentication operations (sign in, sign out, etc.)
+- Focus/visibility changes trigger session revalidation
+- Network reconnection triggers session revalidation
+
+### Disabling Auto-Refresh
+
+```typescript
+// Disable for a specific request
+await client.getSession({
+	query: {
+		disableRefresh: true
+	}
+})
+
+// Server-side configuration
+export const auth = betterAuth({
+	session: {
+		deferSessionRefresh: true // Disable automatic refresh
+	}
+})
+```
+
+## Session State Synchronization
+
+Session state is synchronized across tabs/windows using BroadcastChannel API (when available).
+
+```typescript
+// In Tab 1
+await client.signIn.email({ email, password })
+
+// In Tab 2 (automatically updated)
+const { data: session } = client.useSession()
+// session.data is now available
+```
+
+## Protected Routes Example
+
+### React Router
+
+```tsx
+import { Navigate } from "react-router-dom"
+import client from "./auth-client"
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+	const { data: session, isPending } = client.useSession()
+
+	if (isPending) {
+		return <div>Loading...</div>
+	}
+
+	if (!session) {
+		return <Navigate to="/login" replace />
+	}
+
+	return <>{children}</>
+}
+```
+
+### Next.js App Router
+
+```tsx
+"use client"
+
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
+import client from "./auth-client"
+
+export function ProtectedLayout({ children }: { children: React.ReactNode }) {
+	const { data: session, isPending } = client.useSession()
+	const router = useRouter()
+
+	useEffect(() => {
+		if (!isPending && !session) {
+			router.push("/login")
+		}
+	}, [session, isPending, router])
+
+	if (isPending) {
+		return <div>Loading...</div>
+	}
+
+	if (!session) {
+		return null
+	}
+
+	return <>{children}</>
+}
+```
+
+### Vue Router
+
+```vue
+<script setup>
+import { watch } from "vue"
+import { useRouter } from "vue-router"
+import client from "./auth-client"
+
+const { data: session, isPending } = client.useSession()
+const router = useRouter()
+
+watch([session, isPending], ([sessionData, pending]) => {
+	if (!pending && !sessionData) {
+		router.push("/login")
+	}
+})
+</script>
+
+<template>
+	<div v-if="isPending">Loading...</div>
+	<div v-else-if="session">
+		<slot />
+	</div>
+</template>
+```
+
+## Type Safety
+
+All hooks return fully typed data based on your server configuration:
+
+```typescript
+import type client from "./auth-client"
+
+// Extract types from client
+type Session = typeof client.$Infer.Session
+type User = Session["user"]
+type SessionData = Session["session"]
+
+// Use in components
+function UserCard({ user }: { user: User }) {
+	return (
+		<div>
+			<h2>{user.name}</h2>
+			<p>{user.email}</p>
+		</div>
+	)
+}
+```
+
+## Error Handling
+
+```tsx
+function SessionWithErrorHandling() {
+	const { data: session, error, isPending, refetch } = client.useSession()
+	const [retrying, setRetrying] = useState(false)
+
+	const handleRetry = async () => {
+		setRetrying(true)
+		await refetch({
+			query: {
+				disableCookieCache: true
+			}
+		})
+		setRetrying(false)
+	}
+
+	if (isPending) {
+		return <div>Loading session...</div>
+	}
+
+	if (error) {
+		return (
+			<div>
+				<p>Failed to load session: {error.message}</p>
+				<button onClick={handleRetry} disabled={retrying}>
+					{retrying ? "Retrying..." : "Retry"}
+				</button>
+			</div>
+		)
+	}
+
+	if (!session) {
+		return <div>Not authenticated</div>
+	}
+
+	return <div>Welcome, {session.user.name}</div>
+}
+```
+
+## Performance Considerations
+
+<Note>
+**React**: Uses `useSyncExternalStore` for optimal performance and consistency between server and client renders.
+
+**Vue**: Uses Vue's built-in reactivity system with minimal overhead.
+
+**Svelte**: Uses Svelte stores with efficient subscription management.
+
+**Solid**: Uses Solid's fine-grained reactivity for optimal updates.
+</Note>
+
+## SSR Considerations
+
+When using Server-Side Rendering:
+
+1. Initial session fetch happens on the client
+2. Server components should use the server-side session API
+3. Hydration is handled automatically
+
+```tsx
+// Server Component (Next.js)
+import { auth } from "./auth-server"
+
+export default async function ServerProfile() {
+	const session = await auth.api.getSession({
+		headers: headers()
+	})
+
+	return <div>Server: {session?.user.name}</div>
+}
+
+// Client Component
+"use client"
+import client from "./auth-client"
+
+export function ClientProfile() {
+	const { data: session } = client.useSession()
+	
+	return <div>Client: {session?.user.name}</div>
+}
+```
+
+## Notes
+
+<Warning>
+Do not create multiple client instances. Always export a single instance and import it where needed to maintain consistent state across your application.
+</Warning>
+
+## Related
+
+- [createAuthClient](/api/client/create-auth-client)
+- [Client Methods](/api/client/methods)

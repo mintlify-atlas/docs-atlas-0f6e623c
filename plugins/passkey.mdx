@@ -1,0 +1,414 @@
+---
+title: Passkey
+description: Add secure, passwordless authentication with WebAuthn passkeys
+---
+
+`WebAuthn` `FIDO2` `Biometric Authentication`
+
+Passkeys provide a secure, passwordless authentication method using cryptographic key pairs based on WebAuthn and FIDO2 standards. Users can authenticate using biometrics, PINs, or security keys without traditional passwords, offering strong, phishing-resistant authentication.
+
+The passkey plugin is powered by [SimpleWebAuthn](https://simplewebauthn.dev/) for reliable WebAuthn implementation.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Install the plugin
+
+    ```package-install
+    npm install @better-auth/passkey
+    ```
+  </Step>
+  
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { passkey } from "@better-auth/passkey"
+
+    export const auth = betterAuth({
+      plugins: [
+        passkey({
+          rpName: "My App",
+          rpID: "example.com",
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Migrate the database
+
+    Run the migration or generate the schema to add the passkey table.
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+      ```bash
+      npx auth migrate
+      ```
+      </Tab>
+      <Tab value="generate">
+      ```bash
+      npx auth generate
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { passkeyClient } from "@better-auth/passkey/client"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        passkeyClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Register a Passkey
+
+To register a passkey, the user must be authenticated. Call `passkey.addPasskey` to add a passkey to their account:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data, error } = await authClient.passkey.addPasskey({
+  name: "My MacBook Pro",
+  authenticatorAttachment: "platform" // or "cross-platform"
+})
+
+if (data) {
+  console.log("Passkey registered:", data)
+}
+```
+
+<Callout>
+Setting `throw: true` in fetch options has no effect for passkey operations - they always return an error object.
+</Callout>
+
+### Sign In with Passkey
+
+Authenticate users with their registered passkey:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data, error } = await authClient.signIn.passkey({
+  autoFill: true,
+  fetchOptions: {
+    onSuccess(context) {
+      window.location.href = "/dashboard"
+    },
+    onError(context) {
+      console.error("Authentication failed:", context.error.message)
+    }
+  }
+})
+```
+
+### List User Passkeys
+
+Retrieve all passkeys for the authenticated user:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.passkey.listPasskeys()
+
+if (data) {
+  data.forEach((passkey) => {
+    console.log(passkey.name, passkey.createdAt)
+  })
+}
+```
+
+### Update Passkey Name
+
+Rename a passkey:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.passkey.updatePasskey({
+  id: "passkey-id",
+  name: "Work Laptop"
+})
+```
+
+### Delete a Passkey
+
+Remove a passkey from the user's account:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.passkey.deletePasskey({
+  id: "passkey-id"
+})
+```
+
+## Conditional UI (Autofill)
+
+Enable browser autofill for passkeys to provide a seamless sign-in experience.
+
+<Steps>
+  <Step>
+    ### Add autocomplete attributes
+
+    Add `webauthn` to the autocomplete attribute on input fields:
+
+    ```html
+    <label for="email">Email:</label>
+    <input 
+      type="email" 
+      name="email" 
+      autocomplete="email webauthn"
+    />
+    
+    <label for="password">Password:</label>
+    <input 
+      type="password" 
+      name="password" 
+      autocomplete="current-password webauthn"
+    />
+    ```
+
+    <Note>
+    The `webauthn` value must be the last entry in the autocomplete attribute.
+    </Note>
+  </Step>
+  
+  <Step>
+    ### Preload passkeys on mount
+
+    Check if conditional UI is available and preload passkeys:
+
+    <Tabs items={["React"]}>
+      <Tab value="React">
+      ```ts
+      import { authClient } from "@/lib/auth-client"
+      import { useEffect } from "react"
+
+      function SignInForm() {
+        useEffect(() => {
+          if (
+            !PublicKeyCredential.isConditionalMediationAvailable ||
+            !PublicKeyCredential.isConditionalMediationAvailable()
+          ) {
+            return
+          }
+
+          void authClient.signIn.passkey({ autoFill: true })
+        }, [])
+
+        return (
+          <form>
+            {/* Form fields with webauthn autocomplete */}
+          </form>
+        )
+      }
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Configuration Options
+
+### Server Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { passkey } from "@better-auth/passkey"
+
+export const auth = betterAuth({
+  plugins: [
+    passkey({
+      // Relying Party ID - your domain
+      rpID: "example.com",
+      
+      // Human-readable name for your app
+      rpName: "My Application",
+      
+      // Expected origin (optional - can be set by client)
+      origin: "https://example.com",
+      
+      // Authenticator selection criteria
+      authenticatorSelection: {
+        authenticatorAttachment: "platform", // "platform" | "cross-platform"
+        residentKey: "required", // "required" | "preferred" | "discouraged"
+        userVerification: "preferred" // "required" | "preferred" | "discouraged"
+      },
+      
+      // Advanced options
+      advanced: {
+        webAuthnChallengeCookie: "better-auth-passkey"
+      }
+    })
+  ]
+})
+```
+
+**rpID**: A unique identifier for your website based on your domain. For example, `example.com` can use `example.com` or `www.example.com`. Use `localhost` for local development.
+
+**rpName**: Human-readable title displayed during WebAuthn ceremonies.
+
+**origin**: The origin URL where WebAuthn operations occur. If not provided, the client will pass this value.
+
+**authenticatorSelection**:
+- `authenticatorAttachment`: Type of authenticator
+  - `platform`: Device-bound (fingerprint, Face ID)
+  - `cross-platform`: External security keys
+- `residentKey`: Credential storage behavior
+  - `required`: Must store credentials (highest security)
+  - `preferred`: Encouraged but not mandatory (default)
+  - `discouraged`: No storage required
+- `userVerification`: Biometric/PIN verification
+  - `required`: Must verify identity
+  - `preferred`: Verification encouraged (default)
+  - `discouraged`: No verification required
+
+**advanced**:
+- `webAuthnChallengeCookie`: Cookie name for challenge storage (default: `better-auth-passkey`)
+
+## Debugging
+
+Use [Chrome DevTools WebAuthn Emulator](https://developer.chrome.com/docs/devtools/webauthn) to test passkey flows without physical devices:
+
+<Steps>
+  <Step>
+    Open Chrome DevTools
+  </Step>
+  <Step>
+    Go to **More tools** → **WebAuthn**
+  </Step>
+  <Step>
+    Click **Enable virtual authenticator environment**
+  </Step>
+  <Step>
+    Add a virtual authenticator and test registration/authentication
+  </Step>
+</Steps>
+
+## Schema
+
+The plugin adds a `passkey` table to your database:
+
+### Passkey Table
+
+- `id` (string): Unique identifier
+- `name` (string, optional): Display name for the passkey
+- `publicKey` (string): Public key for verification
+- `userId` (string): Foreign key to user table
+- `credentialID` (string): Unique credential identifier
+- `counter` (number): Signature counter for replay protection
+- `deviceType` (string): Type of authenticator device
+- `backedUp` (boolean): Whether the passkey is backed up
+- `transports` (string, optional): Available transports
+- `createdAt` (Date): Creation timestamp
+- `aaguid` (string, optional): Authenticator attestation GUID
+
+## Expo Integration
+
+When using passkeys with Expo, configure the `cookiePrefix` to match your challenge cookie:
+
+```ts title="Server: auth.ts"
+import { betterAuth } from "better-auth"
+import { passkey } from "@better-auth/passkey"
+
+export const auth = betterAuth({
+  plugins: [
+    passkey({
+      advanced: {
+        webAuthnChallengeCookie: "my-app-passkey"
+      }
+    })
+  ]
+})
+```
+
+```ts title="Client: auth-client.ts"
+import { createAuthClient } from "better-auth/react"
+import { expoClient } from "@better-auth/expo/client"
+import { passkeyClient } from "@better-auth/passkey/client"
+import * as SecureStore from "expo-secure-store"
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:8081",
+  plugins: [
+    expoClient({
+      storage: SecureStore,
+      cookiePrefix: "my-app" // Must match cookie prefix
+    }),
+    passkeyClient()
+  ]
+})
+```
+
+<Callout type="warn">
+If the `cookiePrefix` doesn't match your `webAuthnChallengeCookie`, authentication will fail.
+</Callout>
+
+## Best Practices
+
+<Steps>
+  <Step>
+    ### Use descriptive names
+    
+    Allow users to name their passkeys (e.g., "iPhone 13", "Work Laptop"):
+    
+    ```ts
+    await authClient.passkey.addPasskey({
+      name: "iPhone 13 Pro"
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Support multiple passkeys
+    
+    Let users register multiple passkeys for different devices.
+  </Step>
+  
+  <Step>
+    ### Provide fallback authentication
+    
+    Always offer traditional password authentication as a backup.
+  </Step>
+  
+  <Step>
+    ### Enable conditional UI
+    
+    Implement browser autofill for the best user experience.
+  </Step>
+  
+  <Step>
+    ### Handle errors gracefully
+    
+    ```ts
+    const { error } = await authClient.signIn.passkey()
+    
+    if (error?.code === "ERROR_CEREMONY_ABORTED") {
+      console.log("User cancelled authentication")
+    }
+    ```
+  </Step>
+</Steps>
+
+## Error Codes
+
+- `ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED`: Passkey already registered
+- `ERROR_CEREMONY_ABORTED`: User cancelled the operation
+- `AUTH_CANCELLED`: Authentication was cancelled
+- `PASSKEY_ALREADY_EXISTS`: Duplicate passkey
+- `PASSKEY_NOT_FOUND`: Passkey doesn't exist

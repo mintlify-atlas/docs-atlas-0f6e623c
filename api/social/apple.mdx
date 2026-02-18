@@ -1,0 +1,341 @@
+---
+title: Apple Sign In
+description: Configure Sign in with Apple OAuth provider for Better Auth
+---
+
+# Apple Sign In
+
+Sign in with Apple allows users to authenticate using their Apple ID. Apple requires apps that offer third-party sign-in options to also offer Sign in with Apple.
+
+## Setup
+
+<Steps>
+### Create an Apple Developer Account
+
+Sign in to [Apple Developer](https://developer.apple.com/) and enroll in the Apple Developer Program if you haven't already.
+
+### Register an App ID
+
+1. Go to **Certificates, Identifiers & Profiles**
+2. Click **Identifiers** and create a new **App ID**
+3. Enable **Sign in with Apple** capability
+4. Configure the **App ID** with your bundle identifier
+
+### Create a Services ID
+
+1. Create a new identifier and select **Services IDs**
+2. Enter a description and identifier (this will be your `clientId`)
+3. Enable **Sign in with Apple**
+4. Configure the domain and redirect URLs:
+   - **Domains**: Your application domain (e.g., `example.com`)
+   - **Redirect URLs**: `https://example.com/api/auth/callback/apple`
+
+### Create a Private Key
+
+1. Go to **Keys** and create a new key
+2. Enable **Sign in with Apple**
+3. Configure the key with your App ID
+4. Download the `.p8` key file (you can only download it once)
+5. Note the **Key ID**
+
+### Get Your Team ID
+
+Find your **Team ID** in the top right corner of the Apple Developer portal.
+</Steps>
+
+## Configuration
+
+### Basic Configuration
+
+```ts
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  socialProviders: {
+    apple: {
+      clientId: process.env.APPLE_CLIENT_ID!, // Your Services ID
+      clientSecret: process.env.APPLE_CLIENT_SECRET!, // Generated JWT (see below)
+    },
+  },
+});
+```
+
+### Generating Client Secret
+
+Apple requires a JWT as the client secret. Generate it using the private key:
+
+```ts
+import jwt from "jsonwebtoken";
+import fs from "fs";
+
+// Read the private key file
+const privateKey = fs.readFileSync("path/to/AuthKey_XXXXXXXXXX.p8", "utf8");
+
+// Generate the client secret
+const clientSecret = jwt.sign(
+  {
+    iss: "YOUR_TEAM_ID", // Team ID from Apple Developer portal
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 86400 * 180, // 180 days
+    aud: "https://appleid.apple.com",
+    sub: "YOUR_SERVICES_ID", // Your Services ID (Client ID)
+  },
+  privateKey,
+  {
+    algorithm: "ES256",
+    header: {
+      alg: "ES256",
+      kid: "YOUR_KEY_ID", // Key ID from Apple Developer portal
+    },
+  }
+);
+
+console.log(clientSecret);
+```
+
+<Note>
+  The client secret JWT is valid for up to 6 months. You'll need to regenerate it before expiration.
+</Note>
+
+## Configuration Options
+
+<ParamField path="clientId" type="string" required>
+  Your Apple Services ID.
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  The JWT generated using your private key, team ID, and key ID.
+</ParamField>
+
+<ParamField path="appBundleIdentifier" type="string">
+  Your app's bundle identifier. Used for native iOS apps.
+  
+  ```ts
+  apple: {
+    clientId: process.env.APPLE_CLIENT_ID!,
+    clientSecret: process.env.APPLE_CLIENT_SECRET!,
+    appBundleIdentifier: "com.example.app",
+  }
+  ```
+</ParamField>
+
+<ParamField path="audience" type="string | string[]">
+  Custom audience values for ID token verification. Defaults to `clientId` or `appBundleIdentifier`.
+  
+  ```ts
+  apple: {
+    clientId: process.env.APPLE_CLIENT_ID!,
+    clientSecret: process.env.APPLE_CLIENT_SECRET!,
+    audience: ["com.example.app", "com.example.web"],
+  }
+  ```
+</ParamField>
+
+<ParamField path="scope" type="string[]">
+  Additional scopes beyond the defaults (`email`, `name`).
+  
+  Apple has limited scope options compared to other providers.
+</ParamField>
+
+<ParamField path="redirectURI" type="string">
+  Custom redirect URI. Must match what's configured in Apple Developer portal.
+  
+  Default: `{baseURL}/api/auth/callback/apple`
+</ParamField>
+
+## User Profile Data
+
+Apple provides this profile information:
+
+```ts
+interface AppleProfile {
+  sub: string;                      // Unique user identifier
+  email: string;                    // User's email (may be private relay)
+  email_verified: boolean | "true"; // Email verification status
+  is_private_email: boolean;        // Whether using Apple's private relay
+  real_user_status: number;         // 0=Unsupported, 1=Unknown, 2=LikelyReal
+  name: string;                     // User's full name
+  picture: string;                  // Profile picture URL
+}
+```
+
+<Warning>
+  **User name only available on first sign-in:** Apple only sends the user's name during the initial authorization. Store it immediately, as it won't be available on subsequent sign-ins.
+</Warning>
+
+### Private Email Relay
+
+Apple allows users to hide their real email address using a private relay email (e.g., `xyz@privaterelay.appleid.com`). Your application must be able to send email to these relay addresses.
+
+<Note>
+  Configure your email domain in the Apple Developer portal under **Services IDs > Sign in with Apple > Email Communication** to ensure emails reach users who use private relay addresses.
+</Note>
+
+## Client-Side Implementation
+
+### Web Application
+
+```tsx
+import { createAuthClient } from "better-auth/client";
+
+const authClient = createAuthClient();
+
+function AppleSignInButton() {
+  const handleSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "apple",
+      callbackURL: "/dashboard",
+    });
+  };
+
+  return (
+    <button onClick={handleSignIn}>
+      <AppleIcon />
+      Sign in with Apple
+    </button>
+  );
+}
+```
+
+### iOS Native App
+
+For native iOS apps, you can use Apple's native sign-in and send the ID token to Better Auth:
+
+```swift
+import AuthenticationServices
+
+class SignInViewController: UIViewController, ASAuthorizationControllerDelegate {
+    func handleAppleSignIn() {
+        let provider = ASAuthorizationAppleIDProvider()
+        let request = provider.createRequest()
+        request.requestedScopes = [.fullName, .email]
+        
+        let controller = ASAuthorizationController(authorizationRequests: [request])
+        controller.delegate = self
+        controller.performRequests()
+    }
+    
+    func authorizationController(
+        controller: ASAuthorizationController,
+        didCompleteWithAuthorization authorization: ASAuthorization
+    ) {
+        if let credential = authorization.credential as? ASAuthorizationAppleIDCredential {
+            // Send credential.identityToken to your Better Auth backend
+            sendToBackend(idToken: credential.identityToken)
+        }
+    }
+}
+```
+
+## ID Token Sign-In
+
+Better Auth supports signing in with Apple ID tokens from native apps:
+
+```ts
+// Client side (iOS app)
+const response = await fetch("https://your-api.com/api/auth/callback/apple", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    idToken: appleIdToken, // From Apple's native SDK
+  }),
+});
+```
+
+Better Auth automatically verifies the ID token signature using Apple's public keys.
+
+## Advanced Configuration
+
+### Custom User Mapping
+
+Map Apple profile data to your user schema:
+
+```ts
+apple: {
+  clientId: process.env.APPLE_CLIENT_ID!,
+  clientSecret: process.env.APPLE_CLIENT_SECRET!,
+  mapProfileToUser: (profile) => ({
+    name: profile.name || "Apple User",
+    // Store private email flag
+    isPrivateEmail: profile.is_private_email,
+    // Store real user status for fraud detection
+    realUserStatus: profile.real_user_status,
+  }),
+}
+```
+
+### Custom ID Token Verification
+
+```ts
+apple: {
+  clientId: process.env.APPLE_CLIENT_ID!,
+  clientSecret: process.env.APPLE_CLIENT_SECRET!,
+  verifyIdToken: async (token, nonce) => {
+    // Custom verification logic
+    // Useful for additional security checks
+    return true; // or false
+  },
+}
+```
+
+### Disable ID Token Sign-In
+
+If you only want to support the web OAuth flow:
+
+```ts
+apple: {
+  clientId: process.env.APPLE_CLIENT_ID!,
+  clientSecret: process.env.APPLE_CLIENT_SECRET!,
+  disableIdTokenSignIn: true,
+}
+```
+
+## Troubleshooting
+
+### "invalid_client" Error
+
+**Causes:**
+- Incorrect Services ID (Client ID)
+- Expired or invalid client secret JWT
+- Missing or incorrect Key ID in JWT header
+- Wrong Team ID in JWT claims
+
+**Solution:** Regenerate the client secret JWT with correct values.
+
+### "invalid_grant" Error
+
+**Causes:**
+- Redirect URI mismatch
+- Authorization code already used or expired
+
+**Solution:** Ensure redirect URIs match exactly in both Better Auth and Apple Developer portal.
+
+### Missing User Name
+
+**Cause:** Apple only sends the user's name on the first authorization.
+
+**Solution:** Store the name immediately on first sign-in. Consider prompting users to complete their profile if the name is missing.
+
+### Private Relay Emails Bouncing
+
+**Cause:** Email domain not configured in Apple Developer portal.
+
+**Solution:** Add your email sending domain under **Services IDs > Sign in with Apple > Email Communication**.
+
+## App Store Requirements
+
+<Warning>
+  **App Store Requirement:** If your iOS, iPadOS, macOS, or tvOS app offers third-party sign-in options (Google, Facebook, etc.), you must also offer Sign in with Apple according to [App Store Review Guidelines 4.8](https://developer.apple.com/app-store/review/guidelines/#sign-in-with-apple).
+</Warning>
+
+Sign in with Apple must be:
+- Positioned equivalently or more prominently than other sign-in options
+- Implemented using Apple's native SDK for native apps
+- Available on all platforms where your app offers third-party sign-in
+
+## Resources
+
+- [Apple Sign In Documentation](https://developer.apple.com/sign-in-with-apple/)
+- [Apple Developer Portal](https://developer.apple.com/account/)
+- [App Store Review Guidelines](https://developer.apple.com/app-store/review/guidelines/)
+- [Private Email Relay](https://support.apple.com/en-us/HT210425)

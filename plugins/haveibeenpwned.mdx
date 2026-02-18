@@ -1,0 +1,473 @@
+---
+title: Have I Been Pwned
+description: Prevent users from using compromised passwords
+---
+
+`Password Security` `Breach Detection` `k-Anonymity`
+
+The Have I Been Pwned plugin integrates with the [Have I Been Pwned](https://haveibeenpwned.com/) API to check if user passwords have been exposed in known data breaches. This plugin helps prevent account takeovers by blocking compromised passwords during sign-up and password changes.
+
+## How It Works
+
+The plugin uses a privacy-preserving k-anonymity model:
+
+<Steps>
+  <Step>
+    ### Hash the password
+    
+    The password is hashed using SHA-1 (required by the API).
+  </Step>
+  
+  <Step>
+    ### Send partial hash
+    
+    Only the first 5 characters of the hash are sent to the API.
+  </Step>
+  
+  <Step>
+    ### Compare locally
+    
+    The server receives a list of matching hash suffixes and compares them locally.
+  </Step>
+  
+  <Step>
+    ### Block if compromised
+    
+    If a match is found, the password is rejected.
+  </Step>
+</Steps>
+
+<Note>
+This implementation is privacy-preserving. Your actual password never leaves your server, and the API never receives enough information to reconstruct it.
+</Note>
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { haveIBeenPwned } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        haveIBeenPwned()
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Configure checked endpoints (optional)
+
+    By default, the plugin checks passwords on:
+    - `/sign-up/email`
+    - `/change-password`
+    - `/reset-password`
+
+    Customize the endpoints:
+
+    ```ts title="auth.ts"
+    haveIBeenPwned({
+      paths: [
+        "/sign-up/email",
+        "/change-password",
+        "/reset-password",
+        "/admin/create-user"
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+Once installed, the plugin automatically checks passwords on the configured endpoints. No client-side code changes are required.
+
+### Sign Up
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { error } = await authClient.signUp.email({
+  email: "user@example.com",
+  password: "password123", // Common compromised password
+  name: "John Doe"
+})
+
+if (error?.code === "PASSWORD_COMPROMISED") {
+  console.log("This password has been exposed in a data breach")
+}
+```
+
+### Change Password
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { error } = await authClient.changePassword({
+  currentPassword: "oldpassword",
+  newPassword: "compromised-password"
+})
+
+if (error?.code === "PASSWORD_COMPROMISED") {
+  console.log("Please choose a different password")
+}
+```
+
+### Reset Password
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { error } = await authClient.resetPassword({
+  token: "reset-token",
+  password: "weak-password"
+})
+
+if (error?.code === "PASSWORD_COMPROMISED") {
+  console.log("This password is not secure")
+}
+```
+
+## Configuration Options
+
+### Custom Error Message
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { haveIBeenPwned } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    haveIBeenPwned({
+      customPasswordCompromisedMessage: 
+        "This password has appeared in a data breach. " +
+        "For your security, please choose a different password."
+    })
+  ]
+})
+```
+
+### Custom Paths
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { haveIBeenPwned } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    haveIBeenPwned({
+      paths: [
+        "/sign-up/email",
+        "/change-password",
+        "/reset-password",
+        "/invite/accept"
+      ]
+    })
+  ]
+})
+```
+
+## Error Handling
+
+### Client-Side
+
+```tsx
+import { authClient } from "@/lib/auth-client"
+import { useState } from "react"
+
+export default function SignUpForm() {
+  const [error, setError] = useState("")
+  const [password, setPassword] = useState("")
+  
+  const handleSignUp = async (email: string) => {
+    const { error } = await authClient.signUp.email({
+      email,
+      password,
+      name: "User"
+    })
+    
+    if (error) {
+      if (error.code === "PASSWORD_COMPROMISED") {
+        setError(
+          "This password has been exposed in a data breach. " +
+          "Please choose a different, more secure password."
+        )
+      } else {
+        setError(error.message)
+      }
+    }
+  }
+  
+  return (
+    <form>
+      {/* ... form fields ... */}
+      {error && (
+        <div className="error">
+          {error}
+          {error.includes("breach") && (
+            <a href="https://haveibeenpwned.com" target="_blank">
+              Learn more about data breaches
+            </a>
+          )}
+        </div>
+      )}
+    </form>
+  )
+}
+```
+
+### Server-Side
+
+```ts
+import { APIError } from "better-auth"
+
+try {
+  // Password check happens automatically
+} catch (error) {
+  if (error instanceof APIError && error.code === "PASSWORD_COMPROMISED") {
+    // Handle compromised password
+  }
+}
+```
+
+## Privacy & Security
+
+### K-Anonymity Model
+
+The plugin uses the k-anonymity model to protect privacy:
+
+1. Password is hashed: `5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8`
+2. First 5 characters sent to API: `5baa6`
+3. API returns all hashes starting with `5baa6`
+4. Your server checks if the full hash is in the results
+
+<Tip>
+The Have I Been Pwned API never receives your actual password or full hash, making this approach privacy-preserving.
+</Tip>
+
+### No Personal Data Sent
+
+The plugin:
+- Never sends the actual password
+- Never sends user email or username
+- Never sends the full password hash
+- Only sends the first 5 characters of the SHA-1 hash
+
+### API Rate Limiting
+
+The Have I Been Pwned API is rate-limited. The plugin:
+
+- Automatically handles rate limit responses
+- Returns an `INTERNAL_SERVER_ERROR` if the API is unavailable
+- Fails gracefully without blocking user registration
+
+<Warning>
+If the Have I Been Pwned API is unavailable, the check will fail gracefully. Consider implementing a fallback strategy for critical applications.
+</Warning>
+
+## Best Practices
+
+<Steps>
+  <Step>
+    ### Combine with password strength requirements
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { haveIBeenPwned } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      advanced: {
+        passwordMinLength: 12,
+      },
+      plugins: [
+        haveIBeenPwned()
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Provide helpful error messages
+    
+    ```ts
+    customPasswordCompromisedMessage: 
+      "This password has appeared in a known data breach and is not secure. " +
+      "Please choose a unique password you haven't used elsewhere."
+    ```
+  </Step>
+  
+  <Step>
+    ### Educate users
+    
+    ```tsx
+    {error?.code === "PASSWORD_COMPROMISED" && (
+      <div>
+        <p>This password has been compromised.</p>
+        <a href="https://haveibeenpwned.com/Passwords">
+          Learn more about password security
+        </a>
+      </div>
+    )}
+    ```
+  </Step>
+  
+  <Step>
+    ### Check on all password changes
+    
+    Always check passwords when users:
+    - Sign up
+    - Change their password
+    - Reset their password
+    - Set initial password
+  </Step>
+</Steps>
+
+## Database Coverage
+
+The Have I Been Pwned database includes:
+
+- Over 600 million compromised passwords
+- Passwords from major data breaches
+- Common passwords like "password123"
+- Dictionary words and patterns
+- Previously secure passwords that have since been breached
+
+## API Reliability
+
+### Handling Failures
+
+```ts
+const { error } = await authClient.signUp.email({
+  email: "user@example.com",
+  password: "mypassword"
+})
+
+if (error?.status === 500) {
+  console.log("Password check temporarily unavailable")
+}
+```
+
+### Timeout Handling
+
+The plugin uses a reasonable timeout. If the API doesn't respond quickly, it fails safely without blocking the user.
+
+## Example: Complete Implementation
+
+```tsx title="components/SignUpForm.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useState } from "react"
+
+export default function SignUpForm() {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [error, setError] = useState("")
+  const [isChecking, setIsChecking] = useState(false)
+  
+  const checkPasswordStrength = (password: string) => {
+    if (password.length < 12) return "weak"
+    if (!/[A-Z]/.test(password)) return "medium"
+    if (!/[0-9]/.test(password)) return "medium"
+    if (!/[^A-Za-z0-9]/.test(password)) return "medium"
+    return "strong"
+  }
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    setIsChecking(true)
+    
+    const strength = checkPasswordStrength(password)
+    if (strength === "weak") {
+      setError("Password must be at least 12 characters")
+      setIsChecking(false)
+      return
+    }
+    
+    const { data, error: signUpError } = await authClient.signUp.email({
+      email,
+      password,
+      name: "User"
+    })
+    
+    setIsChecking(false)
+    
+    if (signUpError) {
+      if (signUpError.code === "PASSWORD_COMPROMISED") {
+        setError(
+          "This password has been found in a data breach. " +
+          "Please choose a different password."
+        )
+      } else {
+        setError(signUpError.message)
+      }
+      return
+    }
+    
+    window.location.href = "/dashboard"
+  }
+  
+  return (
+    <form onSubmit={handleSubmit}>
+      <div>
+        <label>Email</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
+      </div>
+      
+      <div>
+        <label>Password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          minLength={12}
+        />
+        <div className="password-strength">
+          Strength: {checkPasswordStrength(password)}
+        </div>
+      </div>
+      
+      {error && (
+        <div className="error">
+          {error}
+          {error.includes("breach") && (
+            <div>
+              <a href="https://haveibeenpwned.com/Passwords" target="_blank">
+                Check if your password has been compromised
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+      
+      <button type="submit" disabled={isChecking}>
+        {isChecking ? "Checking password..." : "Sign Up"}
+      </button>
+    </form>
+  )
+}
+```
+
+## Limitations
+
+- **API Dependency**: Requires network access to haveibeenpwned.com
+- **Performance**: Adds a small delay (typically less than 100ms) to password operations
+- **Coverage**: Only checks known breaches in the Have I Been Pwned database
+
+<Note>
+The plugin gracefully handles API failures and won't block user operations if the service is unavailable.
+</Note>
+
+## Related
+
+- [Two-Factor Authentication](/plugins/two-factor) - Additional security layer
+- [Captcha](/plugins/captcha) - Protect against automated attacks

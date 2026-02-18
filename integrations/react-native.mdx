@@ -1,0 +1,509 @@
+---
+title: React Native (Expo) Integration
+description: Integrate Better Auth with React Native and Expo for mobile authentication.
+---
+
+Better Auth provides full support for React Native through Expo, enabling secure mobile authentication with native storage and OAuth flows.
+
+## Prerequisites
+
+Make sure you have:
+- A Better Auth server instance running
+- An Expo project set up
+- Required Expo packages installed
+
+## Installation
+
+<Steps>
+
+### Install Dependencies
+
+Install the required packages:
+
+```bash
+npx expo install expo-secure-store expo-web-browser expo-linking
+npm install @better-auth/expo
+```
+
+### Configure Server
+
+Add the Expo plugin to your Better Auth server configuration:
+
+```ts title="lib/auth.ts (Server)"
+import { betterAuth } from "better-auth";
+import { expo } from "@better-auth/expo";
+import { Pool } from "pg";
+
+export const auth = betterAuth({
+  database: new Pool({
+    connectionString: process.env.DATABASE_URL
+  }),
+  emailAndPassword: {
+    enabled: true
+  },
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!
+    },
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!
+    }
+  },
+  plugins: [
+    expo() // Add Expo plugin
+  ],
+  trustedOrigins: ["exp://"] // Trust Expo dev URLs
+});
+```
+
+### Mount the Handler
+
+Create an API route in your Expo app to proxy requests:
+
+```ts title="app/api/auth/[...route]+api.ts"
+import { auth } from "@/lib/auth";
+
+export const GET = (request: Request) => {
+  return auth.handler(request);
+};
+
+export const POST = (request: Request) => {
+  return auth.handler(request);
+};
+```
+
+<Note>
+This is only needed if you're running the auth server within your Expo app. If your auth server is separate, skip this step.
+</Note>
+
+### Configure App URL Scheme
+
+Add a URL scheme to your `app.json`:
+
+```json title="app.json"
+{
+  "expo": {
+    "name": "Your App",
+    "slug": "your-app",
+    "scheme": "your-app",
+    // ... other config
+  }
+}
+```
+
+### Create Client Instance
+
+Create the auth client with Expo integration:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/react";
+import { expoClient } from "@better-auth/expo/client";
+import * as SecureStore from "expo-secure-store";
+
+export const authClient = createAuthClient({
+  baseURL: process.env.EXPO_PUBLIC_API_URL || "http://localhost:8081",
+  disableDefaultFetchPlugins: true,
+  plugins: [
+    expoClient({
+      scheme: "your-app", // Must match app.json
+      storage: SecureStore,
+      storagePrefix: "your-app", // Optional: customize storage keys
+      cookiePrefix: "better-auth" // Optional: match server cookie prefix
+    })
+  ]
+});
+
+export const { useSession } = authClient;
+```
+
+</Steps>
+
+## Usage
+
+### Session Management
+
+Use the `useSession` hook in your components:
+
+```tsx title="app/(tabs)/profile.tsx"
+import { View, Text, Button } from "react-native";
+import { authClient } from "@/lib/auth-client";
+
+export default function ProfileScreen() {
+  const session = authClient.useSession();
+
+  if (session.isPending) {
+    return (
+      <View>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (!session.data) {
+    return (
+      <View>
+        <Text>Not signed in</Text>
+        <Button
+          title="Sign In with GitHub"
+          onPress={() => {
+            authClient.signIn.social({
+              provider: "github",
+              callbackURL: "/profile"
+            });
+          }}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      <Text>Welcome {session.data.user.name}!</Text>
+      <Text>Email: {session.data.user.email}</Text>
+      <Button
+        title="Sign Out"
+        onPress={() => authClient.signOut()}
+      />
+    </View>
+  );
+}
+```
+
+### Email/Password Sign In
+
+```tsx title="app/(auth)/sign-in.tsx"
+import { useState } from "react";
+import { View, TextInput, Button, Text } from "react-native";
+import { authClient } from "@/lib/auth-client";
+import { useRouter } from "expo-router";
+
+export default function SignInScreen() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignIn = async () => {
+    setLoading(true);
+    setError("");
+
+    await authClient.signIn.email(
+      { email, password },
+      {
+        onRequest: () => setLoading(true),
+        onSuccess: () => {
+          router.replace("/profile");
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={{ fontSize: 24, marginBottom: 20 }}>Sign In</Text>
+      
+      {error && (
+        <Text style={{ color: "red", marginBottom: 10 }}>{error}</Text>
+      )}
+
+      <TextInput
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        style={{ borderWidth: 1, padding: 10, marginBottom: 10 }}
+      />
+
+      <TextInput
+        placeholder="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        style={{ borderWidth: 1, padding: 10, marginBottom: 10 }}
+      />
+
+      <Button
+        title={loading ? "Signing in..." : "Sign In"}
+        onPress={handleSignIn}
+        disabled={loading}
+      />
+    </View>
+  );
+}
+```
+
+### Email/Password Sign Up
+
+```tsx title="app/(auth)/sign-up.tsx"
+import { useState } from "react";
+import { View, TextInput, Button, Text } from "react-native";
+import { authClient } from "@/lib/auth-client";
+import { useRouter } from "expo-router";
+
+export default function SignUpScreen() {
+  const router = useRouter();
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignUp = async () => {
+    setLoading(true);
+    setError("");
+
+    await authClient.signUp.email(
+      { name, email, password },
+      {
+        onRequest: () => setLoading(true),
+        onSuccess: () => {
+          router.replace("/profile");
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={{ fontSize: 24, marginBottom: 20 }}>Sign Up</Text>
+      
+      {error && (
+        <Text style={{ color: "red", marginBottom: 10 }}>{error}</Text>
+      )}
+
+      <TextInput
+        placeholder="Name"
+        value={name}
+        onChangeText={setName}
+        style={{ borderWidth: 1, padding: 10, marginBottom: 10 }}
+      />
+
+      <TextInput
+        placeholder="Email"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        style={{ borderWidth: 1, padding: 10, marginBottom: 10 }}
+      />
+
+      <TextInput
+        placeholder="Password"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry
+        style={{ borderWidth: 1, padding: 10, marginBottom: 10 }}
+      />
+
+      <Button
+        title={loading ? "Signing up..." : "Sign Up"}
+        onPress={handleSignUp}
+        disabled={loading}
+      />
+    </View>
+  );
+}
+```
+
+### Social Sign In (OAuth)
+
+```tsx title="components/SocialSignIn.tsx"
+import { View, Button } from "react-native";
+import { authClient } from "@/lib/auth-client";
+
+export function SocialSignIn() {
+  return (
+    <View style={{ gap: 10 }}>
+      <Button
+        title="Continue with GitHub"
+        onPress={() => {
+          authClient.signIn.social({
+            provider: "github",
+            callbackURL: "/profile"
+          });
+        }}
+      />
+      <Button
+        title="Continue with Google"
+        onPress={() => {
+          authClient.signIn.social({
+            provider: "google",
+            callbackURL: "/profile"
+          });
+        }}
+      />
+    </View>
+  );
+}
+```
+
+## Protected Routes
+
+Create a component to protect routes:
+
+```tsx title="components/ProtectedRoute.tsx"
+import { useEffect } from "react";
+import { View, Text } from "react-native";
+import { useRouter } from "expo-router";
+import { authClient } from "@/lib/auth-client";
+
+export function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const router = useRouter();
+  const session = authClient.useSession();
+
+  useEffect(() => {
+    if (!session.isPending && !session.data) {
+      router.replace("/sign-in");
+    }
+  }, [session.isPending, session.data]);
+
+  if (session.isPending) {
+    return (
+      <View>
+        <Text>Loading...</Text>
+      </View>
+    );
+  }
+
+  if (!session.data) {
+    return null;
+  }
+
+  return <>{children}</>;
+}
+```
+
+Use it in your routes:
+
+```tsx title="app/(app)/_layout.tsx"
+import { Stack } from "expo-router";
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+
+export default function AppLayout() {
+  return (
+    <ProtectedRoute>
+      <Stack>
+        <Stack.Screen name="profile" options={{ title: "Profile" }} />
+        <Stack.Screen name="settings" options={{ title: "Settings" }} />
+      </Stack>
+    </ProtectedRoute>
+  );
+}
+```
+
+## Handling Deep Links
+
+The Expo client automatically handles OAuth callbacks. Make sure your app is set up to handle deep links:
+
+```tsx title="app/_layout.tsx"
+import { useEffect } from "react";
+import { Stack } from "expo-router";
+import * as Linking from "expo-linking";
+
+export default function RootLayout() {
+  useEffect(() => {
+    // Handle incoming deep links
+    const subscription = Linking.addEventListener("url", ({ url }) => {
+      console.log("Deep link:", url);
+    });
+
+    return () => subscription.remove();
+  }, []);
+
+  return (
+    <Stack>
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(app)" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
+```
+
+## Configuration Options
+
+### Expo Client Options
+
+```ts
+expoClient({
+  // Required: URL scheme from app.json
+  scheme: "your-app",
+  
+  // Required: Secure storage implementation
+  storage: SecureStore,
+  
+  // Optional: Prefix for storage keys (default: "better-auth")
+  storagePrefix: "my-app",
+  
+  // Optional: Cookie prefix to match server (default: "better-auth")
+  cookiePrefix: "better-auth",
+  
+  // Optional: Disable session cache (default: false)
+  disableCache: false,
+  
+  // Optional: Web browser options for OAuth
+  webBrowserOptions: {
+    preferEphemeralSession: true // iOS: Don't share cookies with Safari
+  }
+})
+```
+
+## Production Setup
+
+### Environment Variables
+
+```bash title=".env"
+EXPO_PUBLIC_API_URL=https://your-api.com
+```
+
+### Update Trusted Origins
+
+For production, update trusted origins on your server:
+
+```ts title="lib/auth.ts (Server)"
+export const auth = betterAuth({
+  // ... other config
+  trustedOrigins: [
+    "exp://", // Development
+    "your-app://" // Production scheme
+  ]
+});
+```
+
+## Common Issues
+
+<AccordionGroup>
+
+<Accordion title="OAuth not redirecting back to app">
+  Make sure:
+  1. The `scheme` in `app.json` matches the one in `expoClient`
+  2. Your server has the scheme in `trustedOrigins`
+  3. The OAuth provider's redirect URL includes your scheme
+</Accordion>
+
+<Accordion title="Session not persisting">
+  Ensure you're using `expo-secure-store` and passing it to the `storage` option. The Expo client automatically stores cookies in SecureStore.
+</Accordion>
+
+<Accordion title="CORS errors">
+  The Expo plugin automatically handles CORS by using the `expo-origin` header. Make sure the plugin is installed on your server.
+</Accordion>
+
+</AccordionGroup>
+
+## Resources
+
+- [Expo Documentation](https://docs.expo.dev)
+- [Expo Router](https://docs.expo.dev/router/introduction/)
+- [Better Auth Core Concepts](/concepts/database)

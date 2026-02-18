@@ -1,0 +1,835 @@
+---
+title: Organizations
+description: Multi-tenant organizations with teams, roles, invitations, and access control
+---
+
+The organization plugin enables multi-tenancy with full support for role-based access control, teams, member management, and invitations. Perfect for B2B SaaS applications requiring workspace or tenant isolation.
+
+## Features
+
+- **Multi-Tenancy**: Isolated workspaces with separate members and data
+- **Role-Based Access Control**: Built-in admin, member, and owner roles with custom permissions
+- **Teams**: Sub-groups within organizations for granular access control
+- **Invitations**: Email-based member invitations with role assignment
+- **Dynamic Access Control**: Runtime permission management
+- **Active Organization**: Track user's current working context
+- **Audit Trail**: Comprehensive hooks for tracking organization activities
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { organization } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        organization({
+          // Allow users to create organizations
+          allowUserToCreateOrganization: true,
+          
+          // Enable teams feature
+          teams: {
+            enabled: true
+          },
+          
+          // Custom role definitions
+          roles: {
+            admin: {
+              permissions: ["organization:update", "member:add", "member:remove"]
+            },
+            member: {
+              permissions: ["organization:read"]
+            }
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    ```bash
+    npx auth migrate
+    ```
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { organizationClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        organizationClient({
+          teams: {
+            enabled: true
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Basic Usage
+
+### Create Organization
+
+```ts
+const { data, error } = await authClient.organization.create({
+  name: "Acme Corp",
+  slug: "acme-corp",
+  logo: "https://example.com/logo.png",
+  metadata: {
+    industry: "Technology",
+    plan: "enterprise"
+  }
+})
+```
+
+### List Organizations
+
+```tsx
+import { authClient } from "@/lib/auth-client"
+
+function OrganizationList() {
+  const { data: organizations } = authClient.useListOrganizations()
+  
+  return (
+    <div>
+      {organizations?.map((org) => (
+        <div key={org.id}>
+          <h3>{org.name}</h3>
+          <p>Slug: {org.slug}</p>
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Set Active Organization
+
+Switch the user's current working organization:
+
+```ts
+await authClient.organization.setActive({
+  organizationId: "org_123"
+})
+```
+
+The active organization ID is stored in the session and accessible:
+
+```tsx
+function CurrentOrganization() {
+  const { data: session } = authClient.useSession()
+  
+  return (
+    <div>
+      Active Org: {session?.session.activeOrganizationId}
+    </div>
+  )
+}
+```
+
+### Get Full Organization
+
+Retrieve organization with members and invitations:
+
+```tsx
+function OrganizationDetails() {
+  const { data: org } = authClient.useActiveOrganization()
+  
+  return (
+    <div>
+      <h2>{org?.name}</h2>
+      <p>Members: {org?.members.length}</p>
+      <p>Pending Invitations: {org?.invitations.length}</p>
+    </div>
+  )
+}
+```
+
+## Member Management
+
+### Invite Members
+
+Send email invitations to join the organization:
+
+```ts
+await authClient.organization.inviteMember({
+  email: "newmember@example.com",
+  role: "member",
+  organizationId: "org_123"
+})
+```
+
+### Accept Invitation
+
+```ts
+await authClient.organization.acceptInvitation({
+  invitationId: "inv_123"
+})
+```
+
+### List Invitations
+
+```tsx
+function InvitationsList() {
+  const [invitations, setInvitations] = useState([])
+  
+  useEffect(() => {
+    authClient.organization.listInvitations({
+      organizationId: "org_123"
+    }).then(({ data }) => setInvitations(data))
+  }, [])
+  
+  return (
+    <div>
+      {invitations.map(inv => (
+        <div key={inv.id}>
+          {inv.email} - {inv.status}
+        </div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Update Member Role
+
+```ts
+await authClient.organization.updateMemberRole({
+  memberId: "mem_123",
+  role: "admin",
+  organizationId: "org_123"
+})
+```
+
+### Remove Member
+
+```ts
+await authClient.organization.removeMember({
+  memberId: "mem_123",
+  organizationId: "org_123"
+})
+```
+
+### Leave Organization
+
+```ts
+await authClient.organization.leave({
+  organizationId: "org_123"
+})
+```
+
+## Access Control
+
+### Built-in Roles
+
+Better Auth provides three default roles:
+
+**Owner**
+- Full organization control
+- Can delete organization
+- Can manage all members and settings
+- Automatically assigned to organization creator
+
+**Admin**
+- Can manage members
+- Can update organization settings
+- Cannot delete organization
+
+**Member**
+- Read-only access to organization
+- Can view members and settings
+- Cannot modify anything
+
+### Custom Roles
+
+Define custom roles with specific permissions:
+
+```ts
+import { ac } from "better-auth/plugins"
+
+organization({
+  roles: {
+    // Built-in roles are extended automatically
+    developer: {
+      permissions: [
+        "project:read",
+        "project:create",
+        "deployment:read",
+        "deployment:create"
+      ]
+    },
+    viewer: {
+      permissions: [
+        "project:read",
+        "deployment:read"
+      ]
+    },
+    billing: {
+      permissions: [
+        "organization:read",
+        "billing:read",
+        "billing:update"
+      ]
+    }
+  },
+  
+  // Define permission statements
+  ac: ac({
+    project: ["create", "read", "update", "delete"],
+    deployment: ["create", "read", "rollback"],
+    billing: ["read", "update"]
+  })
+})
+```
+
+### Check Permissions
+
+Server-side permission check:
+
+```ts
+const hasPermission = await auth.api.hasPermission({
+  organizationId: "org_123",
+  permissions: {
+    project: ["create"],
+    deployment: ["create"]
+  }
+})
+
+if (!hasPermission.success) {
+  throw new Error("Insufficient permissions")
+}
+```
+
+Client-side permission check:
+
+```ts
+const canDeploy = authClient.organization.checkRolePermission({
+  role: "developer",
+  permissions: {
+    deployment: ["create"]
+  }
+})
+```
+
+### Middleware Protection
+
+Protect routes based on permissions:
+
+```ts
+import { auth } from "@/lib/auth"
+import { NextResponse } from "next/server"
+
+export async function middleware(request: Request) {
+  const session = await auth.api.getSession({ headers: request.headers })
+  
+  if (!session?.session.activeOrganizationId) {
+    return NextResponse.redirect("/select-organization")
+  }
+  
+  const hasPermission = await auth.api.hasPermission({
+    organizationId: session.session.activeOrganizationId,
+    permissions: { project: ["create"] }
+  })
+  
+  if (!hasPermission.success) {
+    return NextResponse.redirect("/unauthorized")
+  }
+  
+  return NextResponse.next()
+}
+```
+
+## Teams
+
+Teams provide sub-organization grouping for more granular access control.
+
+### Enable Teams
+
+```ts
+organization({
+  teams: {
+    enabled: true
+  }
+})
+```
+
+### Create Team
+
+```ts
+const { data: team } = await authClient.organization.createTeam({
+  name: "Engineering",
+  organizationId: "org_123"
+})
+```
+
+### Add Team Member
+
+```ts
+await authClient.organization.addTeamMember({
+  teamId: "team_123",
+  memberId: "mem_456",
+  organizationId: "org_123"
+})
+```
+
+### List Teams
+
+```tsx
+function TeamsList() {
+  const [teams, setTeams] = useState([])
+  
+  useEffect(() => {
+    authClient.organization.listTeams({
+      organizationId: "org_123"
+    }).then(({ data }) => setTeams(data))
+  }, [])
+  
+  return (
+    <div>
+      {teams.map(team => (
+        <div key={team.id}>{team.name}</div>
+      ))}
+    </div>
+  )
+}
+```
+
+### Set Active Team
+
+```ts
+await authClient.organization.setActiveTeam({
+  teamId: "team_123"
+})
+```
+
+Active team is stored in session:
+
+```ts
+const session = await authClient.useSession()
+const activeTeamId = session?.session.activeTeamId
+```
+
+## Dynamic Access Control
+
+Create and manage roles at runtime.
+
+### Enable Dynamic Access Control
+
+```ts
+organization({
+  dynamicAccessControl: {
+    enabled: true
+  }
+})
+```
+
+### Create Role
+
+```ts
+await auth.api.createOrgRole({
+  organizationId: "org_123",
+  role: "qa-tester",
+  permissions: {
+    project: ["read"],
+    test: ["create", "read", "execute"]
+  }
+})
+```
+
+### Update Role
+
+```ts
+await auth.api.updateOrgRole({
+  organizationId: "org_123",
+  role: "qa-tester",
+  permissions: {
+    project: ["read", "update"],
+    test: ["create", "read", "execute", "delete"]
+  }
+})
+```
+
+### List Roles
+
+```ts
+const roles = await auth.api.listOrgRoles({
+  organizationId: "org_123"
+})
+```
+
+### Delete Role
+
+```ts
+await auth.api.deleteOrgRole({
+  organizationId: "org_123",
+  role: "qa-tester"
+})
+```
+
+## Hooks and Lifecycle
+
+### Organization Hooks
+
+Intercept organization lifecycle events:
+
+```ts
+organization({
+  onCreate: async ({ organization, user }) => {
+    // Send welcome email
+    await sendEmail({
+      to: user.email,
+      subject: `Welcome to ${organization.name}`,
+      body: `Your organization has been created!`
+    })
+    
+    // Create default resources
+    await createDefaultProject(organization.id)
+    
+    // Analytics
+    await analytics.track("organization_created", {
+      userId: user.id,
+      organizationId: organization.id
+    })
+  },
+  
+  onUpdate: async ({ organization, user }) => {
+    await auditLog.create({
+      action: "organization_updated",
+      userId: user.id,
+      organizationId: organization.id
+    })
+  },
+  
+  onDelete: async ({ organization, user }) => {
+    // Clean up resources
+    await deleteOrganizationResources(organization.id)
+    
+    // Notify members
+    await notifyOrganizationDeletion(organization)
+  }
+})
+```
+
+### Invitation Hooks
+
+```ts
+organization({
+  onInvitationCreated: async ({ invitation, inviter }) => {
+    await sendEmail({
+      to: invitation.email,
+      subject: `You've been invited to join ${invitation.organizationId}`,
+      body: renderInvitationEmail(invitation)
+    })
+  },
+  
+  onInvitationAccepted: async ({ invitation, user, member }) => {
+    await analytics.track("member_joined", {
+      organizationId: invitation.organizationId,
+      userId: user.id,
+      role: member.role
+    })
+  }
+})
+```
+
+## Schema Customization
+
+### Additional Fields
+
+Add custom fields to organization tables:
+
+```ts
+organization({
+  schema: {
+    organization: {
+      additionalFields: {
+        industry: {
+          type: "string",
+          required: false
+        },
+        employeeCount: {
+          type: "number",
+          required: false
+        },
+        plan: {
+          type: "string",
+          required: true,
+          defaultValue: "free"
+        }
+      }
+    },
+    member: {
+      additionalFields: {
+        department: {
+          type: "string",
+          required: false
+        },
+        title: {
+          type: "string",
+          required: false
+        }
+      }
+    }
+  }
+})
+```
+
+### Field Name Mapping
+
+Map database column names:
+
+```ts
+organization({
+  schema: {
+    organization: {
+      fields: {
+        name: "org_name",
+        slug: "org_slug",
+        createdAt: "created_at"
+      }
+    }
+  }
+})
+```
+
+## Database Schema
+
+The organization plugin creates these tables:
+
+### Organization
+
+```sql
+CREATE TABLE organization (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  logo TEXT,
+  metadata TEXT, -- JSON string
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+### Member
+
+```sql
+CREATE TABLE member (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organization(id),
+  user_id TEXT NOT NULL REFERENCES user(id),
+  role TEXT NOT NULL DEFAULT 'member',
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(organization_id, user_id)
+);
+```
+
+### Invitation
+
+```sql
+CREATE TABLE invitation (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organization(id),
+  email TEXT NOT NULL,
+  role TEXT,
+  team_id TEXT, -- if teams enabled
+  status TEXT NOT NULL DEFAULT 'pending',
+  expires_at TIMESTAMP NOT NULL,
+  inviter_id TEXT NOT NULL REFERENCES user(id),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+### Team (if enabled)
+
+```sql
+CREATE TABLE team (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  organization_id TEXT NOT NULL REFERENCES organization(id),
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP
+);
+
+CREATE TABLE team_member (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES team(id),
+  user_id TEXT NOT NULL REFERENCES user(id),
+  created_at TIMESTAMP,
+  UNIQUE(team_id, user_id)
+);
+```
+
+### Organization Role (if dynamic access control enabled)
+
+```sql
+CREATE TABLE organization_role (
+  id TEXT PRIMARY KEY,
+  organization_id TEXT NOT NULL REFERENCES organization(id),
+  role TEXT NOT NULL,
+  permission TEXT NOT NULL, -- JSON string
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMP
+);
+```
+
+### Session Extension
+
+The plugin extends the session table:
+
+```sql
+ALTER TABLE session ADD COLUMN active_organization_id TEXT;
+ALTER TABLE session ADD COLUMN active_team_id TEXT; -- if teams enabled
+```
+
+## Type Safety
+
+### Infer Types
+
+```ts
+import type { auth } from "@/lib/auth"
+
+type Organization = typeof auth.$Infer.Organization
+type Member = typeof auth.$Infer.Member
+type Invitation = typeof auth.$Infer.Invitation
+type ActiveOrganization = typeof auth.$Infer.ActiveOrganization
+```
+
+### Client Types
+
+```ts
+import { organizationClient } from "better-auth/client/plugins"
+
+const client = organizationClient({
+  schema: {
+    organization: {
+      additionalFields: {
+        plan: { type: "string" }
+      }
+    }
+  }
+})
+
+type Org = typeof client.$Infer.Organization
+// Org includes 'plan' field
+```
+
+## Best Practices
+
+### Slug Validation
+
+Validate slugs before creating organizations:
+
+```ts
+const { available } = await authClient.organization.checkSlug({
+  slug: "acme-corp"
+})
+
+if (!available) {
+  // Slug is taken
+}
+```
+
+### Organization Limits
+
+Limit organizations per user:
+
+```ts
+organization({
+  onCreate: async ({ user }) => {
+    const orgs = await auth.api.listOrganizations({ userId: user.id })
+    
+    if (orgs.length >= 5) {
+      throw new Error("Maximum organizations reached")
+    }
+  }
+})
+```
+
+### Invitation Expiry
+
+Set custom expiration:
+
+```ts
+await authClient.organization.inviteMember({
+  email: "user@example.com",
+  role: "member",
+  organizationId: "org_123",
+  expiresIn: 7 * 24 * 60 * 60 // 7 days
+})
+```
+
+### Role Hierarchies
+
+Enforce role hierarchy:
+
+```ts
+organization({
+  onUpdateMemberRole: async ({ member, newRole, updater }) => {
+    const updaterMember = await getMember(updater.id)
+    
+    // Only owners can promote to admin
+    if (newRole === "admin" && updaterMember.role !== "owner") {
+      throw new Error("Only owners can assign admin role")
+    }
+  }
+})
+```
+
+## Integration Examples
+
+### With SSO
+
+Combine with SSO for automatic organization assignment:
+
+```ts
+import { organization } from "better-auth/plugins"
+import { sso } from "@better-auth/sso"
+
+betterAuth({
+  plugins: [
+    organization(),
+    sso({
+      organizationProvisioning: {
+        defaultRole: "member"
+      }
+    })
+  ]
+})
+```
+
+### With SCIM
+
+Combine with SCIM for automated provisioning:
+
+```ts
+import { organization } from "better-auth/plugins"
+import { scim } from "@better-auth/scim"
+
+betterAuth({
+  plugins: [
+    organization(),
+    scim({
+      providerOwnership: { enabled: true }
+    })
+  ]
+})
+```
+
+## API Reference
+
+For complete type definitions and all available options, see:
+- [Organization Plugin](https://github.com/better-auth/better-auth/blob/main/packages/better-auth/src/plugins/organization/organization.ts)
+- [Organization Types](https://github.com/better-auth/better-auth/blob/main/packages/better-auth/src/plugins/organization/types.ts)
+- [Access Control](https://github.com/better-auth/better-auth/blob/main/packages/better-auth/src/plugins/organization/access/index.ts)

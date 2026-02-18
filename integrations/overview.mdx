@@ -1,0 +1,113 @@
+---
+title: Framework Integrations Overview
+description: Learn how to integrate Better Auth with your favorite framework.
+---
+
+Better Auth is framework-agnostic and provides first-class integrations with popular web frameworks. Each integration is designed to work seamlessly with the framework's conventions and features.
+
+## Supported Frameworks
+
+Better Auth supports a wide range of frameworks, each with dedicated helpers and utilities:
+
+### Web Frameworks
+
+<CardGroup cols={2}>
+
+<Card title="Next.js" icon="nextjs" href="/integrations/nextjs">
+  Full support for App Router and Pages Router with RSC, Server Actions, and Middleware.
+</Card>
+
+<Card title="SvelteKit" icon="svelte" href="/integrations/sveltekit">
+  Native integration with SvelteKit's server hooks, load functions, and form actions.
+</Card>
+
+<Card title="SolidStart" icon="solid" href="/integrations/solid-start">
+  Fine-grained reactivity with SolidStart's server functions and API routes.
+</Card>
+
+<Card title="TanStack Start" icon="tanstack" href="/integrations/tanstack-start">
+  Works with both React and Solid.js versions of TanStack Start.
+</Card>
+
+<Card title="Astro" icon="astro" href="/integrations/astro">
+  Server-side authentication with Astro's API routes and middleware.
+</Card>
+
+<Card title="Nuxt" icon="nuxt" href="/integrations/nuxt">
+  Vue 3 powered authentication with Nuxt's server API and middleware.
+</Card>
+
+</CardGroup>
+
+### Native Frameworks
+
+<CardGroup cols={2}>
+
+<Card title="React Native (Expo)" icon="react" href="/integrations/react-native">
+  Mobile authentication with Expo and React Native using secure storage.
+</Card>
+
+<Card title="Electron" icon="electron" href="/integrations/electron">
+  Desktop application authentication with secure token exchange.
+</Card>
+
+</CardGroup>
+
+## Common Patterns
+
+All framework integrations follow these common patterns:
+
+### Server Setup
+
+1. **Create Auth Instance**: Configure Better Auth with your database and providers
+2. **Mount Handler**: Add the auth handler to your API routes
+3. **Add Plugins**: Use framework-specific plugins for cookie handling
+
+### Client Setup
+
+1. **Create Client**: Initialize the auth client with framework-specific imports
+2. **Use Hooks/Stores**: Access session data using reactive primitives
+3. **Call Actions**: Use built-in methods for sign in, sign out, and sign up
+
+## Choosing Your Integration
+
+<AccordionGroup>
+
+<Accordion title="Which framework should I choose?">
+  Choose the framework you're already using for your project. Better Auth is designed to work seamlessly with your existing setup. If you're starting fresh:
+  
+  - **Next.js**: Best for React-based full-stack apps with SSR
+  - **SvelteKit**: Great for performance-focused apps with smaller bundles
+  - **SolidStart**: Ideal for reactive apps with fine-grained updates
+  - **Astro**: Perfect for content-heavy sites with minimal JS
+  - **Nuxt**: Excellent choice for Vue developers
+</Accordion>
+
+<Accordion title="Can I use Better Auth with multiple frameworks?">
+  Yes! Better Auth is framework-agnostic. You can use the same auth server with multiple client frameworks. For example, you could have a Next.js web app and a React Native mobile app both authenticating against the same Better Auth server.
+</Accordion>
+
+<Accordion title="What about other frameworks?">
+  Better Auth can work with any JavaScript framework through the vanilla client. For frameworks not listed here, check out the [Express integration](/integrations/express) or [Other Frameworks](/integrations/other) guide.
+</Accordion>
+
+</AccordionGroup>
+
+## Framework-Specific Features
+
+Each integration provides framework-specific utilities:
+
+- **Route Handlers**: Convert Better Auth handlers to framework-native formats
+- **Cookie Plugins**: Automatically set cookies in server actions and API routes
+- **Session Helpers**: Access session data in server and client code
+- **Type Safety**: Full TypeScript support with inferred types
+- **SSR Support**: Server-side rendering for protected pages
+
+## Next Steps
+
+Select your framework from the list above to see detailed integration guides with code examples.
+
+Not using a web framework? Check out:
+- [React Native (Expo)](/integrations/react-native) for mobile apps
+- [Electron](/integrations/electron) for desktop apps
+- [Express](/integrations/express) for Node.js APIs

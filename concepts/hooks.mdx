@@ -1,476 +1,723 @@
 ---
 title: Hooks
-description: Better Auth Hooks let you customize BetterAuth's behavior
+description: Extend Better Auth with hooks for custom logic at key points
 ---
 
-Hooks in Better Auth let you "hook into" the lifecycle and execute custom logic. They provide a way to customize Better Auth's behavior without writing a full plugin. 
+## Overview
 
-<Note>
-We highly recommend using hooks if you need to make custom adjustments to an endpoint rather than making another endpoint outside of Better Auth.
-</Note>
+Better Auth provides two types of hooks that allow you to inject custom logic into the authentication flow:
 
-## Before Hooks
+1. **Database Hooks**: Intercept database operations (create, update, delete)
+2. **Request Hooks**: Run before or after API endpoint handlers
 
-**Before hooks** run *before* an endpoint is executed. Use them to modify requests, pre validate data, or return early.
+Hooks enable powerful customizations like data validation, logging, notifications, and integration with external services.
 
-### Example: Enforce Email Domain Restriction
+## Database Hooks
 
-This hook ensures that users can only sign up if their email ends with `@example.com`:
+Database hooks run when data is created, updated, or deleted:
 
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware, APIError } from "better-auth/api";
+### Hook Structure
 
-export const auth = betterAuth({
-    hooks: {
-        before: createAuthMiddleware(async (ctx) => {
-            if (ctx.path !== "/sign-up/email") {
-                return;
-            }
-            if (!ctx.body?.email.endsWith("@example.com")) {
-                throw new APIError("BAD_REQUEST", {
-                    message: "Email must end with @example.com",
-                });
-            }
-        }),
-    },
-});
-```
-
-### Example: Modify Request Context
-
-To adjust the request context before proceeding:
-
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
-
-export const auth = betterAuth({
-    hooks: {
-        before: createAuthMiddleware(async (ctx) => {
-            if (ctx.path === "/sign-up/email") {
-                return {
-                    context: {
-                        ...ctx,
-                        body: {
-                            ...ctx.body,
-                            name: "John Doe",
-                        },
-                    }
-                };
-            }
-        }),
-    },
-});
-```
-
-## After Hooks
-
-**After hooks** run *after* an endpoint is executed. Use them to modify responses.
-
-### Example: Send a notification to your channel when a new user is registered
-
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
-import { sendMessage } from "@/lib/notification"
-
-export const auth = betterAuth({
-    hooks: {
-        after: createAuthMiddleware(async (ctx) => {
-            if(ctx.path.startsWith("/sign-up")){
-                const newSession = ctx.context.newSession;
-                if(newSession){
-                    sendMessage({
-                        type: "user-register",
-                        name: newSession.user.name,
-                    })
-                }
-            }
-        }),
-    },
-});
-```
-
-## Context Object (Ctx)
-
-When you call `createAuthMiddleware` a `ctx` object is passed that provides a lot of useful properties. Including:
-
-- **Path:** `ctx.path` to get the current endpoint path.
-- **Body:** `ctx.body` for parsed request body (available for POST requests).
-- **Headers:** `ctx.headers` to access request headers.
-- **Request:** `ctx.request` to access the request object (may not exist in server-only endpoints).
-- **Query Parameters:** `ctx.query` to access query parameters.
-- **Context**: `ctx.context` auth related context, useful for accessing new session, auth cookies configuration, password hashing, config...
-
-and more.
-
-### Request Response
-
-This utilities allows you to get request information and to send response from a hook. 
-
-#### JSON Responses
-
-Use `ctx.json` to send JSON responses:
-
-```ts
-import { createAuthMiddleware } from "better-auth/api";
-
-const hook = createAuthMiddleware(async (ctx) => {
-    return ctx.json({
-        message: "Hello World",
-    });
-});
-```
-
-#### Redirects
-
-Use `ctx.redirect` to redirect users:
-
-```ts
-import { createAuthMiddleware } from "better-auth/api";
-
-const hook = createAuthMiddleware(async (ctx) => {
-    throw ctx.redirect("/sign-up/name");
-});
-```
-
-#### Cookies
-
-- Set cookies: `ctx.setCookies` or `ctx.setSignedCookie`.
-- Get cookies: `ctx.getCookies` or `ctx.getSignedCookie`.
-
-Example:
-
-```ts
-import { createAuthMiddleware } from "better-auth/api";
-
-const hook = createAuthMiddleware(async (ctx) => {
-    ctx.setCookies("my-cookie", "value");
-    await ctx.setSignedCookie("my-signed-cookie", "value", ctx.context.secret, {
-        maxAge: 1000,
-    });
-
-    const cookie = ctx.getCookies("my-cookie");
-    const signedCookie = await ctx.getSignedCookie("my-signed-cookie");
-});
-```
-
-#### Errors
-
-Throw errors with `APIError` for a specific status code and message:
-
-```ts
-import { createAuthMiddleware, APIError } from "better-auth/api";
-
-const hook = createAuthMiddleware(async (ctx) => {
-    throw new APIError("BAD_REQUEST", {
-        message: "Invalid request",
-    });
-});
-```
-
-## Auth Context
-
-The `ctx` object contains another `context` object inside that's meant to hold contexts related to auth. Including a newly created session on after hook, cookies configuration, password hasher and so on. 
-
-### New Session
-
-The newly created session after an endpoint is run. This only exist in after hook.
-
-```ts title="auth.ts"
-import { createAuthMiddleware } from "better-auth/api";
-
-createAuthMiddleware(async (ctx) => {
-    const newSession = ctx.context.newSession
-});
-```
-
-### Returned Value
-
-The returned value from the hook is passed to the next hook in the chain.
-
-```ts title="auth.ts"
-import { createAuthMiddleware } from "better-auth/api";
-
-createAuthMiddleware(async (ctx) => {
-    const returned = ctx.context.returned; //this could be a successful response or an APIError
-});
-```
-
-### Response Headers
-
-The response headers added by endpoints and hooks that run before this hook.
-
-```ts title="auth.ts"
-import { createAuthMiddleware } from "better-auth/api";
-
-createAuthMiddleware(async (ctx) => {
-    const responseHeaders = ctx.context.responseHeaders;
-});
-```
-
-### Predefined Auth Cookies
-
-Access BetterAuth's predefined cookie properties:
-
-```ts title="auth.ts"
-import { createAuthMiddleware } from "better-auth/api";
-
-createAuthMiddleware(async (ctx) => {
-    const cookieName = ctx.context.authCookies.sessionToken.name;
-});
-```
-
-### Secret
-
-You can access the `secret` for your auth instance on `ctx.context.secret`
-
-### Password
-
-The password object provider `hash` and `verify`
-
-- `ctx.context.password.hash`: let's you hash a given password.
-- `ctx.context.password.verify`: let's you verify given `password` and a `hash`.
-
-### Adapter
-
-Adapter exposes the adapter methods used by Better Auth. Including `findOne`, `findMany`, `create`, `delete`, `update` and `updateMany`. You generally should use your actually `db` instance from your orm rather than this adapter.
-
-### Internal Adapter
-
-These are calls to your db that perform specific actions. `createUser`, `createSession`, `updateSession`...
-
-This may be useful to use instead of using your db directly to get access to `databaseHooks`, proper `secondaryStorage` support and so on. If you're make a query similar to what exist in this internal adapter actions it's worth a look.
-
-### Generate ID
-
-You can use `ctx.context.generateId` to generate Id for various reasons.
-
-## Hook Execution Flow
-
-Understanding how hooks execute in Better Auth is important for building robust integrations:
-
-### Before Hook Flow
-
-1. **Request arrives** at Better Auth endpoint
-2. **Before hooks execute** in order
-3. Each hook can:
-   - Continue execution (return nothing or modified context)
-   - Stop execution (throw error or return response)
-   - Modify request data (return new context with updated body/headers)
-4. **Endpoint handler executes** if all before hooks pass
-
-### After Hook Flow
-
-1. **Endpoint completes** successfully
-2. **After hooks execute** in order
-3. Each hook can:
-   - Access response data via `ctx.context.returned`
-   - Access new session via `ctx.context.newSession`
-   - Modify response (return new response)
-   - Perform side effects (logging, notifications, etc.)
-4. **Final response** sent to client
-
-### Example: Complete Hook Chain
-
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware, APIError } from "better-auth/api";
-
-export const auth = betterAuth({
-    hooks: {
-        before: createAuthMiddleware(async (ctx) => {
-            // 1. Validate domain
-            if (ctx.path === "/sign-up/email") {
-                const email = ctx.body?.email;
-                if (!email?.endsWith("@company.com")) {
-                    throw new APIError("BAD_REQUEST", {
-                        message: "Must use company email"
-                    });
-                }
-            }
-            
-            // 2. Log request
-            console.log(`Request to ${ctx.path}`);
-            
-            // 3. Continue with modified context
-            return {
-                context: {
-                    ...ctx,
-                    // Add custom data
-                }
-            };
-        }),
-        after: createAuthMiddleware(async (ctx) => {
-            // 4. Handle new user registration
-            if (ctx.path.startsWith("/sign-up")) {
-                const newSession = ctx.context.newSession;
-                if (newSession) {
-                    // Send welcome email
-                    await sendWelcomeEmail(newSession.user.email);
-                    
-                    // Create user profile in another system
-                    await createUserProfile(newSession.user);
-                }
-            }
-            
-            // 5. Log success
-            console.log(`Successfully completed ${ctx.path}`);
-        }),
-    },
-});
-```
-
-## Best Practices
-
-### 1. Keep Hooks Focused
-
-Each hook should do one thing well:
-
-```ts
-// Good - focused on validation
-const validateEmail = createAuthMiddleware(async (ctx) => {
-    if (ctx.path === "/sign-up/email") {
-        if (!isValidEmail(ctx.body?.email)) {
-            throw new APIError("BAD_REQUEST", { message: "Invalid email" });
+```typescript
+const auth = betterAuth({
+  databaseHooks: {
+    user: {
+      create: {
+        before: async (user, ctx) => {
+          // Run before user creation
+          // Return modified data or false to cancel
+        },
+        after: async (user, ctx) => {
+          // Run after user creation
+          // Access the created user
         }
+      },
+      update: {
+        before: async (data, ctx) => {
+          // Run before user update
+        },
+        after: async (user, ctx) => {
+          // Run after user update
+        }
+      },
+      delete: {
+        before: async (user, ctx) => {
+          // Run before user deletion
+        },
+        after: async (user, ctx) => {
+          // Run after user deletion
+        }
+      }
+    },
+    session: { /* ... */ },
+    account: { /* ... */ }
+  }
+});
+```
+
+**Source:** `/packages/better-auth/src/db/with-hooks.ts`
+
+### Before Hooks
+
+Before hooks can:
+- Validate data
+- Transform data
+- Cancel operations
+
+```typescript
+databaseHooks: {
+  user: {
+    create: {
+      before: async (user, ctx) => {
+        // Validate email domain
+        if (!user.email.endsWith('@company.com')) {
+          return false; // Cancel operation
+        }
+        
+        // Transform data
+        return {
+          data: {
+            ...user,
+            role: 'employee',
+            department: getDepartmentFromEmail(user.email)
+          }
+        };
+      }
+    },
+    update: {
+      before: async (data, ctx) => {
+        // Prevent email changes
+        if (data.email) {
+          console.warn('Email change attempted');
+          return false;
+        }
+        
+        // Add audit trail
+        return {
+          data: {
+            ...data,
+            lastModifiedAt: new Date(),
+            lastModifiedBy: ctx?.session?.user?.id
+          }
+        };
+      }
     }
-});
-
-// Good - focused on logging
-const logRequests = createAuthMiddleware(async (ctx) => {
-    console.log(`${ctx.path} - ${new Date().toISOString()}`);
-});
+  }
+}
 ```
 
-### 2. Handle Errors Gracefully
+**Source:** `/packages/better-auth/src/db/with-hooks.ts:18`
 
-```ts
-const hook = createAuthMiddleware(async (ctx) => {
-    try {
-        await externalService.notify();
-    } catch (error) {
-        // Log error but don't fail the request
-        console.error("Notification failed:", error);
+### After Hooks
+
+After hooks run when operations complete:
+
+```typescript
+databaseHooks: {
+  user: {
+    create: {
+      after: async (user, ctx) => {
+        // Send welcome email
+        await sendEmail({
+          to: user.email,
+          subject: 'Welcome!',
+          template: 'welcome',
+          data: { name: user.name }
+        });
+        
+        // Create default preferences
+        await db.preferences.create({
+          userId: user.id,
+          theme: 'light',
+          notifications: true
+        });
+        
+        // Log to analytics
+        await analytics.track('user_created', {
+          userId: user.id,
+          email: user.email
+        });
+      }
+    },
+    delete: {
+      after: async (user, ctx) => {
+        // Clean up related data
+        await deleteUserFiles(user.id);
+        await deleteUserCache(user.id);
+        
+        // Notify admin
+        await notifyAdmin('User deleted', {
+          userId: user.id,
+          email: user.email
+        });
+      }
     }
-});
-```
-
-### 3. Use Type Safety
-
-```ts
-import type { AuthContext } from "better-auth";
-
-const hook = createAuthMiddleware(async (ctx) => {
-    // Type-safe access to context
-    const session: AuthContext["session"] = ctx.context.session;
-    const options: AuthContext["options"] = ctx.context.options;
-});
-```
-
-### 4. Consider Performance
-
-```ts
-// Bad - runs on every request
-const heavyHook = createAuthMiddleware(async (ctx) => {
-    await slowOperation(); // Runs for all endpoints
-});
-
-// Good - only runs when needed
-const optimizedHook = createAuthMiddleware(async (ctx) => {
-    if (ctx.path === "/specific/endpoint") {
-        await slowOperation();
+  },
+  session: {
+    create: {
+      after: async (session, ctx) => {
+        // Log session creation
+        await logAudit('session_created', {
+          userId: session.userId,
+          ipAddress: session.ipAddress,
+          userAgent: session.userAgent
+        });
+      }
+    },
+    delete: {
+      after: async (session, ctx) => {
+        // Log session deletion
+        await logAudit('session_deleted', {
+          userId: session.userId,
+          sessionId: session.id
+        });
+      }
     }
-});
+  }
+}
 ```
 
-## Reusable Hooks
+**Source:** `/packages/better-auth/src/db/with-hooks.ts:60`
 
-If you need to reuse a hook across multiple endpoints, consider creating a plugin. Learn more in the [Plugins Documentation](/concepts/plugins).
+### Hook Context
+
+Hooks receive the auth context:
+
+```typescript
+interface HookContext {
+  session?: {
+    user: User;
+    session: Session;
+  };
+  options: BetterAuthOptions;
+  adapter: DBAdapter;
+  internalAdapter: InternalAdapter;
+  logger: Logger;
+  // ... other context properties
+}
+```
+
+Access context in hooks:
+
+```typescript
+databaseHooks: {
+  user: {
+    create: {
+      before: async (user, ctx) => {
+        // Log with Better Auth's logger
+        ctx?.logger?.info('Creating user', { email: user.email });
+        
+        // Access current session (if authenticated)
+        const currentUser = ctx?.session?.user;
+        if (currentUser) {
+          console.log('User created by:', currentUser.email);
+        }
+        
+        return { data: user };
+      }
+    }
+  }
+}
+```
+
+**Source:** `/packages/better-auth/src/db/with-hooks.ts:84`
+
+### Transaction Support
+
+Hooks run within database transactions when available:
+
+```typescript
+// Before hooks run in transaction
+databaseHooks: {
+  user: {
+    create: {
+      before: async (user, ctx) => {
+        // This runs in transaction
+        // If this fails, user creation is rolled back
+        await validateUser(user);
+        return { data: user };
+      },
+      after: async (user, ctx) => {
+        // After hooks are queued and run after transaction commits
+        // If this fails, it doesn't affect user creation
+        await sendWelcomeEmail(user.email);
+      }
+    }
+  }
+}
+```
+
+<Info>
+After hooks are queued using `queueAfterTransactionHook` to ensure they run after the transaction commits successfully.
+</Info>
+
+**Source:** `/packages/better-auth/src/db/with-hooks.ts:63`
+
+## Request Hooks
+
+Request hooks run before or after endpoint handlers:
+
+### Plugin Hooks
+
+Plugins can add request hooks:
+
+```typescript
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    hooks: {
+      before: [
+        {
+          matcher: (ctx) => ctx.path === "/sign-up",
+          handler: createAuthMiddleware(async (ctx) => {
+            // Run before sign-up endpoint
+            console.log('Sign-up attempt:', ctx.body?.email);
+            
+            // Validate request
+            if (isBlacklisted(ctx.body?.email)) {
+              throw APIError.from('FORBIDDEN', {
+                message: 'Email not allowed'
+              });
+            }
+          })
+        }
+      ],
+      after: [
+        {
+          matcher: (ctx) => ctx.path === "/sign-up",
+          handler: createAuthMiddleware(async (ctx) => {
+            // Run after sign-up completes
+            const user = ctx.context.newSession?.user;
+            if (user) {
+              await notifySlack('New user signed up', {
+                email: user.email
+              });
+            }
+          })
+        }
+      ]
+    }
+  };
+};
+```
+
+**Source:** `/packages/better-auth/src/plugins/anonymous/index.ts:234`
+
+### Matchers
+
+Matchers determine when hooks run:
+
+```typescript
+// Exact path match
+matcher: (ctx) => ctx.path === "/sign-in/email"
+
+// Prefix match
+matcher: (ctx) => ctx.path?.startsWith("/sign-in")
+
+// Multiple paths
+matcher: (ctx) => {
+  const paths = ["/sign-in/email", "/sign-up/email"];
+  return paths.includes(ctx.path || "");
+}
+
+// Pattern matching
+matcher: (ctx) => /^\/oauth2\/.*$/.test(ctx.path || "")
+
+// Method-based
+matcher: (ctx) => ctx.method === "POST"
+
+// Complex logic
+matcher: (ctx) => {
+  return ctx.path?.startsWith("/admin") && 
+         ctx.context.session?.user?.role === "admin";
+}
+
+// All requests
+matcher: () => true
+```
+
+### Hook Handler Context
+
+Request hooks receive the endpoint context:
+
+```typescript
+interface EndpointContext {
+  request: Request;
+  method: string;
+  path: string;
+  body: any;
+  query: any;
+  headers: Headers;
+  context: AuthContext;
+  // ... more properties
+}
+```
+
+Example using context:
+
+```typescript
+hooks: {
+  before: [
+    {
+      matcher: (ctx) => ctx.path?.startsWith("/admin"),
+      handler: createAuthMiddleware(async (ctx) => {
+        // Check authentication
+        const session = ctx.context.session;
+        if (!session) {
+          throw APIError.from('UNAUTHORIZED', {
+            message: 'Authentication required'
+          });
+        }
+        
+        // Check authorization
+        const user = session.user;
+        if (user.role !== 'admin') {
+          throw APIError.from('FORBIDDEN', {
+            message: 'Admin access required'
+          });
+        }
+        
+        // Log access
+        await logAccess({
+          userId: user.id,
+          path: ctx.path,
+          method: ctx.method,
+          ip: ctx.request.headers.get('x-forwarded-for')
+        });
+      })
+    }
+  ]
+}
+```
 
 ## Common Use Cases
 
+### User Onboarding
+
+Create related records when users sign up:
+
+```typescript
+databaseHooks: {
+  user: {
+    create: {
+      after: async (user) => {
+        // Create user profile
+        await db.profile.create({
+          userId: user.id,
+          bio: '',
+          avatar: getDefaultAvatar()
+        });
+        
+        // Add to default organization
+        await db.member.create({
+          userId: user.id,
+          organizationId: DEFAULT_ORG_ID,
+          role: 'member'
+        });
+        
+        // Send onboarding email sequence
+        await startEmailSequence('onboarding', user.email);
+      }
+    }
+  }
+}
+```
+
 ### Audit Logging
 
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+Log all authentication events:
 
-export const auth = betterAuth({
-    hooks: {
-        after: createAuthMiddleware(async (ctx) => {
-            // Log all authentication events
-            if (ctx.path.startsWith("/sign-in") || ctx.path.startsWith("/sign-up")) {
-                await auditLog.create({
-                    action: ctx.path,
-                    userId: ctx.context.newSession?.user.id,
-                    timestamp: new Date(),
-                    ipAddress: ctx.request?.headers.get("x-forwarded-for"),
-                });
-            }
-        }),
-    },
-});
+```typescript
+hooks: {
+  after: [
+    {
+      matcher: (ctx) => {
+        const authPaths = [
+          '/sign-in', '/sign-up', '/sign-out',
+          '/reset-password', '/verify-email'
+        ];
+        return authPaths.some(p => ctx.path?.includes(p));
+      },
+      handler: createAuthMiddleware(async (ctx) => {
+        await logAudit({
+          event: ctx.path,
+          userId: ctx.context.session?.user?.id,
+          ip: getIp(ctx.request),
+          userAgent: ctx.request.headers.get('user-agent'),
+          timestamp: new Date(),
+          success: ctx.context.newSession !== null
+        });
+      })
+    }
+  ]
+}
 ```
 
-### Custom Analytics
+### Data Validation
 
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+Enforce business rules:
 
-export const auth = betterAuth({
-    hooks: {
-        after: createAuthMiddleware(async (ctx) => {
-            // Track user signup events
-            if (ctx.path === "/sign-up/email" && ctx.context.newSession) {
-                await analytics.track({
-                    event: "user_registered",
-                    properties: {
-                        userId: ctx.context.newSession.user.id,
-                        method: "email",
-                        timestamp: Date.now(),
-                    },
-                });
-            }
-        }),
+```typescript
+databaseHooks: {
+  user: {
+    create: {
+      before: async (user) => {
+        // Enforce email domain
+        if (!user.email.match(/@(company\.com|partner\.com)$/)) {
+          return false;
+        }
+        
+        // Check duplicate usernames
+        const existing = await db.user.findFirst({
+          where: { name: user.name }
+        });
+        if (existing) {
+          throw new Error('Username already taken');
+        }
+        
+        return { data: user };
+      }
     },
-});
+    update: {
+      before: async (data, ctx) => {
+        // Prevent privilege escalation
+        if (data.role === 'admin') {
+          const currentUser = ctx?.session?.user;
+          if (currentUser?.role !== 'admin') {
+            return false;
+          }
+        }
+        
+        return { data };
+      }
+    }
+  }
+}
 ```
 
-### Data Enrichment
+### External Integrations
 
-```ts title="auth.ts"
-import { betterAuth } from "better-auth";
-import { createAuthMiddleware } from "better-auth/api";
+Sync with external services:
 
-export const auth = betterAuth({
-    hooks: {
-        before: createAuthMiddleware(async (ctx) => {
-            // Enrich signup data with location
-            if (ctx.path === "/sign-up/email") {
-                const ip = ctx.request?.headers.get("x-forwarded-for");
-                const location = await getLocationFromIP(ip);
-                
-                return {
-                    context: {
-                        ...ctx,
-                        body: {
-                            ...ctx.body,
-                            metadata: {
-                                location,
-                                signupDate: new Date().toISOString(),
-                            },
-                        },
-                    },
-                };
-            }
-        }),
+```typescript
+databaseHooks: {
+  user: {
+    create: {
+      after: async (user) => {
+        // Create user in CRM
+        await crm.createContact({
+          email: user.email,
+          name: user.name,
+          source: 'auth_signup'
+        });
+        
+        // Add to mailing list
+        await mailchimp.addSubscriber({
+          email: user.email,
+          tags: ['new_user']
+        });
+        
+        // Create Stripe customer
+        await stripe.customers.create({
+          email: user.email,
+          metadata: { userId: user.id }
+        });
+      }
     },
-});
+    update: {
+      after: async (user) => {
+        // Sync changes to external services
+        await Promise.all([
+          crm.updateContact(user.email, {
+            name: user.name,
+            emailVerified: user.emailVerified
+          }),
+          stripe.customers.update(user.stripeCustomerId, {
+            name: user.name
+          })
+        ]);
+      }
+    },
+    delete: {
+      before: async (user) => {
+        // Archive user in external services
+        await crm.archiveContact(user.email);
+        await stripe.customers.del(user.stripeCustomerId);
+      }
+    }
+  }
+}
 ```
 
-<Tip>
-Hooks are powerful but should be used judiciously. For complex logic or multiple endpoints, consider creating a plugin instead.
-</Tip>
+### Rate Limiting
+
+Implement custom rate limiting:
+
+```typescript
+hooks: {
+  before: [
+    {
+      matcher: (ctx) => ctx.path?.includes('/sign-in'),
+      handler: createAuthMiddleware(async (ctx) => {
+        const ip = getIp(ctx.request);
+        const key = `rate_limit:${ip}`;
+        
+        const count = await redis.incr(key);
+        if (count === 1) {
+          await redis.expire(key, 60); // 1 minute window
+        }
+        
+        if (count > 5) {
+          throw APIError.from('TOO_MANY_REQUESTS', {
+            message: 'Too many sign-in attempts'
+          });
+        }
+      })
+    }
+  ]
+}
+```
+
+## Hook Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep Hooks Fast">
+    Avoid slow operations in hooks:
+    
+    ```typescript
+    // Good: Use background tasks for slow operations
+    after: async (user, ctx) => {
+      ctx?.runInBackground?.(sendWelcomeEmail(user.email));
+    }
+    
+    // Bad: Slow operations block the response
+    after: async (user) => {
+      await sleep(5000); // Don't do this!
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle Errors Gracefully">
+    Catch errors to prevent disrupting normal flow:
+    
+    ```typescript
+    after: async (user) => {
+      try {
+        await externalService.notify(user);
+      } catch (error) {
+        logger.error('Failed to notify external service:', error);
+        // Don't throw - let user creation succeed
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Use After Hooks for Side Effects">
+    Put side effects in after hooks:
+    
+    ```typescript
+    // Good
+    after: async (user) => {
+      await sendEmail(user.email);
+      await updateAnalytics(user.id);
+    }
+    
+    // Bad: Side effects in before hooks can cause issues
+    before: async (user) => {
+      await sendEmail(user.email); // Sent even if creation fails!
+      return { data: user };
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Return Appropriate Values">
+    Before hooks should return modified data or false:
+    
+    ```typescript
+    before: async (user) => {
+      // Modify data
+      return {
+        data: { ...user, role: 'user' }
+      };
+      
+      // Or cancel operation
+      if (invalid) {
+        return false;
+      }
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Document Hook Dependencies">
+    Make dependencies clear:
+    
+    ```typescript
+    // Document what services hooks depend on
+    /**
+     * Requires:
+     * - Redis connection for rate limiting
+     * - SendGrid API key for emails
+     * - Stripe API key for customer creation
+     */
+    databaseHooks: {
+      // ...
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Hook Execution Order
+
+Hooks execute in this order:
+
+1. **Request before hooks** (from plugins)
+2. **Endpoint middleware**
+3. **Database before hooks** (if database operation)
+4. **Database operation** (create/update/delete)
+5. **Database after hooks** (queued for after transaction)
+6. **Endpoint handler**
+7. **Database transaction commits**
+8. **Queued after hooks execute**
+9. **Request after hooks** (from plugins)
+
+Example flow:
+
+```typescript
+// 1. Request before hook
+hooks.before[0] → validates request
+
+// 2. Endpoint middleware
+sessionMiddleware → checks authentication
+
+// 3. Database before hook
+databaseHooks.user.create.before → transforms data
+
+// 4. Database operation
+→ INSERT INTO user ...
+
+// 5. Database after hook (queued)
+databaseHooks.user.create.after → queued for later
+
+// 6. Endpoint handler
+→ returns response
+
+// 7. Transaction commits
+→ COMMIT
+
+// 8. Queued hooks execute
+→ after hook sends email
+
+// 9. Request after hook
+hooks.after[0] → logs request
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Plugin System" href="/concepts/plugins" icon="plug">
+    Learn how to create plugins with hooks
+  </Card>
+  <Card title="Database Integration" href="/concepts/database" icon="database">
+    Understand database operations
+  </Card>
+</CardGroup>

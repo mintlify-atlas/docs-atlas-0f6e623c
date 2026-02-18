@@ -1,0 +1,676 @@
+---
+title: 'Request Handlers'
+description: 'Handle authentication requests in different frameworks'
+---
+
+## Overview
+
+Better Auth provides a universal request handler that works with any framework supporting the Web Standard Request/Response API. The handler processes all authentication requests including sign-in, sign-up, OAuth callbacks, and more.
+
+## Handler Function
+
+The `handler` function returned by `betterAuth()` processes incoming requests and returns responses.
+
+```typescript
+type Handler = (request: Request) => Promise<Response>
+```
+
+### Basic Usage
+
+```typescript
+import { auth } from "./auth"
+
+// The handler is a function that accepts Request and returns Response
+const response = await auth.handler(request)
+```
+
+## Framework Integration
+
+### Next.js App Router
+
+Export the handler for GET and POST methods:
+
+```typescript title="app/api/auth/[...all]/route.ts"
+import { auth } from "@/lib/auth"
+
+export const { GET, POST } = auth.handler
+```
+
+The catch-all route `[...all]` captures all authentication endpoints:
+- `/api/auth/sign-in`
+- `/api/auth/sign-up`
+- `/api/auth/callback/github`
+- etc.
+
+### Next.js Pages Router
+
+Use the handler in API routes:
+
+```typescript title="pages/api/auth/[...all].ts"
+import type { NextApiRequest, NextApiResponse } from "next"
+import { auth } from "@/lib/auth"
+
+export default async function handler(
+	req: NextApiRequest,
+	res: NextApiResponse
+) {
+	// Convert Next.js request to Web Request
+	const request = new Request(
+		`${process.env.BETTER_AUTH_URL}${req.url}`,
+		{
+			method: req.method,
+			headers: req.headers as HeadersInit,
+			body: req.method !== "GET" ? JSON.stringify(req.body) : undefined
+		}
+	)
+	
+	const response = await auth.handler(request)
+	
+	// Convert Web Response to Next.js response
+	res.status(response.status)
+	response.headers.forEach((value, key) => {
+		res.setHeader(key, value)
+	})
+	res.send(await response.text())
+}
+```
+
+### SvelteKit
+
+Export the handler in a catch-all route:
+
+```typescript title="src/routes/api/auth/[...all]/+server.ts"
+import { auth } from "$lib/auth"
+
+export const { GET, POST } = auth.handler
+```
+
+### Astro
+
+Create an API route with a catch-all:
+
+```typescript title="src/pages/api/auth/[...all].ts"
+import { auth } from "@/lib/auth"
+import type { APIRoute } from "astro"
+
+const handler: APIRoute = async (context) => {
+	return auth.handler(context.request)
+}
+
+export const GET = handler
+export const POST = handler
+```
+
+### Remix
+
+Handle auth in a resource route:
+
+```typescript title="app/routes/api.auth.$.tsx"
+import type { LoaderFunctionArgs, ActionFunctionArgs } from "@remix-run/node"
+import { auth } from "~/lib/auth"
+
+export async function loader({ request }: LoaderFunctionArgs) {
+	return auth.handler(request)
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+	return auth.handler(request)
+}
+```
+
+### Express
+
+Mount the handler on a path:
+
+```typescript title="server.ts"
+import express from "express"
+import { auth } from "./auth"
+
+const app = express()
+
+app.all("/api/auth/*", async (req, res) => {
+	const request = new Request(`${req.protocol}://${req.get("host")}${req.url}`, {
+		method: req.method,
+		headers: req.headers as HeadersInit,
+		body: req.method !== "GET" ? JSON.stringify(req.body) : undefined
+	})
+	
+	const response = await auth.handler(request)
+	
+	res.status(response.status)
+	response.headers.forEach((value, key) => {
+		res.setHeader(key, value)
+	})
+	res.send(await response.text())
+})
+
+app.listen(3000)
+```
+
+### Hono
+
+Use the handler directly with Hono:
+
+```typescript title="server.ts"
+import { Hono } from "hono"
+import { auth } from "./auth"
+
+const app = new Hono()
+
+app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+	return auth.handler(c.req.raw)
+})
+
+export default app
+```
+
+### Fastify
+
+Integrate with Fastify:
+
+```typescript title="server.ts"
+import Fastify from "fastify"
+import { auth } from "./auth"
+
+const fastify = Fastify()
+
+fastify.all("/api/auth/*", async (request, reply) => {
+	const webRequest = new Request(
+		`${request.protocol}://${request.hostname}${request.url}`,
+		{
+			method: request.method,
+			headers: request.headers as HeadersInit,
+			body: request.method !== "GET" ? JSON.stringify(request.body) : undefined
+		}
+	)
+	
+	const response = await auth.handler(webRequest)
+	
+	reply.status(response.status)
+	response.headers.forEach((value, key) => {
+		reply.header(key, value)
+	})
+	
+	return reply.send(await response.text())
+})
+
+fastify.listen({ port: 3000 })
+```
+
+### SolidStart
+
+Export the handler in an API route:
+
+```typescript title="src/routes/api/auth/[...all].ts"
+import { auth } from "~/lib/auth"
+
+export const { GET, POST } = auth.handler
+```
+
+### Nuxt
+
+Create a catch-all server route:
+
+```typescript title="server/api/auth/[...].ts"
+import { auth } from "~/lib/auth"
+
+export default defineEventHandler(async (event) => {
+	return auth.handler(event.node.req)
+})
+```
+
+## Available Endpoints
+
+The handler automatically provides these endpoints:
+
+### Authentication
+
+<ResponseField name="POST /sign-in/email" type="endpoint">
+	Sign in with email and password.
+	
+	**Body:**
+	```json
+	{
+		"email": "user@example.com",
+		"password": "password123"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /sign-up/email" type="endpoint">
+	Register a new user with email and password.
+	
+	**Body:**
+	```json
+	{
+		"email": "user@example.com",
+		"password": "password123",
+		"name": "John Doe"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="GET /sign-in/social" type="endpoint">
+	Initiate OAuth flow with social provider.
+	
+	**Query:**
+	```
+	?provider=github&callbackURL=/dashboard
+	```
+</ResponseField>
+
+<ResponseField name="GET /callback/:provider" type="endpoint">
+	OAuth callback endpoint for social providers.
+</ResponseField>
+
+<ResponseField name="POST /sign-out" type="endpoint">
+	Sign out the current user.
+</ResponseField>
+
+### Session Management
+
+<ResponseField name="GET /get-session" type="endpoint">
+	Get current session and user data.
+	
+	**Response:**
+	```json
+	{
+		"user": { "id": "...", "email": "...", "name": "..." },
+		"session": { "id": "...", "expiresAt": "..." }
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /refresh-token" type="endpoint">
+	Refresh the session token.
+</ResponseField>
+
+<ResponseField name="GET /list-sessions" type="endpoint">
+	List all active sessions for the current user.
+</ResponseField>
+
+<ResponseField name="POST /revoke-session" type="endpoint">
+	Revoke a specific session.
+	
+	**Body:**
+	```json
+	{
+		"sessionToken": "token_to_revoke"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /revoke-other-sessions" type="endpoint">
+	Revoke all sessions except the current one.
+</ResponseField>
+
+<ResponseField name="POST /revoke-sessions" type="endpoint">
+	Revoke all sessions for the current user.
+</ResponseField>
+
+### User Management
+
+<ResponseField name="POST /update-user" type="endpoint">
+	Update user profile information.
+	
+	**Body:**
+	```json
+	{
+		"name": "New Name",
+		"image": "https://example.com/avatar.jpg"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /delete-user" type="endpoint">
+	Delete the current user account.
+</ResponseField>
+
+### Email & Password
+
+<ResponseField name="POST /change-email" type="endpoint">
+	Change user email address.
+	
+	**Body:**
+	```json
+	{
+		"newEmail": "newemail@example.com"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /change-password" type="endpoint">
+	Change user password.
+	
+	**Body:**
+	```json
+	{
+		"currentPassword": "oldpass",
+		"newPassword": "newpass"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /set-password" type="endpoint">
+	Set password for users without one (e.g., OAuth users).
+	
+	**Body:**
+	```json
+	{
+		"password": "newpassword123"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /reset-password" type="endpoint">
+	Reset password using a token.
+	
+	**Body:**
+	```json
+	{
+		"token": "reset_token",
+		"password": "newpassword"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="POST /forget-password" type="endpoint">
+	Request a password reset email.
+	
+	**Body:**
+	```json
+	{
+		"email": "user@example.com"
+	}
+	```
+</ResponseField>
+
+### Email Verification
+
+<ResponseField name="GET /verify-email" type="endpoint">
+	Verify email with token from link.
+	
+	**Query:**
+	```
+	?token=verification_token
+	```
+</ResponseField>
+
+<ResponseField name="POST /send-verification-email" type="endpoint">
+	Send a new verification email.
+</ResponseField>
+
+### Account Linking
+
+<ResponseField name="POST /link-social" type="endpoint">
+	Link a social account to current user.
+	
+	**Body:**
+	```json
+	{
+		"provider": "github"
+	}
+	```
+</ResponseField>
+
+<ResponseField name="GET /list-accounts" type="endpoint">
+	List all linked accounts for current user.
+</ResponseField>
+
+<ResponseField name="POST /unlink-account" type="endpoint">
+	Unlink a social account.
+	
+	**Body:**
+	```json
+	{
+		"accountId": "account_id_to_unlink"
+	}
+	```
+</ResponseField>
+
+## Custom Handler Configuration
+
+### Base Path
+
+Configure the base path for auth routes:
+
+```typescript
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+	basePath: "/auth", // Default: "/api/auth"
+	// Routes will be at /auth/sign-in, /auth/sign-up, etc.
+})
+```
+
+### Disabled Endpoints
+
+Disable specific endpoints:
+
+```typescript
+export const auth = betterAuth({
+	disabledPaths: [
+		"/sign-up",
+		"/reset-password"
+	]
+})
+```
+
+### Request Hooks
+
+Add custom logic before/after request processing:
+
+```typescript
+export const auth = betterAuth({
+	hooks: {
+		before: async (ctx) => {
+			console.log("Processing:", ctx.request.url)
+		},
+		after: async (ctx) => {
+			console.log("Response:", ctx.response.status)
+		}
+	}
+})
+```
+
+## Error Handling
+
+The handler automatically handles errors and returns appropriate responses:
+
+```typescript
+// 400 Bad Request - Invalid input
+{
+	"error": "Invalid email format"
+}
+
+// 401 Unauthorized - Not authenticated
+{
+	"error": "Unauthorized"
+}
+
+// 403 Forbidden - No permission
+{
+	"error": "Forbidden"
+}
+
+// 429 Too Many Requests - Rate limited
+{
+	"error": "Too many requests"
+}
+
+// 500 Internal Server Error
+{
+	"error": "Internal server error"
+}
+```
+
+### Custom Error Handler
+
+```typescript
+export const auth = betterAuth({
+	onAPIError: {
+		onError: async (error, ctx) => {
+			console.error("Auth error:", error)
+			// Log to error tracking service
+			await logError(error)
+		},
+		errorURL: "/auth/error"
+	}
+})
+```
+
+## Headers
+
+### Required Headers
+
+The handler expects standard HTTP headers:
+
+```typescript
+{
+	"content-type": "application/json",
+	"cookie": "session_token=...",
+	"origin": "https://example.com"
+}
+```
+
+### CORS Headers
+
+Better Auth automatically handles CORS for trusted origins:
+
+```typescript
+export const auth = betterAuth({
+	trustedOrigins: [
+		"https://example.com",
+		"https://*.example.com"
+	]
+})
+```
+
+### Custom Headers
+
+Access custom headers in endpoints:
+
+```typescript
+export const myEndpoint = createAuthEndpoint(
+	"/custom",
+	{ method: "POST" },
+	async (ctx) => {
+		const customHeader = ctx.request.headers.get("x-custom-header")
+		return ctx.json({ customHeader })
+	}
+)
+```
+
+## Testing
+
+### Unit Testing
+
+Mock the handler for testing:
+
+```typescript
+import { auth } from "./auth"
+
+test("sign in", async () => {
+	const request = new Request("http://localhost:3000/api/auth/sign-in/email", {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify({
+			email: "test@example.com",
+			password: "password123"
+		})
+	})
+	
+	const response = await auth.handler(request)
+	
+	expect(response.status).toBe(200)
+	const data = await response.json()
+	expect(data.user).toBeDefined()
+})
+```
+
+### Integration Testing
+
+Test with a real server:
+
+```typescript
+import { createServer } from "http"
+import { auth } from "./auth"
+
+const server = createServer(async (req, res) => {
+	const request = new Request(`http://localhost:3000${req.url}`, {
+		method: req.method,
+		headers: req.headers as HeadersInit
+	})
+	
+	const response = await auth.handler(request)
+	
+	res.statusCode = response.status
+	response.headers.forEach((value, key) => {
+		res.setHeader(key, value)
+	})
+	res.end(await response.text())
+})
+
+server.listen(3000)
+```
+
+## Advanced Usage
+
+### Middleware
+
+Add custom middleware before the handler:
+
+```typescript
+app.use("/api/auth/*", async (req, res, next) => {
+	// Custom logging, rate limiting, etc.
+	console.log("Auth request:", req.url)
+	next()
+})
+
+app.all("/api/auth/*", async (req, res) => {
+	const response = await auth.handler(req)
+	// Handle response
+})
+```
+
+### Multiple Auth Instances
+
+Use different auth configurations for different routes:
+
+```typescript
+import { betterAuth } from "better-auth"
+
+const adminAuth = betterAuth({
+	basePath: "/admin/auth",
+	// Admin-specific config
+})
+
+const userAuth = betterAuth({
+	basePath: "/api/auth",
+	// User-specific config
+})
+
+app.all("/admin/auth/*", adminAuth.handler)
+app.all("/api/auth/*", userAuth.handler)
+```
+
+## Notes
+
+<Note>
+The handler should only be exposed on the server. Never import or use it on the client side.
+</Note>
+
+<Warning>
+Make sure your framework supports the Web Standard Request/Response API. Most modern frameworks do, but older versions may require adapters.
+</Warning>
+
+<Note>
+For serverless environments (Vercel, Netlify), the handler works out of the box. No special configuration needed.
+</Note>
+
+## Related
+
+- [betterAuth()](/api/server/betterauth)
+- [Configuration](/api/server/configuration)
+- [Context API](/api/server/context)
+- [Creating Endpoints](/api-reference/plugins/plugin-interface#endpoints)

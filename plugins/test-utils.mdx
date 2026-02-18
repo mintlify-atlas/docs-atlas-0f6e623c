@@ -1,0 +1,500 @@
+---
+title: Test Utils Plugin
+description: Testing helpers for integration and E2E tests
+---
+
+The Test Utils plugin provides a comprehensive set of utilities for testing Better Auth implementations. It includes factories, database helpers, and authentication utilities designed for integration and end-to-end testing.
+
+<Callout type="warn">
+This plugin is intended for testing environments only. Do not use in production.
+</Callout>
+
+## Installation
+
+Add the Test Utils plugin to your test auth instance:
+
+```ts title="test-setup.ts"
+import { betterAuth } from "better-auth"
+import { testUtils } from "better-auth/plugins"
+
+export const testAuth = betterAuth({
+  database: {
+    // Your test database config
+  },
+  plugins: [
+    testUtils()
+  ]
+})
+```
+
+## Features
+
+- **User Factories**: Create user objects without database writes
+- **Organization Factories**: Generate organizations (when organization plugin is enabled)
+- **Database Helpers**: Save and delete test data
+- **Auth Helpers**: Generate sessions, headers, and cookies for authenticated requests
+- **OTP Capture**: Intercept OTPs during testing (optional)
+
+## Usage
+
+### Access Test Helpers
+
+Retrieve helpers from the auth context:
+
+```ts
+const ctx = await testAuth.$context
+const test = ctx.test
+```
+
+### User Factories
+
+<Steps>
+  <Step>
+    ### Create a user
+
+    ```ts
+    const user = test.createUser()
+    // Returns a User object with:
+    // - id: auto-generated
+    // - email: random test email
+    // - name: "Test User"
+    // - emailVerified: true
+    // - createdAt/updatedAt: current timestamp
+    ```
+  </Step>
+
+  <Step>
+    ### Customize user properties
+
+    ```ts
+    const user = test.createUser({
+      email: "custom@test.com",
+      name: "Custom User",
+      emailVerified: false
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Add custom fields
+
+    ```ts
+    const user = test.createUser({
+      email: "admin@test.com",
+      role: "admin",
+      department: "Engineering"
+    })
+    ```
+  </Step>
+</Steps>
+
+### Database Helpers
+
+#### Save User
+
+Persist a user to the database:
+
+```ts
+const user = test.createUser({ email: "user@test.com" })
+const savedUser = await test.saveUser(user)
+```
+
+#### Delete User
+
+Remove a user from the database:
+
+```ts
+await test.deleteUser(user.id)
+```
+
+### Authentication Helpers
+
+#### Login
+
+Create a session and get all authentication data:
+
+```ts
+const user = test.createUser()
+await test.saveUser(user)
+
+const { session, user: userData, headers, cookies, token } = 
+  await test.login({ userId: user.id })
+
+// Use headers for API requests
+const response = await fetch('/api/protected', { headers })
+
+// Use cookies for browser testing
+const cookieString = cookies
+  .map(c => `${c.name}=${c.value}`)
+  .join('; ')
+```
+
+#### Get Auth Headers
+
+Generate authentication headers for API requests:
+
+```ts
+const user = test.createUser()
+await test.saveUser(user)
+
+const headers = await test.getAuthHeaders({ userId: user.id })
+
+// Make authenticated request
+const session = await testAuth.api.getSession({ headers })
+```
+
+#### Get Cookies
+
+Generate cookie objects for browser/E2E testing:
+
+```ts
+const user = test.createUser()
+await test.saveUser(user)
+
+const cookies = await test.getCookies({ 
+  userId: user.id,
+  domain: "localhost" // optional
+})
+
+// cookies is an array of TestCookie objects:
+// [
+//   {
+//     name: "better_auth.session_token",
+//     value: "...",
+//     domain: "localhost",
+//     path: "/",
+//     httpOnly: true,
+//     secure: false,
+//     sameSite: "Lax",
+//     expires: 1234567890
+//   }
+// ]
+```
+
+## Organization Support
+
+When the [organization plugin](/plugins/organization) is enabled, additional helpers become available:
+
+### Create Organization
+
+```ts
+const org = test.createOrganization()
+// Returns:
+// {
+//   id: auto-generated,
+//   name: "Test Organization",
+//   slug: "test-organization-xyz",
+//   logo: null,
+//   metadata: null,
+//   createdAt: current timestamp
+// }
+```
+
+Customize organization:
+
+```ts
+const org = test.createOrganization({
+  name: "My Company",
+  slug: "my-company",
+  logo: "https://example.com/logo.png"
+})
+```
+
+### Save Organization
+
+```ts
+const org = test.createOrganization()
+const savedOrg = await test.saveOrganization(org)
+```
+
+### Delete Organization
+
+Remove organization and cascade delete members and invitations:
+
+```ts
+await test.deleteOrganization(org.id)
+```
+
+### Add Member
+
+Add a user to an organization:
+
+```ts
+const user = test.createUser()
+await test.saveUser(user)
+
+const org = test.createOrganization()
+await test.saveOrganization(org)
+
+const member = await test.addMember({
+  userId: user.id,
+  organizationId: org.id,
+  role: "admin" // optional, defaults to "member"
+})
+```
+
+## OTP Capture
+
+Capture OTP codes during testing instead of sending emails/SMS.
+
+<Steps>
+  <Step>
+    ### Enable OTP capture
+
+    ```ts title="test-setup.ts"
+    import { betterAuth } from "better-auth"
+    import { testUtils } from "better-auth/plugins"
+    import { emailOTP } from "better-auth/plugins"
+
+    export const testAuth = betterAuth({
+      plugins: [
+        testUtils({ 
+          captureOTP: true 
+        }),
+        emailOTP({
+          async sendVerificationOTP({ email, otp }) {
+            // No-op in tests - OTP is captured by testUtils
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Trigger OTP generation
+
+    ```ts
+    const user = test.createUser({ email: "user@test.com" })
+    await test.saveUser(user)
+
+    // Trigger OTP sending
+    await testAuth.api.sendVerificationOTP({
+      body: { email: user.email, type: "sign-in" }
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Retrieve captured OTP
+
+    ```ts
+    const otp = test.getOTP(user.email)
+    // Returns: "123456" (the generated OTP)
+
+    // Use OTP to verify
+    await testAuth.api.verifyEmail({
+      body: { email: user.email, otp }
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Clear OTPs between tests
+
+    ```ts
+    import { beforeEach } from "vitest"
+
+    beforeEach(() => {
+      test.clearOTPs()
+    })
+    ```
+  </Step>
+</Steps>
+
+## Complete Test Example
+
+```ts title="auth.test.ts"
+import { describe, it, expect, beforeEach } from "vitest"
+import { testAuth } from "./test-setup"
+
+describe("Authentication", async () => {
+  const ctx = await testAuth.$context
+  const test = ctx.test
+
+  beforeEach(() => {
+    // Clear OTPs if capturing
+    test.clearOTPs?.()
+  })
+
+  it("should authenticate user", async () => {
+    // Create and save user
+    const user = test.createUser({
+      email: "user@test.com",
+      name: "Test User"
+    })
+    await test.saveUser(user)
+
+    // Login and get auth credentials
+    const { headers, session } = await test.login({ 
+      userId: user.id 
+    })
+
+    // Verify session is valid
+    expect(session.userId).toBe(user.id)
+
+    // Make authenticated request
+    const result = await testAuth.api.getSession({ headers })
+    expect(result?.user.email).toBe("user@test.com")
+
+    // Cleanup
+    await test.deleteUser(user.id)
+  })
+
+  it("should handle OTP verification", async () => {
+    const user = test.createUser({ 
+      email: "otp@test.com",
+      emailVerified: false 
+    })
+    await test.saveUser(user)
+
+    // Send OTP
+    await testAuth.api.sendVerificationOTP({
+      body: { email: user.email, type: "email-verification" }
+    })
+
+    // Get captured OTP
+    const otp = test.getOTP?.(user.email)
+    expect(otp).toBeDefined()
+
+    // Verify email with OTP
+    await testAuth.api.verifyEmail({
+      body: { email: user.email, otp: otp! }
+    })
+
+    // Cleanup
+    await test.deleteUser(user.id)
+  })
+})
+```
+
+## E2E Testing with Playwright
+
+```ts title="auth.spec.ts"
+import { test, expect } from '@playwright/test'
+import { testAuth } from './test-setup'
+
+test.describe('Authentication Flow', () => {
+  let testHelpers: any
+
+  test.beforeAll(async () => {
+    const ctx = await testAuth.$context
+    testHelpers = ctx.test
+  })
+
+  test('user can sign in', async ({ page, context }) => {
+    // Create test user
+    const user = testHelpers.createUser({
+      email: 'e2e@test.com',
+      password: 'SecurePass123!'
+    })
+    await testHelpers.saveUser(user)
+
+    // Get session cookies
+    const cookies = await testHelpers.getCookies({ 
+      userId: user.id,
+      domain: 'localhost'
+    })
+
+    // Set cookies in browser
+    await context.addCookies(cookies.map(c => ({
+      name: c.name,
+      value: c.value,
+      domain: c.domain,
+      path: c.path,
+      httpOnly: c.httpOnly,
+      secure: c.secure,
+      sameSite: c.sameSite as 'Strict' | 'Lax' | 'None'
+    })))
+
+    // Navigate to protected page
+    await page.goto('/dashboard')
+
+    // Verify authenticated
+    await expect(page.locator('[data-testid="user-email"]'))
+      .toHaveText('e2e@test.com')
+
+    // Cleanup
+    await testHelpers.deleteUser(user.id)
+  })
+})
+```
+
+## Type Definitions
+
+```ts
+interface TestHelpers {
+  // Factories
+  createUser(overrides?: Partial<User> & Record<string, unknown>): User
+  createOrganization?(overrides?: Record<string, unknown>): Record<string, unknown>
+
+  // Database helpers
+  saveUser(user: User): Promise<User>
+  deleteUser(userId: string): Promise<void>
+  saveOrganization?(org: Record<string, unknown>): Promise<Record<string, unknown>>
+  deleteOrganization?(orgId: string): Promise<void>
+  addMember?(opts: {
+    userId: string
+    organizationId: string
+    role?: string
+  }): Promise<Record<string, unknown>>
+
+  // Auth helpers  
+  login(opts: { userId: string }): Promise<LoginResult>
+  getAuthHeaders(opts: { userId: string }): Promise<Headers>
+  getCookies(opts: { 
+    userId: string
+    domain?: string 
+  }): Promise<TestCookie[]>
+
+  // OTP helpers (when captureOTP: true)
+  getOTP?(identifier: string): string | undefined
+  clearOTPs?(): void
+}
+
+interface LoginResult {
+  session: Session
+  user: User
+  headers: Headers
+  cookies: TestCookie[]
+  token: string
+}
+
+interface TestCookie {
+  name: string
+  value: string
+  domain: string
+  path: string
+  httpOnly?: boolean
+  secure?: boolean
+  sameSite?: "Lax" | "Strict" | "None"
+  expires?: number
+}
+```
+
+## Options
+
+<Tip>
+All options are optional.
+</Tip>
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `captureOTP` | `boolean` | `false` | Capture OTPs in memory when created |
+
+## Best Practices
+
+1. **Isolation**: Create and delete test users in each test to avoid state leakage
+2. **Cleanup**: Always delete created resources after tests complete
+3. **Separate Database**: Use a dedicated test database, never production
+4. **beforeEach Hooks**: Clear OTPs and reset state between tests
+5. **Parallel Tests**: Generate unique emails to avoid conflicts in parallel test runs
+
+## Notes
+
+- Organization helpers only appear when the organization plugin is enabled
+- OTP helpers only appear when `captureOTP: true` is set
+- `createUser` and `createOrganization` do not write to the database
+- IDs are auto-generated using your configured ID generation strategy
+- OTP capture works with email-otp, phone-number, and other OTP-based plugins
+- Captured OTPs are stored per auth instance to prevent cross-contamination

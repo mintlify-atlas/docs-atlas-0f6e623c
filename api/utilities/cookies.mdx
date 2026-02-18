@@ -1,0 +1,679 @@
+---
+title: 'Cookies Utilities'
+description: 'Cookie management, session storage, and cookie cache utilities'
+---
+
+## Overview
+
+Better Auth provides comprehensive cookie utilities for managing authentication cookies, session storage, and cookie caching. These utilities handle cookie chunking for large data, secure cookie prefixes, and multiple cache strategies.
+
+## Import
+
+```typescript
+import {
+  getCookies,
+  createCookieGetter,
+  setSessionCookie,
+  deleteSessionCookie,
+  setCookieCache,
+  getCookieCache,
+  getSessionCookie,
+  parseCookies,
+  expireCookie,
+  createSessionStore,
+  getChunkedCookie,
+  parseSetCookieHeader,
+  splitSetCookieHeader,
+  stripSecureCookiePrefix
+} from "better-auth/cookies"
+```
+
+## Cookie Management
+
+### getCookies
+
+Generates the standard Better Auth cookie configuration.
+
+```typescript
+function getCookies(
+  options: BetterAuthOptions
+): BetterAuthCookies
+```
+
+<ParamField path="options" type="BetterAuthOptions" required>
+  Better Auth configuration options.
+</ParamField>
+
+**Returns:** Object containing cookie configurations
+
+<ResponseField name="sessionToken" type="BetterAuthCookie">
+  Configuration for the session token cookie.
+  
+  - Default name: `better-auth.session_token`
+  - Stores the session authentication token
+  - MaxAge: Based on `session.expiresIn` (default 7 days)
+</ResponseField>
+
+<ResponseField name="sessionData" type="BetterAuthCookie">
+  Configuration for cached session data.
+  
+  - Default name: `better-auth.session_data`
+  - Stores encrypted session and user data
+  - MaxAge: 5 minutes (configurable)
+</ResponseField>
+
+<ResponseField name="accountData" type="BetterAuthCookie">
+  Configuration for cached account data.
+  
+  - Default name: `better-auth.account_data`
+  - Stores encrypted account information
+  - MaxAge: 5 minutes (configurable)
+</ResponseField>
+
+<ResponseField name="dontRememberToken" type="BetterAuthCookie">
+  Configuration for the remember-me preference.
+  
+  - Default name: `better-auth.dont_remember`
+  - Stores session persistence preference
+</ResponseField>
+
+**Example:**
+
+```typescript
+const cookies = getCookies({
+  baseURL: "https://example.com",
+  secret: process.env.SECRET,
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    cookieCache: {
+      enabled: true,
+      maxAge: 60 * 5 // 5 minutes
+    }
+  }
+})
+```
+
+### createCookieGetter
+
+Creates a function for generating cookie configurations with consistent settings.
+
+```typescript
+function createCookieGetter(
+  options: BetterAuthOptions
+): (cookieName: string, overrideAttributes?: Partial<CookieOptions>) => BetterAuthCookie
+```
+
+<ParamField path="options" type="BetterAuthOptions" required>
+  Better Auth configuration options.
+</ParamField>
+
+**Returns:** Function that creates cookie configurations
+
+**Cookie Attributes:**
+- `secure`: Automatically set based on `baseURL` or production environment
+- `sameSite`: `lax` (default)
+- `path`: `/` (default)
+- `httpOnly`: `true` (default)
+- `domain`: Set if cross-subdomain cookies are enabled
+
+**Example:**
+
+```typescript
+const createCookie = createCookieGetter({
+  baseURL: "https://example.com",
+  advanced: {
+    cookiePrefix: "myapp",
+    useSecureCookies: true,
+    crossSubDomainCookies: {
+      enabled: true,
+      domain: ".example.com"
+    }
+  }
+})
+
+const customCookie = createCookie("custom_data", {
+  maxAge: 3600
+})
+```
+
+## Session Cookies
+
+### setSessionCookie
+
+Sets the session cookie and optional session cache.
+
+```typescript
+function setSessionCookie(
+  ctx: GenericEndpointContext,
+  session: {
+    session: Session & Record<string, any>
+    user: User
+  },
+  dontRememberMe?: boolean,
+  overrides?: Partial<CookieOptions>
+): Promise<void>
+```
+
+<ParamField path="ctx" type="GenericEndpointContext" required>
+  The endpoint context.
+</ParamField>
+
+<ParamField path="session" type="object" required>
+  Session data including user and session information.
+</ParamField>
+
+<ParamField path="dontRememberMe" type="boolean" optional>
+  If `true`, creates a session cookie (no maxAge). If `false`, creates a persistent cookie.
+</ParamField>
+
+<ParamField path="overrides" type="Partial<CookieOptions>" optional>
+  Override default cookie attributes.
+</ParamField>
+
+**Example:**
+
+```typescript
+await setSessionCookie(ctx, {
+  session: {
+    token: "session-token",
+    userId: "user-123",
+    expiresAt: new Date()
+  },
+  user: {
+    id: "user-123",
+    email: "user@example.com",
+    name: "John Doe"
+  }
+})
+```
+
+### deleteSessionCookie
+
+Deletes all session-related cookies.
+
+```typescript
+function deleteSessionCookie(
+  ctx: GenericEndpointContext,
+  skipDontRememberMe?: boolean
+): void
+```
+
+<ParamField path="ctx" type="GenericEndpointContext" required>
+  The endpoint context.
+</ParamField>
+
+<ParamField path="skipDontRememberMe" type="boolean" optional>
+  If `true`, preserves the remember-me preference cookie.
+</ParamField>
+
+**Example:**
+
+```typescript
+// Delete all session cookies
+deleteSessionCookie(ctx)
+
+// Delete session but keep remember-me preference
+deleteSessionCookie(ctx, true)
+```
+
+### getSessionCookie
+
+Extracts the session token from request headers.
+
+```typescript
+function getSessionCookie(
+  request: Request | Headers,
+  config?: {
+    cookiePrefix?: string
+    cookieName?: string
+    path?: string
+  }
+): string | null
+```
+
+<ParamField path="request" type="Request | Headers" required>
+  The request or headers object.
+</ParamField>
+
+<ParamField path="config" type="object" optional>
+  Configuration for cookie name and prefix.
+  
+  - `cookiePrefix`: Default `"better-auth"`
+  - `cookieName`: Default `"session_token"`
+</ParamField>
+
+**Returns:** The session token string or `null` if not found
+
+**Example:**
+
+```typescript
+const sessionToken = getSessionCookie(request, {
+  cookiePrefix: "myapp",
+  cookieName: "session_token"
+})
+
+if (sessionToken) {
+  // Validate session
+}
+```
+
+## Cookie Cache
+
+### setCookieCache
+
+Sets encrypted session data in a cookie for caching.
+
+```typescript
+function setCookieCache(
+  ctx: GenericEndpointContext,
+  session: {
+    session: Session & Record<string, any>
+    user: User
+  },
+  dontRememberMe: boolean
+): Promise<void>
+```
+
+<ParamField path="ctx" type="GenericEndpointContext" required>
+  The endpoint context.
+</ParamField>
+
+<ParamField path="session" type="object" required>
+  Session and user data to cache.
+</ParamField>
+
+<ParamField path="dontRememberMe" type="boolean" required>
+  Whether to create a session or persistent cookie.
+</ParamField>
+
+**Cache Strategies:**
+
+<CodeGroup>
+
+```typescript Compact (Default)
+// Base64 + HMAC signature (no JWT overhead)
+// Fast and efficient
+// Configurable in session.cookieCache.strategy
+strategy: "compact"
+```
+
+```typescript JWT
+// HMAC-SHA256 signature (HS256)
+// No encryption, integrity only
+// Compatible with standard JWT libraries
+strategy: "jwt"
+```
+
+```typescript JWE
+// Full encryption with A256CBC-HS512
+// Maximum security for sensitive data
+// Larger token size
+strategy: "jwe"
+```
+
+</CodeGroup>
+
+**Cookie Chunking:**
+
+If the cached data exceeds 4093 bytes, it's automatically split into multiple cookies:
+
+```typescript
+// Automatically chunks large cookies
+better-auth.session_data.0 = "part1..."
+better-auth.session_data.1 = "part2..."
+better-auth.session_data.2 = "part3..."
+```
+
+### getCookieCache
+
+Retrieves and decrypts cached session data from cookies.
+
+```typescript
+function getCookieCache<S extends {
+  session: Session & Record<string, any>
+  user: User & Record<string, any>
+  updatedAt: number
+  version?: string
+}>(
+  request: Request | Headers,
+  config?: {
+    cookiePrefix?: string
+    cookieName?: string
+    isSecure?: boolean
+    secret?: string
+    strategy?: "compact" | "jwt" | "jwe"
+    version?: string | ((session: Session, user: User) => string | Promise<string>)
+  }
+): Promise<S | null>
+```
+
+<ParamField path="request" type="Request | Headers" required>
+  The request or headers object.
+</ParamField>
+
+<ParamField path="config" type="object" optional>
+  Configuration for cache retrieval.
+</ParamField>
+
+**Returns:** Cached session data or `null` if not found or invalid
+
+**Example:**
+
+```typescript
+const cachedSession = await getCookieCache(request, {
+  secret: process.env.SECRET,
+  strategy: "jwe",
+  version: "v2"
+})
+
+if (cachedSession) {
+  console.log("User:", cachedSession.user)
+  console.log("Session:", cachedSession.session)
+  console.log("Last updated:", new Date(cachedSession.updatedAt))
+}
+```
+
+<Note>
+**Cache Versioning:**
+
+Use the `version` parameter to invalidate cached sessions when your schema changes:
+
+```typescript
+version: (session, user) => {
+  // Return version based on your schema
+  return `${session.schemaVersion}-${user.schemaVersion}`
+}
+```
+</Note>
+
+## Cookie Chunking
+
+### createSessionStore
+
+Creates a store for managing chunked session cookies.
+
+```typescript
+function createSessionStore(
+  cookieName: string,
+  cookieOptions: CookieOptions,
+  ctx: GenericEndpointContext
+): SessionStore
+```
+
+<ParamField path="cookieName" type="string" required>
+  The base name of the cookie.
+</ParamField>
+
+<ParamField path="cookieOptions" type="CookieOptions" required>
+  Cookie attributes.
+</ParamField>
+
+<ParamField path="ctx" type="GenericEndpointContext" required>
+  The endpoint context.
+</ParamField>
+
+**Returns:** Store object with chunking utilities
+
+<ResponseField name="getValue" type="() => string">
+  Returns the full value by joining all chunks.
+</ResponseField>
+
+<ResponseField name="hasChunks" type="() => boolean">
+  Checks if chunked cookies exist.
+</ResponseField>
+
+<ResponseField name="chunk" type="(value: string, options?: Partial<CookieOptions>) => Cookie[]">
+  Splits a value into chunks if needed. Returns array of cookies to set.
+</ResponseField>
+
+<ResponseField name="clean" type="() => Cookie[]">
+  Returns cookies to delete all chunks.
+</ResponseField>
+
+<ResponseField name="setCookies" type="(cookies: Cookie[]) => void">
+  Sets multiple cookies in the context.
+</ResponseField>
+
+**Example:**
+
+```typescript
+const store = createSessionStore(
+  "session_data",
+  { maxAge: 300, httpOnly: true },
+  ctx
+)
+
+const largeData = JSON.stringify(sessionData)
+
+if (largeData.length > 4093) {
+  const cookies = store.chunk(largeData)
+  store.setCookies(cookies)
+} else {
+  ctx.setCookie("session_data", largeData)
+}
+```
+
+### getChunkedCookie
+
+Reads and reconstructs a chunked cookie value.
+
+```typescript
+function getChunkedCookie(
+  ctx: GenericEndpointContext,
+  cookieName: string
+): string | null
+```
+
+<ParamField path="ctx" type="GenericEndpointContext" required>
+  The endpoint context.
+</ParamField>
+
+<ParamField path="cookieName" type="string" required>
+  The base name of the cookie.
+</ParamField>
+
+**Returns:** The reconstructed value or `null` if not found
+
+**Example:**
+
+```typescript
+const sessionData = getChunkedCookie(ctx, "session_data")
+
+if (sessionData) {
+  const parsed = JSON.parse(sessionData)
+}
+```
+
+## Cookie Parsing
+
+### parseCookies
+
+Parses a cookie header string into a map.
+
+```typescript
+function parseCookies(
+  cookieHeader: string
+): Map<string, string>
+```
+
+<ParamField path="cookieHeader" type="string" required>
+  The raw cookie header value.
+</ParamField>
+
+**Returns:** Map of cookie names to values
+
+**Example:**
+
+```typescript
+const cookies = parseCookies(
+  "session=abc123; theme=dark; lang=en"
+)
+
+console.log(cookies.get("session")) // "abc123"
+console.log(cookies.get("theme"))   // "dark"
+```
+
+### parseSetCookieHeader
+
+Parses Set-Cookie header(s) into structured data.
+
+```typescript
+function parseSetCookieHeader(
+  setCookie: string
+): Map<string, CookieAttributes>
+```
+
+<ParamField path="setCookie" type="string" required>
+  The Set-Cookie header value(s).
+</ParamField>
+
+**Returns:** Map of cookie names to their attributes
+
+**Example:**
+
+```typescript
+const cookies = parseSetCookieHeader(
+  "session=abc; Path=/; HttpOnly, theme=dark; MaxAge=3600"
+)
+
+const sessionCookie = cookies.get("session")
+console.log(sessionCookie.value)    // "abc"
+console.log(sessionCookie.httponly) // true
+console.log(sessionCookie.path)     // "/"
+```
+
+### splitSetCookieHeader
+
+Splits a Set-Cookie header, handling commas in Expires dates.
+
+```typescript
+function splitSetCookieHeader(
+  setCookie: string
+): string[]
+```
+
+<ParamField path="setCookie" type="string" required>
+  The Set-Cookie header with potentially multiple cookies.
+</ParamField>
+
+**Returns:** Array of individual cookie strings
+
+**Example:**
+
+```typescript
+const cookies = splitSetCookieHeader(
+  "session=abc; Expires=Wed, 21 Oct 2025 07:28:00 GMT, theme=dark"
+)
+// ["session=abc; Expires=Wed, 21 Oct 2025 07:28:00 GMT", "theme=dark"]
+```
+
+## Cookie Utilities
+
+### expireCookie
+
+Expires a cookie by setting its maxAge to 0.
+
+```typescript
+function expireCookie(
+  ctx: GenericEndpointContext,
+  cookie: BetterAuthCookie
+): void
+```
+
+<ParamField path="ctx" type="GenericEndpointContext" required>
+  The endpoint context.
+</ParamField>
+
+<ParamField path="cookie" type="BetterAuthCookie" required>
+  The cookie configuration to expire.
+</ParamField>
+
+**Example:**
+
+```typescript
+expireCookie(ctx, ctx.context.authCookies.sessionToken)
+```
+
+### stripSecureCookiePrefix
+
+Removes `__Secure-` or `__Host-` prefix from a cookie name.
+
+```typescript
+function stripSecureCookiePrefix(
+  cookieName: string
+): string
+```
+
+<ParamField path="cookieName" type="string" required>
+  The cookie name with or without prefix.
+</ParamField>
+
+**Returns:** Cookie name without prefix
+
+**Example:**
+
+```typescript
+stripSecureCookiePrefix("__Secure-better-auth.session_token")
+// Returns: "better-auth.session_token"
+
+stripSecureCookiePrefix("__Host-csrf_token")
+// Returns: "csrf_token"
+```
+
+## Security Features
+
+### Secure Cookie Prefixes
+
+Better Auth automatically applies secure cookie prefixes in production:
+
+<CodeGroup>
+
+```typescript __Secure- Prefix
+// Applied when useSecureCookies is true
+// Requires Secure attribute
+__Secure-better-auth.session_token
+```
+
+```typescript __Host- Prefix
+// More restrictive than __Secure-
+// Requires Secure, Path=/, and no Domain
+__Host-csrf_token
+```
+
+</CodeGroup>
+
+### Cross-Subdomain Cookies
+
+Enable cookie sharing across subdomains:
+
+```typescript
+const auth = betterAuth({
+  baseURL: "https://example.com",
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: true,
+      domain: ".example.com"
+    }
+  }
+})
+
+// Cookies will be accessible on:
+// - example.com
+// - app.example.com
+// - api.example.com
+```
+
+<Warning>
+**Security Considerations:**
+- Always use `httpOnly: true` for authentication cookies
+- Use `secure: true` in production (HTTPS)
+- Set appropriate `sameSite` policy (`lax` or `strict`)
+- Use cookie chunking automatically handles 4KB browser limits
+- Encrypt sensitive data with JWE strategy
+</Warning>
+
+## Related
+
+- [Crypto Utilities](/api-reference/utilities/crypto)
+- [Server Configuration](/api-reference/server/better-auth)
+- [Session Management](/docs/concepts/session)

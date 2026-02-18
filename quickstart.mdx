@@ -1,67 +1,67 @@
 ---
-title: Quickstart Guide
-description: Build a complete authentication system with Better Auth in under 5 minutes.
+title: Quickstart
+description: Get up and running with Better Auth in under 5 minutes with a complete working example.
 ---
 
 <Note>
-This quickstart will guide you through building a fully functional authentication system with email/password and OAuth support in under 5 minutes.
+This quickstart guide will walk you through building a complete authentication system with email/password sign-in, OAuth providers, and session management in a Next.js application.
 </Note>
 
-## Overview
+## Prerequisites
 
-By the end of this guide, you'll have:
+Before you begin, make sure you have:
 
-- Working email and password authentication
-- GitHub OAuth integration  
-- Protected routes with session management
-- Sign-in, sign-up, and sign-out functionality
+- Node.js 18+ installed
+- A Next.js project (or create one with `npx create-next-app@latest`)
+- Basic knowledge of TypeScript and React
+
+## Step 1: Install Better Auth
 
 <Steps>
+  <Step title="Install the package">
+    Add Better Auth to your project:
+    
+    <CodeGroup>
+    ```bash npm
+    npm install better-auth
+    ```
+    
+    ```bash pnpm
+    pnpm add better-auth
+    ```
+    
+    ```bash yarn
+    yarn add better-auth
+    ```
+    
+    ```bash bun
+    bun add better-auth
+    ```
+    </CodeGroup>
+  </Step>
+  
+  <Step title="Install database driver">
+    For this quickstart, we'll use SQLite for simplicity:
+    
+    ```bash
+    npm install better-sqlite3
+    ```
+    
+    <Tip>
+    For production applications, consider using PostgreSQL or MySQL. See the [database adapters](/adapters) documentation.
+    </Tip>
+  </Step>
+</Steps>
 
-<Step>
-### Install Better Auth
+## Step 2: Configure Environment Variables
 
-Add Better Auth to your project:
+Create a `.env.local` file in your project root:
 
-<CodeGroup>
-```bash npm
-npm install better-auth
-```
-
-```bash pnpm
-pnpm add better-auth
-```
-
-```bash yarn
-yarn add better-auth
-```
-
-```bash bun
-bun add better-auth
-```
-</CodeGroup>
-
-For this quickstart, we'll also need a database driver. Let's use SQLite for simplicity:
-
-```bash
-npm install better-sqlite3
-```
-
-</Step>
-
-<Step>
-### Set Up Environment Variables
-
-Create a `.env` file in your project root:
-
-```txt title=".env"
-# Required: Secret key for encryption (generate with: openssl rand -base64 32)
-BETTER_AUTH_SECRET=your-32-character-secret-key-here
-
-# Required: Your app's base URL
+```txt title=".env.local"
+BETTER_AUTH_SECRET=your-secret-key-here-at-least-32-characters
 BETTER_AUTH_URL=http://localhost:3000
 
-# Optional: GitHub OAuth credentials (get from https://github.com/settings/developers)
+# Optional: Add OAuth credentials
 GITHUB_CLIENT_ID=your-github-client-id
 GITHUB_CLIENT_SECRET=your-github-client-secret
 ```
@@ -73,24 +73,29 @@ openssl rand -base64 32
 ```
 </Tip>
 
-</Step>
+<Accordion title="How to get GitHub OAuth credentials">
+  1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+  2. Click **New OAuth App**
+  3. Set **Application name** to your app name
+  4. Set **Homepage URL** to `http://localhost:3000`
+  5. Set **Authorization callback URL** to `http://localhost:3000/api/auth/callback/github`
+  6. Click **Register application**
+  7. Copy the **Client ID** and generate a **Client Secret**
+</Accordion>
 
-<Step>
-### Create Auth Instance
+## Step 3: Create Auth Instance
 
-Create `lib/auth.ts` with your authentication configuration:
+Create the server-side auth configuration:
 
 ```typescript title="lib/auth.ts"
 import { betterAuth } from "better-auth";
 import Database from "better-sqlite3";
 
 export const auth = betterAuth({
-  database: new Database("./sqlite.db"),
-  
+  database: new Database("./db.sqlite"),
   emailAndPassword: {
     enabled: true,
   },
-  
   socialProviders: {
     github: {
       clientId: process.env.GITHUB_CLIENT_ID!,
@@ -101,505 +106,342 @@ export const auth = betterAuth({
 ```
 
 <Info>
-This configuration enables email/password authentication and GitHub OAuth. You can add more OAuth providers or disable GitHub if you prefer.
+The `auth` object handles all server-side authentication logic, including session management, password hashing, and OAuth flows.
 </Info>
 
-</Step>
+## Step 4: Set Up Database Schema
 
-<Step>
-### Create Database Tables
-
-Run the migration command to create the necessary database tables:
+Generate and apply the database schema:
 
 ```bash
+npx auth@latest generate
 npx auth@latest migrate
 ```
 
-This will create all required tables in your `sqlite.db` database file.
+This creates the necessary tables in your SQLite database:
+- `user` - Store user information
+- `session` - Manage active sessions
+- `account` - Link social provider accounts
+- `verification` - Handle email verification tokens
 
-<Warning>
-If you're using an ORM like Prisma or Drizzle, use `npx auth generate` instead, then apply migrations using your ORM's tools.
-</Warning>
+## Step 5: Mount API Handler
 
-</Step>
+Create a catch-all API route to handle all authentication requests:
 
-<Step>
-### Set Up API Routes
+```typescript title="app/api/auth/[...all]/route.ts"
+import { auth } from "@/lib/auth";
+import { toNextJsHandler } from "better-auth/next-js";
 
-Create an API handler to process authentication requests:
+export const { POST, GET } = toNextJsHandler(auth);
+```
 
-<Tabs items={["Next.js App Router", "Next.js Pages Router", "SvelteKit", "Express"]}>
-  <Tab value="Next.js App Router">
-    ```typescript title="app/api/auth/[...all]/route.ts"
-    import { auth } from "@/lib/auth";
-    import { toNextJsHandler } from "better-auth/next-js";
-    
-    export const { POST, GET } = toNextJsHandler(auth);
-    ```
-  </Tab>
-  
-  <Tab value="Next.js Pages Router">
-    ```typescript title="pages/api/auth/[...all].ts"
-    import { auth } from "@/lib/auth";
-    import { toNodeHandler } from "better-auth/node";
-    
-    export const config = { api: { bodyParser: false } };
-    export default toNodeHandler(auth.handler);
-    ```
-  </Tab>
-  
-  <Tab value="SvelteKit">
-    ```typescript title="src/hooks.server.ts"
-    import { auth } from "$lib/auth";
-    import { svelteKitHandler } from "better-auth/svelte-kit";
-    import { building } from '$app/environment';
-    
-    export async function handle({ event, resolve }) {
-      return svelteKitHandler({ event, resolve, auth, building });
+<Info>
+This route handles all authentication endpoints like `/api/auth/sign-in`, `/api/auth/sign-up`, `/api/auth/callback/github`, etc.
+</Info>
+
+## Step 6: Create Auth Client
+
+Set up the client-side authentication client:
+
+```typescript title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/react";
+
+export const authClient = createAuthClient();
+
+export const { signIn, signUp, signOut, useSession } = authClient;
+```
+
+## Step 7: Build Sign-In Component
+
+Create a sign-in form with email/password and OAuth options:
+
+```tsx title="components/sign-in.tsx"
+"use client";
+
+import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
+
+export function SignIn() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    const { data, error } = await authClient.signIn.email({
+      email,
+      password,
+      callbackURL: "/dashboard",
+    });
+
+    if (error) {
+      setError(error.message);
     }
-    ```
-  </Tab>
-  
-  <Tab value="Express">
-    ```typescript title="server.ts"
-    import express from "express";
-    import { toNodeHandler } from "better-auth/node";
-    import { auth } from "./lib/auth";
-    
-    const app = express();
-    
-    app.all("/api/auth/*", toNodeHandler(auth));
-    app.use(express.json());
-    
-    app.listen(3000);
-    ```
-  </Tab>
-</Tabs>
+  };
 
-</Step>
+  const handleGitHubSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "github",
+      callbackURL: "/dashboard",
+    });
+  };
 
-<Step>
-### Create Client Instance
-
-Set up the client-side authentication:
-
-<Tabs items={["React/Next.js", "Vue", "Svelte", "Vanilla JS"]}>
-  <Tab value="React/Next.js">
-    ```typescript title="lib/auth-client.ts"
-    import { createAuthClient } from "better-auth/react";
-    
-    export const authClient = createAuthClient();
-    
-    export const { signIn, signUp, signOut, useSession } = authClient;
-    ```
-  </Tab>
-  
-  <Tab value="Vue">
-    ```typescript title="lib/auth-client.ts"
-    import { createAuthClient } from "better-auth/vue";
-    
-    export const authClient = createAuthClient();
-    
-    export const { signIn, signUp, signOut, useSession } = authClient;
-    ```
-  </Tab>
-  
-  <Tab value="Svelte">
-    ```typescript title="lib/auth-client.ts"
-    import { createAuthClient } from "better-auth/svelte";
-    
-    export const authClient = createAuthClient();
-    
-    export const { signIn, signUp, signOut, useSession } = authClient;
-    ```
-  </Tab>
-  
-  <Tab value="Vanilla JS">
-    ```typescript title="lib/auth-client.ts"
-    import { createAuthClient } from "better-auth/client";
-    
-    export const authClient = createAuthClient();
-    ```
-  </Tab>
-</Tabs>
-
-</Step>
-
-<Step>
-### Build Authentication UI
-
-Create a simple sign-in/sign-up component:
-
-<Tabs items={["React", "Vue", "Svelte"]}>
-  <Tab value="React">
-    ```tsx title="components/auth.tsx"
-    "use client";
-    
-    import { useState } from "react";
-    import { authClient } from "@/lib/auth-client";
-    
-    export function Auth() {
-      const [email, setEmail] = useState("");
-      const [password, setPassword] = useState("");
-      const [name, setName] = useState("");
-      const [isSignUp, setIsSignUp] = useState(false);
+  return (
+    <div className="w-full max-w-md space-y-4">
+      <h2 className="text-2xl font-bold">Sign In</h2>
       
-      const { data: session, isPending } = authClient.useSession();
-      
-      if (isPending) {
-        return <div>Loading...</div>;
-      }
-      
-      if (session) {
-        return (
-          <div className="p-6 max-w-md mx-auto">
-            <h2 className="text-2xl font-bold mb-4">Welcome!</h2>
-            <div className="space-y-4">
-              <p>
-                <strong>Name:</strong> {session.user.name}
-              </p>
-              <p>
-                <strong>Email:</strong> {session.user.email}
-              </p>
-              <button
-                onClick={() => authClient.signOut()}
-                className="w-full bg-red-500 text-white py-2 rounded hover:bg-red-600"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-        );
-      }
-      
-      const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        
-        if (isSignUp) {
-          const { error } = await authClient.signUp.email({
-            email,
-            password,
-            name,
-          });
-          if (error) alert(error.message);
-        } else {
-          const { error } = await authClient.signIn.email({
-            email,
-            password,
-          });
-          if (error) alert(error.message);
-        }
-      };
-      
-      const handleGitHub = async () => {
-        await authClient.signIn.social({
-          provider: "github",
-          callbackURL: "/",
-        });
-      };
-      
-      return (
-        <div className="p-6 max-w-md mx-auto">
-          <h2 className="text-2xl font-bold mb-6">
-            {isSignUp ? "Sign Up" : "Sign In"}
-          </h2>
-          
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {isSignUp && (
-              <input
-                type="text"
-                placeholder="Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-4 py-2 border rounded"
-                required
-              />
-            )}
-            
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border rounded"
-              required
-            />
-            
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border rounded"
-              required
-              minLength={8}
-            />
-            
-            <button
-              type="submit"
-              className="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600"
-            >
-              {isSignUp ? "Sign Up" : "Sign In"}
-            </button>
-          </form>
-          
-          <div className="mt-4">
-            <button
-              onClick={handleGitHub}
-              className="w-full bg-gray-900 text-white py-2 rounded hover:bg-gray-800 flex items-center justify-center gap-2"
-            >
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
-              </svg>
-              Sign in with GitHub
-            </button>
-          </div>
-          
-          <button
-            onClick={() => setIsSignUp(!isSignUp)}
-            className="w-full mt-4 text-blue-500 hover:underline"
-          >
-            {isSignUp
-              ? "Already have an account? Sign in"
-              : "Need an account? Sign up"}
-          </button>
-        </div>
-      );
-    }
-    ```
-  </Tab>
-  
-  <Tab value="Vue">
-    ```vue title="components/Auth.vue"
-    <script setup lang="ts">
-    import { ref } from "vue";
-    import { authClient } from "~/lib/auth-client";
-    
-    const email = ref("");
-    const password = ref("");
-    const name = ref("");
-    const isSignUp = ref(false);
-    
-    const session = authClient.useSession();
-    
-    const handleSubmit = async () => {
-      if (isSignUp.value) {
-        const { error } = await authClient.signUp.email({
-          email: email.value,
-          password: password.value,
-          name: name.value,
-        });
-        if (error) alert(error.message);
-      } else {
-        const { error } = await authClient.signIn.email({
-          email: email.value,
-          password: password.value,
-        });
-        if (error) alert(error.message);
-      }
-    };
-    
-    const handleGitHub = async () => {
-      await authClient.signIn.social({
-        provider: "github",
-        callbackURL: "/",
-      });
-    };
-    </script>
-    
-    <template>
-      <div class="p-6 max-w-md mx-auto">
-        <div v-if="session.isPending">Loading...</div>
-        
-        <div v-else-if="session.data" class="space-y-4">
-          <h2 class="text-2xl font-bold">Welcome!</h2>
-          <p><strong>Name:</strong> {{ session.data.user.name }}</p>
-          <p><strong>Email:</strong> {{ session.data.user.email }}</p>
-          <button
-            @click="authClient.signOut()"
-            class="w-full bg-red-500 text-white py-2 rounded"
-          >
-            Sign Out
-          </button>
+      <form onSubmit={handleSignIn} className="space-y-4">
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 block w-full rounded-md border p-2"
+            required
+          />
         </div>
         
-        <div v-else>
-          <h2 class="text-2xl font-bold mb-6">
-            {{ isSignUp ? "Sign Up" : "Sign In" }}
-          </h2>
-          
-          <form @submit.prevent="handleSubmit" class="space-y-4">
-            <input
-              v-if="isSignUp"
-              v-model="name"
-              type="text"
-              placeholder="Name"
-              class="w-full px-4 py-2 border rounded"
-              required
-            />
-            
-            <input
-              v-model="email"
-              type="email"
-              placeholder="Email"
-              class="w-full px-4 py-2 border rounded"
-              required
-            />
-            
-            <input
-              v-model="password"
-              type="password"
-              placeholder="Password"
-              class="w-full px-4 py-2 border rounded"
-              required
-              minlength="8"
-            />
-            
-            <button
-              type="submit"
-              class="w-full bg-blue-500 text-white py-2 rounded"
-            >
-              {{ isSignUp ? "Sign Up" : "Sign In" }}
-            </button>
-          </form>
-          
-          <button
-            @click="handleGitHub"
-            class="w-full mt-4 bg-gray-900 text-white py-2 rounded"
-          >
-            Sign in with GitHub
-          </button>
-          
-          <button
-            @click="isSignUp = !isSignUp"
-            class="w-full mt-4 text-blue-500"
-          >
-            {{ isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up" }}
-          </button>
+        <div>
+          <label htmlFor="password" className="block text-sm font-medium">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 block w-full rounded-md border p-2"
+            required
+          />
+        </div>
+        
+        {error && (
+          <div className="text-red-600 text-sm">{error}</div>
+        )}
+        
+        <button
+          type="submit"
+          className="w-full bg-blue-600 text-white rounded-md py-2 hover:bg-blue-700"
+        >
+          Sign In
+        </button>
+      </form>
+      
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <div className="w-full border-t" />
+        </div>
+        <div className="relative flex justify-center text-sm">
+          <span className="bg-white px-2 text-gray-500">Or continue with</span>
         </div>
       </div>
-    </template>
-    ```
-  </Tab>
-  
-  <Tab value="Svelte">
-    ```svelte title="components/Auth.svelte"
-    <script lang="ts">
-      import { authClient } from "$lib/auth-client";
       
-      let email = "";
-      let password = "";
-      let name = "";
-      let isSignUp = false;
+      <button
+        onClick={handleGitHubSignIn}
+        className="w-full border rounded-md py-2 hover:bg-gray-50 flex items-center justify-center gap-2"
+      >
+        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5c.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34c-.46-1.16-1.11-1.47-1.11-1.47c-.91-.62.07-.6.07-.6c1 .07 1.53 1.03 1.53 1.03c.87 1.52 2.34 1.07 2.91.83c.09-.65.35-1.09.63-1.34c-2.22-.25-4.55-1.11-4.55-4.92c0-1.11.38-2 1.03-2.71c-.1-.25-.45-1.29.1-2.64c0 0 .84-.27 2.75 1.02c.79-.22 1.65-.33 2.5-.33s1.71.11 2.5.33c1.91-1.29 2.75-1.02 2.75-1.02c.55 1.35.2 2.39.1 2.64c.65.71 1.03 1.6 1.03 2.71c0 3.82-2.34 4.66-4.57 4.91c.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2" />
+        </svg>
+        Sign in with GitHub
+      </button>
+    </div>
+  );
+}
+```
+
+## Step 8: Build Sign-Up Component
+
+Create a sign-up form to register new users:
+
+```tsx title="components/sign-up.tsx"
+"use client";
+
+import { useState } from "react";
+import { authClient } from "@/lib/auth-client";
+
+export function SignUp() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    const { data, error } = await authClient.signUp.email({
+      email,
+      password,
+      name,
+      callbackURL: "/dashboard",
+    });
+
+    if (error) {
+      setError(error.message);
+    }
+  };
+
+  return (
+    <div className="w-full max-w-md space-y-4">
+      <h2 className="text-2xl font-bold">Create Account</h2>
       
-      const session = authClient.useSession();
-      
-      async function handleSubmit() {
-        if (isSignUp) {
-          const { error } = await authClient.signUp.email({
-            email,
-            password,
-            name,
-          });
-          if (error) alert(error.message);
-        } else {
-          const { error } = await authClient.signIn.email({
-            email,
-            password,
-          });
-          if (error) alert(error.message);
-        }
-      }
-      
-      async function handleGitHub() {
-        await authClient.signIn.social({
-          provider: "github",
-          callbackURL: "/",
-        });
-      }
-    </script>
-    
-    <div class="p-6 max-w-md mx-auto">
-      {#if $session.isPending}
-        <div>Loading...</div>
-      {:else if $session.data}
-        <div class="space-y-4">
-          <h2 class="text-2xl font-bold">Welcome!</h2>
-          <p><strong>Name:</strong> {$session.data.user.name}</p>
-          <p><strong>Email:</strong> {$session.data.user.email}</p>
+      <form onSubmit={handleSignUp} className="space-y-4">
+        <div>
+          <label htmlFor="name" className="block text-sm font-medium">
+            Name
+          </label>
+          <input
+            id="name"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="mt-1 block w-full rounded-md border p-2"
+            required
+          />
+        </div>
+        
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium">
+            Email
+          </label>
+          <input
+            id="email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="mt-1 block w-full rounded-md border p-2"
+            required
+          />
+        </div>
+        
+        <div>
+          <label htmlFor="password" className="block text-sm font-medium">
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="mt-1 block w-full rounded-md border p-2"
+            required
+            minLength={8}
+          />
+        </div>
+        
+        {error && (
+          <div className="text-red-600 text-sm">{error}</div>
+        )}
+        
+        <button
+          type="submit"
+          className="w-full bg-blue-600 text-white rounded-md py-2 hover:bg-blue-700"
+        >
+          Create Account
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+## Step 9: Create Protected Dashboard
+
+Build a dashboard page that shows user information and allows sign-out:
+
+```tsx title="app/dashboard/page.tsx"
+"use client";
+
+import { useSession } from "@/lib/auth-client";
+import { redirect } from "next/navigation";
+
+export default function Dashboard() {
+  const { data: session, isPending } = useSession();
+
+  if (isPending) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session) {
+    redirect("/sign-in");
+  }
+
+  return (
+    <div className="min-h-screen p-8">
+      <div className="max-w-4xl mx-auto space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold">Dashboard</h1>
           <button
-            on:click={() => authClient.signOut()}
-            class="w-full bg-red-500 text-white py-2 rounded"
+            onClick={() => authClient.signOut()}
+            className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
           >
             Sign Out
           </button>
         </div>
-      {:else}
-        <h2 class="text-2xl font-bold mb-6">
-          {isSignUp ? "Sign Up" : "Sign In"}
-        </h2>
         
-        <form on:submit|preventDefault={handleSubmit} class="space-y-4">
-          {#if isSignUp}
-            <input
-              bind:value={name}
-              type="text"
-              placeholder="Name"
-              class="w-full px-4 py-2 border rounded"
-              required
-            />
-          {/if}
-          
-          <input
-            bind:value={email}
-            type="email"
-            placeholder="Email"
-            class="w-full px-4 py-2 border rounded"
-            required
-          />
-          
-          <input
-            bind:value={password}
-            type="password"
-            placeholder="Password"
-            class="w-full px-4 py-2 border rounded"
-            required
-            minlength="8"
-          />
-          
-          <button
-            type="submit"
-            class="w-full bg-blue-500 text-white py-2 rounded"
-          >
-            {isSignUp ? "Sign Up" : "Sign In"}
-          </button>
-        </form>
-        
-        <button
-          on:click={handleGitHub}
-          class="w-full mt-4 bg-gray-900 text-white py-2 rounded"
-        >
-          Sign in with GitHub
-        </button>
-        
-        <button
-          on:click={() => isSignUp = !isSignUp}
-          class="w-full mt-4 text-blue-500"
-        >
-          {isSignUp ? "Already have an account? Sign in" : "Need an account? Sign up"}
-        </button>
-      {/if}
+        <div className="bg-white shadow rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">User Information</h2>
+          <dl className="space-y-2">
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Name</dt>
+              <dd className="text-lg">{session.user.name}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">Email</dt>
+              <dd className="text-lg">{session.user.email}</dd>
+            </div>
+            <div>
+              <dt className="text-sm font-medium text-gray-500">User ID</dt>
+              <dd className="text-lg font-mono text-sm">{session.user.id}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
     </div>
-    ```
-  </Tab>
-</Tabs>
+  );
+}
+```
 
-</Step>
+## Step 10: Create Auth Pages
 
-<Step>
-### Test Your Authentication
+Create pages for sign-in and sign-up:
 
-Start your development server and test the authentication flow:
+<CodeGroup>
+```tsx title="app/sign-in/page.tsx"
+import { SignIn } from "@/components/sign-in";
+
+export default function SignInPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <SignIn />
+    </div>
+  );
+}
+```
+
+```tsx title="app/sign-up/page.tsx"
+import { SignUp } from "@/components/sign-up";
+
+export default function SignUpPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <SignUp />
+    </div>
+  );
+}
+```
+</CodeGroup>
+
+## Step 11: Test Your Authentication
+
+Start your development server:
 
 ```bash
 npm run dev
@@ -607,180 +449,103 @@ npm run dev
 
 Now you can:
 
-1. **Sign up** with email and password
-2. **Sign in** with your credentials
+1. **Sign up a new user** at `http://localhost:3000/sign-up`
+2. **Sign in with email/password** at `http://localhost:3000/sign-in`
 3. **Sign in with GitHub** (if configured)
-4. **View your session** information
-5. **Sign out** successfully
+4. **View your dashboard** at `http://localhost:3000/dashboard`
+5. **Sign out** from the dashboard
 
 <Tip>
-Open your browser's developer tools to see the session cookie and network requests to `/api/auth/*`.
+Open your browser's Network tab to see the authentication API calls in action!
 </Tip>
 
-</Step>
+## What's Happening Under the Hood?
 
+<Steps>
+  <Step title="Sign Up Flow">
+    1. User submits email, password, and name
+    2. Better Auth hashes the password using bcrypt
+    3. User record is created in the `user` table
+    4. Session is created and stored in `session` table
+    5. Session cookie is set in the browser
+    6. User is redirected to dashboard
+  </Step>
+  
+  <Step title="Sign In Flow">
+    1. User submits email and password
+    2. Better Auth looks up user by email
+    3. Password is verified against stored hash
+    4. New session is created
+    5. Session cookie is set
+    6. User is redirected to dashboard
+  </Step>
+  
+  <Step title="OAuth Flow">
+    1. User clicks "Sign in with GitHub"
+    2. Redirected to GitHub for authorization
+    3. GitHub redirects back with authorization code
+    4. Better Auth exchanges code for access token
+    5. User info is fetched from GitHub
+    6. User account is created or linked
+    7. Session is created and user is signed in
+  </Step>
+  
+  <Step title="Session Management">
+    1. `useSession()` hook checks for session cookie
+    2. Makes request to `/api/auth/get-session`
+    3. Server validates session token
+    4. Returns user data if session is valid
+    5. Session is automatically refreshed when needed
+  </Step>
 </Steps>
-
-## What You Built
-
-Congratulations! You now have a complete authentication system with:
-
-<CardGroup cols={2}>
-  <Card title="Email/Password Auth" icon="envelope">
-    Users can sign up and sign in with email and password
-  </Card>
-  
-  <Card title="OAuth Integration" icon="github">
-    GitHub OAuth for social sign-in
-  </Card>
-  
-  <Card title="Session Management" icon="clock">
-    Automatic session handling with secure cookies
-  </Card>
-  
-  <Card title="Protected UI" icon="lock">
-    Conditional rendering based on authentication state
-  </Card>
-</CardGroup>
-
-## Server-Side Authentication
-
-To protect server-side routes and API endpoints, use the auth instance:
-
-<Tabs items={["Next.js App Router", "Next.js API Route", "SvelteKit", "Express"]}>
-  <Tab value="Next.js App Router">
-    ```typescript title="app/dashboard/page.tsx"
-    import { auth } from "@/lib/auth";
-    import { headers } from "next/headers";
-    import { redirect } from "next/navigation";
-    
-    export default async function DashboardPage() {
-      const session = await auth.api.getSession({
-        headers: await headers(),
-      });
-      
-      if (!session) {
-        redirect("/");
-      }
-      
-      return (
-        <div>
-          <h1>Dashboard</h1>
-          <p>Welcome, {session.user.name}!</p>
-        </div>
-      );
-    }
-    ```
-  </Tab>
-  
-  <Tab value="Next.js API Route">
-    ```typescript title="app/api/protected/route.ts"
-    import { auth } from "@/lib/auth";
-    import { headers } from "next/headers";
-    
-    export async function GET() {
-      const session = await auth.api.getSession({
-        headers: await headers(),
-      });
-      
-      if (!session) {
-        return new Response("Unauthorized", { status: 401 });
-      }
-      
-      return Response.json({
-        message: "This is protected data",
-        user: session.user,
-      });
-    }
-    ```
-  </Tab>
-  
-  <Tab value="SvelteKit">
-    ```typescript title="src/routes/dashboard/+page.server.ts"
-    import { auth } from "$lib/auth";
-    import { redirect } from "@sveltejs/kit";
-    
-    export async function load({ request }) {
-      const session = await auth.api.getSession({
-        headers: request.headers,
-      });
-      
-      if (!session) {
-        throw redirect(302, "/");
-      }
-      
-      return {
-        user: session.user,
-      };
-    }
-    ```
-  </Tab>
-  
-  <Tab value="Express">
-    ```typescript title="server.ts"
-    import express from "express";
-    import { auth } from "./lib/auth";
-    
-    const app = express();
-    
-    app.get("/api/protected", async (req, res) => {
-      const session = await auth.api.getSession({
-        headers: req.headers as any,
-      });
-      
-      if (!session) {
-        return res.status(401).json({ error: "Unauthorized" });
-      }
-      
-      res.json({
-        message: "This is protected data",
-        user: session.user,
-      });
-    });
-    ```
-  </Tab>
-</Tabs>
 
 ## Next Steps
 
-Now that you have basic authentication working, explore more features:
+Congratulations! You now have a fully functional authentication system. Here's what you can do next:
 
 <CardGroup cols={2}>
-  <Card title="Add Two-Factor Auth" icon="shield" href="/plugins/two-factor">
-    Enhance security with TOTP-based 2FA
+  <Card title="Add Email Verification" icon="envelope-circle-check" href="/plugins/email-otp">
+    Verify user email addresses with OTP codes
   </Card>
   
-  <Card title="Enable Passkeys" icon="fingerprint" href="/plugins/passkey">
-    Implement passwordless authentication with passkeys
+  <Card title="Enable Two-Factor Auth" icon="shield-halved" href="/plugins/two-factor">
+    Add TOTP-based 2FA for enhanced security
   </Card>
   
-  <Card title="Email Verification" icon="envelope-circle-check" href="/concepts/email-verification">
-    Verify user email addresses before granting access
+  <Card title="Add Passkeys" icon="fingerprint" href="/plugins/passkey">
+    Implement modern passwordless authentication
   </Card>
   
-  <Card title="Password Reset" icon="key" href="/concepts/password-reset">
-    Let users securely reset forgotten passwords
+  <Card title="Password Reset" icon="key" href="/authentication/password-reset">
+    Allow users to reset forgotten passwords
   </Card>
   
   <Card title="Organizations" icon="building" href="/plugins/organization">
     Add multi-tenant organization support
   </Card>
   
-  <Card title="More OAuth Providers" icon="users" href="/concepts/social-providers">
-    Add Google, Apple, Discord, and 50+ more providers
+  <Card title="Session Management" icon="clock" href="/concepts/session-management">
+    Customize session duration and behavior
+  </Card>
+  
+  <Card title="Protect API Routes" icon="lock" href="/guides/protecting-routes">
+    Secure server-side API endpoints
+  </Card>
+  
+  <Card title="Deploy to Production" icon="rocket" href="/guides/deployment">
+    Deploy your app with Better Auth
   </Card>
 </CardGroup>
 
 ## Common Customizations
 
-<Accordion title="Customize password requirements">
+<Accordion title="Change session duration">
   ```typescript title="lib/auth.ts"
   export const auth = betterAuth({
-    emailAndPassword: {
-      enabled: true,
-      minPasswordLength: 12,
-      maxPasswordLength: 128,
-      requireEmailVerification: true,
+    database: db,
+    session: {
+      expiresIn: 60 * 60 * 24 * 7, // 7 days in seconds
+      updateAge: 60 * 60 * 24, // Update session every 24 hours
     },
   });
   ```
@@ -789,8 +554,9 @@ Now that you have basic authentication working, explore more features:
 <Accordion title="Add more OAuth providers">
   ```typescript title="lib/auth.ts"
   export const auth = betterAuth({
+    database: db,
     socialProviders: {
-      github: { /* ... */ },
+      github: { ... },
       google: {
         clientId: process.env.GOOGLE_CLIENT_ID!,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
@@ -804,68 +570,82 @@ Now that you have basic authentication working, explore more features:
   ```
 </Accordion>
 
-<Accordion title="Customize session duration">
+<Accordion title="Customize password requirements">
   ```typescript title="lib/auth.ts"
   export const auth = betterAuth({
-    session: {
-      expiresIn: 60 * 60 * 24 * 7, // 7 days in seconds
-      updateAge: 60 * 60 * 24, // Update session every 24 hours
+    database: db,
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 12,
+      maxPasswordLength: 128,
     },
   });
   ```
 </Accordion>
 
-<Accordion title="Handle authentication errors">
-  ```typescript
-  const { data, error } = await authClient.signIn.email({
-    email,
-    password,
+<Accordion title="Add email verification">
+  ```typescript title="lib/auth.ts"
+  export const auth = betterAuth({
+    database: db,
+    emailVerification: {
+      sendVerificationEmail: async ({ user, url }) => {
+        // Send email with verification link
+        await sendEmail({
+          to: user.email,
+          subject: "Verify your email",
+          html: `Click <a href="${url}">here</a> to verify your email.`,
+        });
+      },
+    },
   });
-  
-  if (error) {
-    // Handle specific error codes
-    if (error.status === 401) {
-      alert("Invalid email or password");
-    } else if (error.status === 429) {
-      alert("Too many attempts. Please try again later.");
-    } else {
-      alert(error.message);
-    }
-  }
   ```
 </Accordion>
 
 ## Troubleshooting
 
-<Warning>
-**Common Issues:**
+<Accordion title="GitHub OAuth not working">
+  Make sure your callback URL in GitHub settings matches exactly:
+  `http://localhost:3000/api/auth/callback/github`
+  
+  Also verify that your environment variables are loaded correctly.
+</Accordion>
 
-1. **"Session not found" errors**: Make sure cookies are enabled and your API routes are correctly mounted at `/api/auth/*`
+<Accordion title="Session not persisting">
+  Check that cookies are enabled in your browser. Better Auth uses HTTP-only cookies for session management.
+  
+  If using a custom domain, ensure `BETTER_AUTH_URL` matches your actual domain.
+</Accordion>
 
-2. **GitHub OAuth not working**: Verify your callback URL in GitHub settings matches `http://localhost:3000/api/auth/callback/github`
+<Accordion title="Database errors">
+  Make sure you've run the migration commands:
+  ```bash
+  npx auth@latest generate
+  npx auth@latest migrate
+  ```
+  
+  Check that `db.sqlite` file exists in your project root.
+</Accordion>
 
-3. **Database errors**: Ensure migrations have been run with `npx auth migrate`
-
-4. **CORS issues**: If client and server are on different domains, configure CORS in your auth instance
-</Warning>
+<Accordion title="TypeScript errors">
+  Ensure you have TypeScript 5.0+ installed and your `tsconfig.json` has:
+  ```json
+  {
+    "compilerOptions": {
+      "moduleResolution": "bundler",
+      "module": "ESNext"
+    }
+  }
+  ```
+</Accordion>
 
 <Info>
-Need help? Join our [Discord community](https://discord.gg/better-auth) or check the [troubleshooting guide](/resources/faq).
+Need help? Join our [Discord community](https://discord.gg/better-auth) for real-time support!
 </Info>
 
-## Production Checklist
+## Complete Example Repository
 
-Before deploying to production:
+Want to see the complete working code? Check out our example repositories:
 
-- [ ] Update `BETTER_AUTH_URL` to your production domain
-- [ ] Use a production database (PostgreSQL, MySQL, etc.)
-- [ ] Generate a new `BETTER_AUTH_SECRET` for production
-- [ ] Update OAuth callback URLs in provider settings
-- [ ] Enable email verification for new accounts
-- [ ] Set up proper error monitoring
-- [ ] Configure rate limiting
-- [ ] Review security settings and CORS configuration
-
-<Tip>
-See the [Deployment Guide](/guides/performance-optimization) for detailed production deployment instructions.
-</Tip>
+- [Next.js App Router Example](https://github.com/better-auth/better-auth/tree/main/demo/nextjs)
+- [SvelteKit Example](https://github.com/better-auth/better-auth/tree/main/demo/sveltekit)
+- [All Examples](https://github.com/better-auth/better-auth/tree/main/demo)

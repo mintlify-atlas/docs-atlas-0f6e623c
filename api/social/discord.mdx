@@ -1,0 +1,432 @@
+---
+title: Discord OAuth
+description: Configure Discord OAuth 2.0 provider for Better Auth
+---
+
+# Discord OAuth
+
+Discord OAuth allows users to sign in using their Discord account. It's popular for gaming communities, developer tools, and platforms that integrate with Discord.
+
+## Setup
+
+<Steps>
+### Create a Discord Application
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Click **New Application**
+3. Enter your application name and click **Create**
+
+### Configure OAuth2 Settings
+
+1. Navigate to **OAuth2** in the sidebar
+2. Add a redirect URL:
+   - Click **Add Redirect**
+   - Enter: `https://example.com/api/auth/callback/discord`
+3. Save your changes
+
+### Get Credentials
+
+1. In the **OAuth2** section, you'll find:
+   - **Client ID**: Copy this value
+   - **Client Secret**: Click **Reset Secret** to generate, then copy it
+2. Add to your environment variables:
+
+```bash
+DISCORD_CLIENT_ID=your_client_id
+DISCORD_CLIENT_SECRET=your_client_secret
+```
+</Steps>
+
+## Configuration
+
+### Basic Configuration
+
+```ts
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  socialProviders: {
+    discord: {
+      clientId: process.env.DISCORD_CLIENT_ID!,
+      clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+    },
+  },
+});
+```
+
+### Default Scopes
+
+Discord provider requests these scopes by default:
+
+- `identify` - Read user profile data
+- `email` - Access user's email address
+
+### Custom Scopes
+
+Request additional Discord permissions:
+
+```ts
+discord: {
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  scope: [
+    "guilds",              // Access user's guilds
+    "guilds.join",         // Join users to a guild
+    "connections",         // Access connected accounts
+    "guilds.members.read", // Read guild member info
+  ],
+}
+```
+
+Available scopes:
+- `identify` - Basic user info (username, ID, avatar)
+- `email` - User's email address
+- `guilds` - List of user's guilds/servers
+- `guilds.join` - Add user to a guild
+- `guilds.members.read` - Read guild member info
+- `connections` - Linked third-party accounts
+- `bot` - Add bot to servers
+- `messages.read` - Read message history
+
+See [Discord OAuth Scopes](https://discord.com/developers/docs/topics/oauth2#shared-resources-oauth2-scopes) for the complete list.
+
+## Configuration Options
+
+<ParamField path="clientId" type="string" required>
+  Your Discord Application Client ID.
+</ParamField>
+
+<ParamField path="clientSecret" type="string" required>
+  Your Discord Application Client Secret.
+</ParamField>
+
+<ParamField path="scope" type="string[]">
+  Additional OAuth scopes beyond the defaults (`identify`, `email`).
+  
+  ```ts
+  discord: {
+    clientId: process.env.DISCORD_CLIENT_ID!,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+    scope: ["guilds", "connections"],
+  }
+  ```
+</ParamField>
+
+<ParamField path="redirectURI" type="string">
+  Custom redirect URI. Must match what's configured in Discord Developer Portal.
+  
+  Default: `{baseURL}/api/auth/callback/discord`
+</ParamField>
+
+<ParamField path="prompt" type="'none' | 'consent'" default="none">
+  Control the OAuth consent screen behavior.
+  
+  ```ts
+  discord: {
+    clientId: process.env.DISCORD_CLIENT_ID!,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+    prompt: "consent", // Always show consent screen
+  }
+  ```
+</ParamField>
+
+<ParamField path="permissions" type="number">
+  Bot permissions integer when using the `bot` scope.
+  
+  ```ts
+  discord: {
+    clientId: process.env.DISCORD_CLIENT_ID!,
+    clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+    scope: ["bot"],
+    permissions: 8, // Administrator permission
+  }
+  ```
+</ParamField>
+
+## User Profile Data
+
+Discord provides this profile information:
+
+```ts
+interface DiscordProfile {
+  id: string;                    // Discord user ID (snowflake)
+  username: string;              // Username (not unique)
+  discriminator: string;         // Legacy discriminator (being phased out)
+  global_name: string | null;    // Display name
+  avatar: string | null;         // Avatar hash
+  email: string;                 // Email address
+  verified: boolean;             // Email verification status
+  bot?: boolean;                 // Whether user is a bot
+  mfa_enabled: boolean;          // 2FA enabled status
+  banner: string | null;         // Profile banner hash
+  accent_color: number | null;   // Profile accent color
+  locale: string;                // User's locale
+  flags: number;                 // User flags
+  premium_type: number;          // Nitro subscription type
+  public_flags: number;          // Public user flags
+  avatar_decoration: string | null; // Avatar decoration
+  display_name: string | null;   // Custom nickname
+  image_url: string;             // Full avatar URL
+}
+```
+
+### Avatar Handling
+
+Better Auth automatically constructs the full avatar URL:
+
+- If user has a custom avatar: `https://cdn.discordapp.com/avatars/{id}/{hash}.{format}`
+- If using default avatar: `https://cdn.discordapp.com/embed/avatars/{number}.png`
+
+The format is `gif` for animated avatars (starting with `a_`), otherwise `png`.
+
+<Note>
+  **Username Changes:** Discord is transitioning from `username#discriminator` to unique `@username` handles. Use `global_name` or `display_name` for display purposes.
+</Note>
+
+## Client-Side Implementation
+
+```tsx
+import { createAuthClient } from "better-auth/client";
+
+const authClient = createAuthClient();
+
+function DiscordSignInButton() {
+  const handleSignIn = async () => {
+    await authClient.signIn.social({
+      provider: "discord",
+      callbackURL: "/dashboard",
+    });
+  };
+
+  return (
+    <button onClick={handleSignIn}>
+      <DiscordIcon />
+      Sign in with Discord
+    </button>
+  );
+}
+```
+
+## Advanced Configuration
+
+### Custom User Mapping
+
+Map Discord profile data to your user schema:
+
+```ts
+discord: {
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  mapProfileToUser: (profile) => ({
+    // Prefer global_name over username
+    name: profile.global_name || profile.username,
+    // Store Discord-specific data
+    discordId: profile.id,
+    discriminator: profile.discriminator,
+    hasNitro: profile.premium_type > 0,
+    has2FA: profile.mfa_enabled,
+    // Store locale for internationalization
+    locale: profile.locale,
+  }),
+}
+```
+
+### Custom User Info with Guilds
+
+Fetch additional user data like guild membership:
+
+```ts
+discord: {
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  scope: ["guilds"],
+  getUserInfo: async (token) => {
+    // Fetch user profile
+    const userRes = await fetch("https://discord.com/api/users/@me", {
+      headers: { Authorization: `Bearer ${token.accessToken}` },
+    });
+    const profile = await userRes.json();
+
+    // Fetch guilds
+    const guildsRes = await fetch("https://discord.com/api/users/@me/guilds", {
+      headers: { Authorization: `Bearer ${token.accessToken}` },
+    });
+    const guilds = await guildsRes.json();
+
+    return {
+      user: {
+        id: profile.id,
+        name: profile.global_name || profile.username,
+        email: profile.email,
+        image: `https://cdn.discordapp.com/avatars/${profile.id}/${profile.avatar}.png`,
+        emailVerified: profile.verified,
+        guildIds: guilds.map((g: any) => g.id),
+      },
+      data: { ...profile, guilds },
+    };
+  },
+}
+```
+
+### Guild-Gated Access
+
+Restrict access to users who are members of a specific Discord server:
+
+```ts
+discord: {
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  scope: ["guilds"],
+  getUserInfo: async (token) => {
+    const userRes = await fetch("https://discord.com/api/users/@me", {
+      headers: { Authorization: `Bearer ${token.accessToken}` },
+    });
+    const profile = await userRes.json();
+
+    const guildsRes = await fetch("https://discord.com/api/users/@me/guilds", {
+      headers: { Authorization: `Bearer ${token.accessToken}` },
+    });
+    const guilds = await guildsRes.json();
+
+    const REQUIRED_GUILD_ID = "123456789";
+    const isMember = guilds.some((g: any) => g.id === REQUIRED_GUILD_ID);
+
+    if (!isMember) {
+      throw new Error("Must be a member of the community server");
+    }
+
+    return {
+      user: {
+        id: profile.id,
+        name: profile.global_name || profile.username,
+        email: profile.email,
+        image: profile.image_url,
+        emailVerified: profile.verified,
+      },
+      data: profile,
+    };
+  },
+}
+```
+
+## Using Discord API
+
+Access Discord API using stored OAuth tokens:
+
+```ts
+import { auth } from "./auth";
+
+// Get user's Discord access token
+const session = await auth.api.getSession({ headers: request.headers });
+if (session?.user) {
+  const accounts = await auth.api.getAccounts({ userId: session.user.id });
+  const discordAccount = accounts.find(acc => acc.providerId === "discord");
+  
+  if (discordAccount?.accessToken) {
+    // Call Discord API
+    const guilds = await fetch("https://discord.com/api/users/@me/guilds", {
+      headers: {
+        Authorization: `Bearer ${discordAccount.accessToken}`,
+      },
+    });
+    const data = await guilds.json();
+  }
+}
+```
+
+## Token Refresh
+
+Better Auth automatically refreshes expired Discord access tokens:
+
+```ts
+discord: {
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  // Custom refresh logic (optional)
+  refreshAccessToken: async (refreshToken) => {
+    const response = await fetch("https://discord.com/api/oauth2/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.DISCORD_CLIENT_ID!,
+        client_secret: process.env.DISCORD_CLIENT_SECRET!,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+    });
+    return response.json();
+  },
+}
+```
+
+## Adding Bot to Servers
+
+To add your bot to servers during OAuth:
+
+```ts
+discord: {
+  clientId: process.env.DISCORD_CLIENT_ID!,
+  clientSecret: process.env.DISCORD_CLIENT_SECRET!,
+  scope: ["bot", "applications.commands"],
+  permissions: 8, // Permission integer
+}
+```
+
+<Note>
+  Calculate bot permissions at [Discord Permissions Calculator](https://discordapi.com/permissions.html)
+</Note>
+
+## Troubleshooting
+
+### "invalid_redirect_uri" Error
+
+**Cause:** Redirect URI doesn't match Discord Application configuration.
+
+**Solution:**
+1. Check **OAuth2 > Redirects** in Discord Developer Portal
+2. Ensure exact match including protocol and path
+3. Must use HTTPS in production
+
+### Missing Email
+
+**Cause:** User hasn't verified their email with Discord.
+
+**Solution:**
+1. Check `verified` field in profile
+2. Prompt user to verify email in Discord
+3. Handle cases where email is not available
+
+### "invalid_client" Error
+
+**Cause:** Client ID or Client Secret is incorrect.
+
+**Solution:**
+1. Verify credentials in Discord Developer Portal
+2. Regenerate client secret if needed
+3. Ensure no extra whitespace in environment variables
+
+### Rate Limiting
+
+**Cause:** Too many API requests.
+
+**Solution:**
+1. Discord has strict rate limits on OAuth endpoints
+2. Better Auth handles this automatically
+3. Avoid making excessive custom API calls
+
+## Rate Limits
+
+Discord API rate limits:
+
+- **OAuth token endpoint**: 5 requests per 5 seconds
+- **User info endpoint**: 5 requests per 5 seconds
+- **Most API endpoints**: Vary by endpoint
+
+Better Auth automatically handles rate limiting and retries.
+
+## Resources
+
+- [Discord Developer Portal](https://discord.com/developers/applications)
+- [Discord OAuth2 Documentation](https://discord.com/developers/docs/topics/oauth2)
+- [Discord API Documentation](https://discord.com/developers/docs/intro)
+- [Available Scopes](https://discord.com/developers/docs/topics/oauth2#shared-resources-oauth2-scopes)

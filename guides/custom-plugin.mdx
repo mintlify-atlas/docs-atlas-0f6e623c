@@ -1,0 +1,481 @@
+---
+title: Building Custom Plugins
+description: Learn how to create powerful custom plugins for Better Auth with advanced features like endpoints, schemas, hooks, and middleware.
+---
+
+This guide walks you through building custom Better Auth plugins from basic to advanced implementations.
+
+## Understanding Plugin Architecture
+
+Better Auth plugins consist of two parts:
+- **Server Plugin**: Core authentication logic, database schemas, and endpoints
+- **Client Plugin**: Frontend APIs that interact with server endpoints
+
+## Basic Plugin Structure
+
+<Steps>
+
+<Step>
+
+### Create the Server Plugin
+
+Start by creating a basic plugin structure:
+
+```typescript title="my-plugin/index.ts"
+import type { BetterAuthPlugin } from "better-auth";
+
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+  } satisfies BetterAuthPlugin;
+};
+```
+
+The `id` field uniquely identifies your plugin within the Better Auth ecosystem.
+
+</Step>
+
+<Step>
+
+### Add Database Schema
+
+Extend existing models or create new ones:
+
+```typescript title="my-plugin/index.ts"
+import type { BetterAuthPlugin } from "better-auth";
+
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    schema: {
+      user: {
+        fields: {
+          customField: {
+            type: "string",
+            required: false,
+            unique: false,
+          },
+          subscriptionTier: {
+            type: "string",
+            required: false,
+          },
+        },
+      },
+      // Create a new table
+      customTable: {
+        fields: {
+          id: {
+            type: "string",
+            required: true,
+          },
+          userId: {
+            type: "string",
+            required: true,
+            references: {
+              model: "user",
+              field: "id",
+            },
+          },
+          data: {
+            type: "string",
+            required: true,
+          },
+          createdAt: {
+            type: "date",
+            required: true,
+          },
+        },
+      },
+    },
+  } satisfies BetterAuthPlugin;
+};
+```
+
+<Note>
+After adding schema changes, run `npx @better-auth/cli generate` to update your database.
+</Note>
+
+</Step>
+
+<Step>
+
+### Create Custom Endpoints
+
+Add endpoints for your plugin functionality:
+
+```typescript title="my-plugin/index.ts"
+import type { BetterAuthPlugin } from "better-auth";
+import { createAuthEndpoint } from "better-auth/plugins";
+import { z } from "zod";
+
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    endpoints: {
+      updateCustomField: createAuthEndpoint(
+        "/custom-field/update",
+        {
+          method: "POST",
+          body: z.object({
+            customField: z.string(),
+          }),
+        },
+        async (ctx) => {
+          const session = ctx.context.session;
+          if (!session) {
+            return ctx.json({ error: "Unauthorized" }, { status: 401 });
+          }
+
+          const updatedUser = await ctx.context.adapter.update({
+            model: "user",
+            where: [{ field: "id", value: session.user.id }],
+            update: {
+              customField: ctx.body.customField,
+            },
+          });
+
+          return ctx.json({ user: updatedUser });
+        }
+      ),
+    },
+  } satisfies BetterAuthPlugin;
+};
+```
+
+</Step>
+
+<Step>
+
+### Add Hooks for Logic Interception
+
+Use hooks to run code before or after authentication actions:
+
+```typescript title="my-plugin/index.ts"
+import { createAuthMiddleware } from "better-auth/plugins";
+import { APIError } from "better-auth/api";
+
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    hooks: {
+      before: [
+        {
+          matcher: (context) => context.path === "/sign-up/email",
+          handler: createAuthMiddleware(async (ctx) => {
+            const { email } = ctx.body;
+            
+            // Custom validation logic
+            if (email.endsWith("@blocked-domain.com")) {
+              throw new APIError("BAD_REQUEST", {
+                message: "This domain is not allowed",
+              });
+            }
+
+            return { context: ctx };
+          }),
+        },
+      ],
+      after: [
+        {
+          matcher: (context) => context.path === "/sign-up/email",
+          handler: createAuthMiddleware(async (ctx) => {
+            // Send welcome email, log analytics, etc.
+            console.log("New user signed up:", ctx.context.session?.user.email);
+            return { context: ctx };
+          }),
+        },
+      ],
+    },
+  } satisfies BetterAuthPlugin;
+};
+```
+
+</Step>
+
+<Step>
+
+### Create the Client Plugin
+
+Build the client-side plugin that consumes your server endpoints:
+
+```typescript title="my-plugin/client.ts"
+import type { BetterAuthClientPlugin } from "better-auth/client";
+import type { myPlugin } from "./index";
+
+type MyPlugin = typeof myPlugin;
+
+export const myPluginClient = () => {
+  return {
+    id: "my-plugin",
+    $InferServerPlugin: {} as ReturnType<MyPlugin>,
+    updateCustomField: async (customField: string) => {
+      return await fetch("/api/auth/custom-field/update", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ customField }),
+      });
+    },
+  } satisfies BetterAuthClientPlugin;
+};
+```
+
+</Step>
+
+</Steps>
+
+## Advanced Plugin Features
+
+### Initialize Context
+
+Use the `init` method to set up shared context:
+
+```typescript
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    init(ctx) {
+      return {
+        context: {
+          myService: {
+            doSomething: async () => {
+              // Custom service logic
+              return "done";
+            },
+          },
+        },
+      };
+    },
+    endpoints: {
+      useService: createAuthEndpoint(
+        "/use-service",
+        { method: "GET" },
+        async (ctx) => {
+          // Access the context from init
+          const result = await ctx.context.myService.doSomething();
+          return ctx.json({ result });
+        }
+      ),
+    },
+  } satisfies BetterAuthPlugin;
+};
+```
+
+### Rate Limiting
+
+Add rate limiting to your endpoints:
+
+```typescript
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    rateLimit: [
+      {
+        pathMatcher(path) {
+          return path.startsWith("/custom-field");
+        },
+        window: 60, // 60 seconds
+        max: 10, // 10 requests
+      },
+    ],
+  } satisfies BetterAuthPlugin;
+};
+```
+
+### Error Codes
+
+Define custom error codes for your plugin:
+
+```typescript
+export const MY_PLUGIN_ERROR_CODES = {
+  CUSTOM_ERROR: {
+    code: "CUSTOM_ERROR",
+    message: "Something went wrong",
+  },
+} as const;
+
+export const myPlugin = () => {
+  return {
+    id: "my-plugin",
+    $ERROR_CODES: MY_PLUGIN_ERROR_CODES,
+  } satisfies BetterAuthPlugin;
+};
+```
+
+## Real-World Example: Activity Logger Plugin
+
+Here's a complete example that logs user activities:
+
+```typescript title="activity-logger/index.ts"
+import type { BetterAuthPlugin } from "better-auth";
+import { createAuthEndpoint, createAuthMiddleware } from "better-auth/plugins";
+import { generateId } from "better-auth/utils";
+import { z } from "zod";
+
+export const activityLogger = () => {
+  return {
+    id: "activity-logger",
+    schema: {
+      activityLog: {
+        fields: {
+          id: { type: "string", required: true },
+          userId: {
+            type: "string",
+            required: true,
+            references: { model: "user", field: "id" },
+          },
+          action: { type: "string", required: true },
+          metadata: { type: "string", required: false },
+          createdAt: { type: "date", required: true },
+        },
+      },
+    },
+    hooks: {
+      after: [
+        {
+          matcher: (context) => {
+            return [
+              "/sign-in/email",
+              "/sign-up/email",
+              "/sign-out",
+            ].includes(context.path);
+          },
+          handler: createAuthMiddleware(async (ctx) => {
+            const session = ctx.context.session;
+            if (!session) return { context: ctx };
+
+            await ctx.context.adapter.create({
+              model: "activityLog",
+              data: {
+                id: generateId(),
+                userId: session.user.id,
+                action: ctx.path,
+                metadata: JSON.stringify({
+                  timestamp: new Date().toISOString(),
+                  userAgent: ctx.headers?.get("user-agent"),
+                }),
+                createdAt: new Date(),
+              },
+            });
+
+            return { context: ctx };
+          }),
+        },
+      ],
+    },
+    endpoints: {
+      getUserActivity: createAuthEndpoint(
+        "/activity/list",
+        {
+          method: "GET",
+          query: z.object({
+            limit: z.string().optional(),
+          }),
+        },
+        async (ctx) => {
+          const session = ctx.context.session;
+          if (!session) {
+            return ctx.json({ error: "Unauthorized" }, { status: 401 });
+          }
+
+          const limit = ctx.query.limit ? parseInt(ctx.query.limit) : 10;
+
+          const activities = await ctx.context.adapter.findMany({
+            model: "activityLog",
+            where: [{ field: "userId", value: session.user.id }],
+            limit,
+            sortBy: { field: "createdAt", direction: "desc" },
+          });
+
+          return ctx.json({ activities });
+        }
+      ),
+    },
+  } satisfies BetterAuthPlugin;
+};
+```
+
+```typescript title="activity-logger/client.ts"
+import type { BetterAuthClientPlugin } from "better-auth/client";
+import type { activityLogger } from "./index";
+
+type ActivityLogger = typeof activityLogger;
+
+export const activityLoggerClient = () => {
+  return {
+    id: "activity-logger",
+    $InferServerPlugin: {} as ReturnType<ActivityLogger>,
+    getUserActivity: async (limit?: number) => {
+      const params = new URLSearchParams();
+      if (limit) params.set("limit", limit.toString());
+      
+      const response = await fetch(`/api/auth/activity/list?${params}`);
+      return response.json();
+    },
+  } satisfies BetterAuthClientPlugin;
+};
+```
+
+## Plugin Registration
+
+### Server Setup
+
+```typescript title="auth.ts"
+import { betterAuth } from "better-auth";
+import { myPlugin } from "./my-plugin";
+
+export const auth = betterAuth({
+  database: {
+    // Your database config
+  },
+  plugins: [
+    myPlugin(),
+  ],
+});
+```
+
+### Client Setup
+
+```typescript title="auth-client.ts"
+import { createAuthClient } from "better-auth/client";
+import { myPluginClient } from "./my-plugin/client";
+
+export const authClient = createAuthClient({
+  plugins: [
+    myPluginClient(),
+  ],
+});
+```
+
+## Testing Your Plugin
+
+See the [Testing Guide](/guides/testing) for comprehensive testing strategies.
+
+## Best Practices
+
+<Note>
+**Key Guidelines:**
+
+1. **Unique IDs**: Use descriptive, unique plugin IDs
+2. **Type Safety**: Leverage TypeScript for type inference
+3. **Error Handling**: Always handle errors gracefully
+4. **Documentation**: Document your plugin options and usage
+5. **Validation**: Use Zod schemas for request validation
+6. **Rate Limiting**: Add rate limits to prevent abuse
+7. **Hooks**: Use hooks sparingly and efficiently
+</Note>
+
+## Publishing Your Plugin
+
+Once your plugin is ready:
+
+1. Publish to npm as a standalone package
+2. Share on the [Better Auth Discord](https://discord.gg/better-auth)
+3. Submit a PR to add it to [Community Plugins](/plugins/community-plugins)
+
+## Next Steps
+
+- Explore [existing plugins](https://github.com/better-auth/better-auth/tree/main/packages/better-auth/src/plugins) for inspiration
+- Read the [Plugin Concepts](/concepts/plugins) documentation
+- Check out [Testing Guide](/guides/testing) for plugin testing strategies

@@ -1,0 +1,751 @@
+---
+title: OAuth 2.1 Provider
+description: Turn your application into an OAuth 2.1 and OpenID Connect provider
+---
+
+The OAuth Provider plugin transforms your Better Auth application into a fully compliant OAuth 2.1 authorization server and OpenID Connect provider. Allow third-party applications to authenticate users and access protected resources on their behalf.
+
+## Features
+
+- **OAuth 2.1 Compliance**: Latest OAuth security standards
+- **OpenID Connect**: Full OIDC implementation with ID tokens
+- **Multiple Grant Types**: Authorization code, client credentials, refresh token
+- **PKCE Required**: Proof Key for Code Exchange for security
+- **Dynamic Client Registration**: RFC 7591 compliant
+- **Token Management**: Access tokens, refresh tokens, ID tokens
+- **Scopes & Claims**: Customizable permissions and user data
+- **Introspection & Revocation**: RFC 7662 and RFC 7009 compliant
+- **RP-Initiated Logout**: OpenID Connect logout support
+- **Machine-to-Machine**: Client credentials flow for service authentication
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Install the OAuth Provider package
+    
+    ```bash
+    npm install @better-auth/oauth-provider
+    ```
+  </Step>
+
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { oauthProvider } from "@better-auth/oauth-provider"
+
+    export const auth = betterAuth({
+      plugins: [
+        oauthProvider({
+          // Configure supported scopes
+          scopes: ["openid", "profile", "email", "offline_access"],
+          
+          // Token expiration (in seconds)
+          accessTokenExpiresIn: 3600, // 1 hour
+          refreshTokenExpiresIn: 2592000, // 30 days
+          
+          // Enable features
+          allowDynamicClientRegistration: true,
+          allowUnauthenticatedClientRegistration: false,
+          
+          // Grant types
+          grantTypes: ["authorization_code", "client_credentials", "refresh_token"]
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    ```bash
+    npx auth migrate
+    ```
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { oauthProviderClient } from "@better-auth/oauth-provider/client"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        oauthProviderClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Client Registration
+
+### Create OAuth Client
+
+Register a new OAuth client application:
+
+```ts
+const client = await auth.api.createOAuthClient({
+  clientName: "My Application",
+  redirectUris: ["https://myapp.com/callback"],
+  grantTypes: ["authorization_code", "refresh_token"],
+  scope: "openid profile email",
+  tokenEndpointAuthMethod: "client_secret_post",
+  type: "web" // "web" | "native" | "user-agent-based"
+})
+
+console.log("Client ID:", client.clientId)
+console.log("Client Secret:", client.clientSecret)
+```
+
+<Warning>
+  Store the client secret securely. It will only be shown once during creation.
+</Warning>
+
+### Client Types
+
+**Web Application** (`web`)
+- Confidential client with client secret
+- Server-side token exchange
+- Supports all grant types
+
+**Native Application** (`native`)
+- Public client without secret
+- Mobile or desktop apps
+- PKCE required
+
+**Single-Page Application** (`user-agent-based`)
+- Public client without secret
+- Browser-based apps
+- PKCE required
+
+### Dynamic Client Registration
+
+Allow clients to self-register via RFC 7591:
+
+```ts
+oauthProvider({
+  allowDynamicClientRegistration: true,
+  allowUnauthenticatedClientRegistration: true, // Allow public registration
+  clientRegistrationAllowedScopes: ["openid", "profile", "email"],
+  clientRegistrationDefaultScopes: ["openid", "profile"]
+})
+```
+
+Clients can register via the registration endpoint:
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "client_name": "My App",
+    "redirect_uris": ["https://myapp.com/callback"],
+    "grant_types": ["authorization_code"],
+    "token_endpoint_auth_method": "client_secret_post"
+  }'
+```
+
+### Manage Clients
+
+**List Clients**
+
+```ts
+const clients = await auth.api.getOAuthClients()
+```
+
+**Update Client**
+
+```ts
+await auth.api.updateOAuthClient({
+  clientId: "client_123",
+  clientName: "Updated Name",
+  redirectUris: ["https://myapp.com/callback", "https://myapp.com/callback2"]
+})
+```
+
+**Rotate Secret**
+
+```ts
+const { clientSecret } = await auth.api.rotateClientSecret({
+  clientId: "client_123"
+})
+```
+
+**Delete Client**
+
+```ts
+await auth.api.deleteOAuthClient({
+  clientId: "client_123"
+})
+```
+
+## Authorization Flow
+
+### Authorization Code Flow
+
+The standard OAuth 2.1 flow for web and mobile applications.
+
+**Step 1: Authorization Request**
+
+Redirect user to authorization endpoint:
+
+```
+GET /api/auth/oauth2/authorize?
+  response_type=code
+  &client_id=client_123
+  &redirect_uri=https://myapp.com/callback
+  &scope=openid profile email
+  &state=random_state_value
+  &code_challenge=BASE64URL(SHA256(code_verifier))
+  &code_challenge_method=S256
+  &nonce=random_nonce_value
+```
+
+<Info>
+  PKCE (code_challenge) is required for all clients in OAuth 2.1.
+</Info>
+
+**Step 2: User Consent**
+
+Better Auth displays a consent screen showing requested scopes. Users can approve or deny access.
+
+**Step 3: Authorization Code**
+
+User is redirected back with authorization code:
+
+```
+https://myapp.com/callback?
+  code=AUTH_CODE_HERE
+  &state=random_state_value
+```
+
+**Step 4: Token Exchange**
+
+Exchange authorization code for tokens:
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=authorization_code" \
+  -d "code=AUTH_CODE_HERE" \
+  -d "redirect_uri=https://myapp.com/callback" \
+  -d "client_id=client_123" \
+  -d "client_secret=CLIENT_SECRET" \
+  -d "code_verifier=ORIGINAL_CODE_VERIFIER"
+```
+
+Response:
+
+```json
+{
+  "access_token": "eyJhbGc...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "refresh_token_here",
+  "id_token": "eyJhbGc...",
+  "scope": "openid profile email"
+}
+```
+
+### Client Credentials Flow
+
+For machine-to-machine authentication:
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=client_123" \
+  -d "client_secret=CLIENT_SECRET" \
+  -d "scope=api:read api:write"
+```
+
+Response:
+
+```json
+{
+  "access_token": "eyJhbGc...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "scope": "api:read api:write"
+}
+```
+
+### Refresh Token Flow
+
+Renew access tokens without user interaction:
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=refresh_token" \
+  -d "refresh_token=REFRESH_TOKEN_HERE" \
+  -d "client_id=client_123" \
+  -d "client_secret=CLIENT_SECRET"
+```
+
+## Scopes and Claims
+
+### Configure Scopes
+
+Define available scopes:
+
+```ts
+oauthProvider({
+  scopes: [
+    "openid",      // Required for OIDC
+    "profile",     // User profile info
+    "email",       // Email address
+    "offline_access", // Refresh tokens
+    "api:read",    // Custom scope
+    "api:write",   // Custom scope
+    "admin"        // Custom scope
+  ]
+})
+```
+
+### Standard Claims
+
+OpenID Connect standard claims:
+
+- `sub`: User ID
+- `name`: Full name
+- `given_name`: First name
+- `family_name`: Last name
+- `email`: Email address
+- `email_verified`: Email verification status
+- `picture`: Profile image URL
+
+### Custom Claims
+
+Add custom claims to tokens:
+
+```ts
+oauthProvider({
+  customClaims: async ({ user, client, scope }) => {
+    const claims: Record<string, any> = {}
+    
+    // Add organization info
+    if (scope.includes("organization")) {
+      const orgs = await getUserOrganizations(user.id)
+      claims.organizations = orgs.map(o => o.id)
+    }
+    
+    // Add role info
+    if (scope.includes("role")) {
+      claims.role = await getUserRole(user.id)
+    }
+    
+    // Add custom user metadata
+    claims.subscription = user.subscription
+    claims.plan = user.plan
+    
+    return claims
+  }
+})
+```
+
+## Token Management
+
+### Access Tokens
+
+Configure access token generation:
+
+```ts
+oauthProvider({
+  // JWT access tokens (requires jwt plugin)
+  disableJwtPlugin: false,
+  accessTokenExpiresIn: 3600, // 1 hour
+  
+  // Opaque tokens (no jwt plugin)
+  disableJwtPlugin: true,
+  storeTokens: "hashed" // "hashed" | "plain" | "encrypted"
+})
+```
+
+### JWT Access Tokens
+
+Requires the JWT plugin:
+
+```ts
+import { jwt } from "better-auth/plugins"
+
+betterAuth({
+  plugins: [
+    jwt({
+      issuer: "https://your-app.com",
+      expiresIn: 3600
+    }),
+    oauthProvider({
+      disableJwtPlugin: false
+    })
+  ]
+})
+```
+
+### Resource-Specific Tokens
+
+Request JWT tokens for specific audiences:
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/token \
+  -d "grant_type=authorization_code" \
+  -d "code=AUTH_CODE" \
+  -d "resource=https://api.example.com"
+```
+
+The `resource` parameter sets the `aud` claim in the JWT.
+
+## Token Introspection
+
+Verify and inspect tokens (RFC 7662):
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/introspect \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "token=ACCESS_TOKEN_HERE" \
+  -d "client_id=client_123" \
+  -d "client_secret=CLIENT_SECRET"
+```
+
+Response:
+
+```json
+{
+  "active": true,
+  "scope": "openid profile email",
+  "client_id": "client_123",
+  "username": "user@example.com",
+  "token_type": "Bearer",
+  "exp": 1677649200,
+  "iat": 1677645600,
+  "sub": "user_123",
+  "aud": "https://api.example.com"
+}
+```
+
+## Token Revocation
+
+Revoke access or refresh tokens (RFC 7009):
+
+```bash
+curl -X POST https://your-app.com/api/auth/oauth2/revoke \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "token=TOKEN_TO_REVOKE" \
+  -d "token_type_hint=access_token" \
+  -d "client_id=client_123" \
+  -d "client_secret=CLIENT_SECRET"
+```
+
+## UserInfo Endpoint
+
+Retrieve user information with an access token:
+
+```bash
+curl https://your-app.com/api/auth/oauth2/userinfo \
+  -H "Authorization: Bearer ACCESS_TOKEN"
+```
+
+Response:
+
+```json
+{
+  "sub": "user_123",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "email_verified": true,
+  "picture": "https://example.com/avatar.jpg"
+}
+```
+
+## OpenID Connect Logout
+
+RP-initiated logout (End Session Endpoint):
+
+```
+GET /api/auth/oauth2/end-session?
+  id_token_hint=ID_TOKEN
+  &post_logout_redirect_uri=https://myapp.com/logged-out
+  &state=random_state
+```
+
+The user is logged out and redirected to the specified URI.
+
+## Discovery Endpoints
+
+### OAuth Authorization Server Metadata
+
+```
+GET /.well-known/oauth-authorization-server
+```
+
+Returns server capabilities and endpoint URLs per RFC 8414.
+
+### OpenID Configuration
+
+```
+GET /.well-known/openid-configuration
+```
+
+Returns OpenID Connect discovery document per OIDC Discovery 1.0.
+
+## Consent Management
+
+### Custom Consent Screen
+
+Render your own consent UI:
+
+```tsx
+import { authClient } from "@/lib/auth-client"
+import { useSearchParams } from "next/navigation"
+
+export default function ConsentPage() {
+  const searchParams = useSearchParams()
+  const [scopes, setScopes] = useState<string[]>([])
+  
+  // Extract OAuth parameters from URL
+  const oauthQuery = searchParams.toString()
+  
+  const handleConsent = async (accept: boolean) => {
+    const { data } = await authClient.oauthProvider.consent({
+      accept,
+      scope: scopes.join(" "),
+      oauth_query: oauthQuery
+    })
+    
+    // Redirect to callback
+    window.location.href = data.redirectUri
+  }
+  
+  return (
+    <div>
+      <h1>Authorization Request</h1>
+      <p>App requesting access to:</p>
+      <ul>
+        {scopes.map(scope => <li key={scope}>{scope}</li>)}
+      </ul>
+      <button onClick={() => handleConsent(true)}>Allow</button>
+      <button onClick={() => handleConsent(false)}>Deny</button>
+    </div>
+  )
+}
+```
+
+### Skip Consent
+
+Use `prompt=none` to skip consent for previously approved apps:
+
+```
+GET /api/auth/oauth2/authorize?
+  response_type=code
+  &client_id=client_123
+  &redirect_uri=https://myapp.com/callback
+  &scope=openid profile
+  &prompt=none
+```
+
+### Manage Consents
+
+**List User Consents**
+
+```ts
+const consents = await auth.api.getOAuthConsents()
+```
+
+**Revoke Consent**
+
+```ts
+await auth.api.deleteOAuthConsent({
+  consentId: "consent_123"
+})
+```
+
+## Security
+
+### Token Storage
+
+Configure secure token storage:
+
+```ts
+oauthProvider({
+  // Hash tokens in database (recommended)
+  storeTokens: "hashed",
+  
+  // Store client secrets securely
+  storeClientSecret: "hashed",
+  
+  // Custom storage
+  storeTokens: {
+    hash: async (token) => {
+      return await bcrypt.hash(token, 10)
+    }
+  }
+})
+```
+
+### Rate Limiting
+
+Protect endpoints with rate limits:
+
+```ts
+oauthProvider({
+  rateLimit: {
+    token: { window: 60, max: 20 },        // 20 req/min
+    authorize: { window: 60, max: 30 },    // 30 req/min
+    introspect: { window: 60, max: 100 },  // 100 req/min
+    revoke: { window: 60, max: 30 },       // 30 req/min
+    register: { window: 60, max: 5 },      // 5 req/min
+    userinfo: { window: 60, max: 60 }      // 60 req/min
+  }
+})
+```
+
+### PKCE Enforcement
+
+PKCE is required by default in OAuth 2.1. Optionally make it optional for confidential clients:
+
+```ts
+oauthProvider({
+  pkceOptional: true // Not recommended
+})
+```
+
+## Database Schema
+
+The OAuth Provider plugin creates these tables:
+
+### OAuth Client
+
+```sql
+CREATE TABLE oauth_client (
+  id TEXT PRIMARY KEY,
+  client_id TEXT NOT NULL UNIQUE,
+  client_secret TEXT NOT NULL,
+  client_name TEXT,
+  redirect_uris TEXT NOT NULL, -- JSON array
+  grant_types TEXT NOT NULL,   -- JSON array
+  scope TEXT,
+  token_endpoint_auth_method TEXT,
+  user_id TEXT,
+  public BOOLEAN,
+  type TEXT,
+  disabled BOOLEAN,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+### OAuth Token
+
+```sql
+CREATE TABLE oauth_token (
+  id TEXT PRIMARY KEY,
+  access_token TEXT NOT NULL UNIQUE,
+  refresh_token TEXT UNIQUE,
+  client_id TEXT NOT NULL,
+  user_id TEXT,
+  scope TEXT,
+  expires_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+### OAuth Consent
+
+```sql
+CREATE TABLE oauth_consent (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, client_id)
+);
+```
+
+## Client Libraries
+
+Integrate with standard OAuth clients:
+
+### JavaScript/TypeScript
+
+```bash
+npm install openid-client
+```
+
+```ts
+import { Issuer, generators } from "openid-client"
+
+const issuer = await Issuer.discover("https://your-app.com")
+
+const client = new issuer.Client({
+  client_id: "client_123",
+  client_secret: "CLIENT_SECRET",
+  redirect_uris: ["https://myapp.com/callback"],
+  response_types: ["code"]
+})
+
+const code_verifier = generators.codeVerifier()
+const code_challenge = generators.codeChallenge(code_verifier)
+
+const authUrl = client.authorizationUrl({
+  scope: "openid profile email",
+  code_challenge,
+  code_challenge_method: "S256"
+})
+```
+
+### Python
+
+```bash
+pip install authlib
+```
+
+```python
+from authlib.integrations.requests_client import OAuth2Session
+
+client = OAuth2Session(
+    client_id="client_123",
+    client_secret="CLIENT_SECRET",
+    redirect_uri="https://myapp.com/callback"
+)
+
+auth_url, state = client.create_authorization_url(
+    "https://your-app.com/api/auth/oauth2/authorize"
+)
+```
+
+## Testing
+
+Test OAuth flows locally:
+
+```ts
+import { auth } from "@/lib/auth"
+
+// Create test client
+const client = await auth.api.createOAuthClient({
+  clientName: "Test Client",
+  redirectUris: ["http://localhost:3001/callback"],
+  grantTypes: ["authorization_code"],
+  scope: "openid profile email"
+})
+
+// Test authorization
+const authUrl = new URL("http://localhost:3000/api/auth/oauth2/authorize")
+authUrl.searchParams.set("response_type", "code")
+authUrl.searchParams.set("client_id", client.clientId)
+authUrl.searchParams.set("redirect_uri", "http://localhost:3001/callback")
+authUrl.searchParams.set("scope", "openid profile")
+
+console.log("Visit:", authUrl.toString())
+```
+
+## API Reference
+
+For complete type definitions and all available options, see:
+- [OAuth Provider](https://github.com/better-auth/better-auth/blob/main/packages/oauth-provider/src/oauth.ts)
+- [OAuth Types](https://github.com/better-auth/better-auth/blob/main/packages/oauth-provider/src/types/oauth.ts)
+- [Metadata](https://github.com/better-auth/better-auth/blob/main/packages/oauth-provider/src/metadata.ts)

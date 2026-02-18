@@ -1,0 +1,540 @@
+---
+title: Single Sign-On (SSO)
+description: Enterprise SSO with SAML 2.0 and OIDC support for seamless authentication
+---
+
+The SSO plugin enables enterprise single sign-on with support for both SAML 2.0 and OpenID Connect (OIDC) protocols. Allow your users to authenticate using their existing identity provider like Okta, Azure AD, Google Workspace, or Auth0.
+
+## Features
+
+- **SAML 2.0 Support**: Full implementation with SP and IdP-initiated flows
+- **OIDC/OAuth2**: Standards-compliant OpenID Connect integration
+- **Multi-Provider**: Support multiple SSO providers per organization
+- **Domain Verification**: Optional domain ownership verification
+- **Organization Linking**: Automatic user provisioning to organizations
+- **Single Logout**: SAML SLO support for coordinated logout
+- **Security**: Comprehensive validation with timestamp, algorithm, and signature checks
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Install the SSO package
+    
+    ```bash
+    npm install @better-auth/sso
+    ```
+  </Step>
+
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { sso } from "@better-auth/sso"
+
+    export const auth = betterAuth({
+      plugins: [
+        sso({
+          // Optional: Enable domain verification
+          domainVerification: {
+            enabled: true,
+            tokenPrefix: "better-auth-token"
+          },
+          // Optional: Configure organization provisioning
+          organizationProvisioning: {
+            defaultRole: "member"
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    ```bash
+    npx auth migrate
+    ```
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { ssoClient } from "@better-auth/sso/client"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        ssoClient({
+          domainVerification: {
+            enabled: true
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## SAML Configuration
+
+### Register a SAML Provider
+
+Register a SAML provider with your identity provider's metadata:
+
+```ts
+import { auth } from "@/lib/auth"
+
+const provider = await auth.api.registerSSOProvider({
+  providerId: "okta-saml",
+  domain: "example.com",
+  organizationId: "org_123",
+  samlConfig: {
+    issuer: "http://www.okta.com/exk1234567890",
+    entryPoint: "https://dev-123456.okta.com/app/dev-123456_app_1/exk1234567890/sso/saml",
+    cert: "-----BEGIN CERTIFICATE-----\nMIID...\n-----END CERTIFICATE-----",
+    callbackUrl: "https://your-app.com/api/auth/sso/saml2/callback",
+    spMetadata: {
+      entityID: "https://your-app.com",
+      privateKey: "-----BEGIN PRIVATE KEY-----\n...",
+      privateKeyPass: "optional-password"
+    },
+    wantAssertionsSigned: true,
+    authnRequestsSigned: true
+  }
+})
+```
+
+### SAML Security Options
+
+Configure security settings for SAML authentication:
+
+```ts
+sso({
+  saml: {
+    // Enable AuthnRequest ID validation
+    enableInResponseToValidation: true,
+    
+    // Allow IdP-initiated SSO
+    allowIdpInitiated: true,
+    
+    // Request lifetime (5 minutes)
+    requestTTL: 300000,
+    
+    // Clock skew tolerance (5 minutes)
+    clockSkew: 300000,
+    
+    // Require timestamps in assertions
+    requireTimestamps: true,
+    
+    // Algorithm validation
+    algorithms: {
+      onDeprecated: "reject" // "warn" | "reject" | "allow"
+    },
+    
+    // Response size limits
+    maxResponseSize: 262144, // 256KB
+    maxMetadataSize: 102400, // 100KB
+    
+    // Single Logout configuration
+    enableSingleLogout: true,
+    logoutRequestTTL: 300000,
+    wantLogoutRequestSigned: false,
+    wantLogoutResponseSigned: false
+  }
+})
+```
+
+### SP Metadata Endpoint
+
+Better Auth automatically provides a Service Provider metadata endpoint for IdP configuration:
+
+```
+GET /api/auth/sso/saml2/sp/metadata
+```
+
+Provide this URL to your identity provider during SAML app setup.
+
+### SAML Sign-In Flow
+
+Initiate SAML authentication:
+
+```ts
+// Client-side sign-in
+await authClient.signIn.sso({
+  providerId: "okta-saml",
+  callbackURL: "/dashboard"
+})
+```
+
+## OIDC Configuration
+
+### Register an OIDC Provider
+
+Register an OpenID Connect provider:
+
+```ts
+const provider = await auth.api.registerSSOProvider({
+  providerId: "azure-oidc",
+  domain: "example.com",
+  organizationId: "org_123",
+  oidcConfig: {
+    issuer: "https://login.microsoftonline.com/{tenant-id}/v2.0",
+    clientId: "your-client-id",
+    clientSecret: "your-client-secret",
+    discoveryEndpoint: "https://login.microsoftonline.com/{tenant-id}/v2.0/.well-known/openid-configuration",
+    pkce: true,
+    scopes: ["openid", "profile", "email"],
+    mapping: {
+      id: "sub",
+      email: "email",
+      emailVerified: "email_verified",
+      name: "name",
+      image: "picture"
+    }
+  }
+})
+```
+
+### OIDC Discovery
+
+Better Auth supports automatic OIDC discovery. The plugin will fetch the OpenID configuration from the discovery endpoint:
+
+```ts
+import { discoverOIDCConfig } from "@better-auth/sso"
+
+const config = await discoverOIDCConfig({
+  discoveryUrl: "https://accounts.google.com/.well-known/openid-configuration",
+  clientId: "your-client-id",
+  clientSecret: "your-client-secret"
+})
+```
+
+### Shared Redirect URI
+
+Use a single redirect URI for all OIDC providers:
+
+```ts
+sso({
+  redirectURI: "/api/auth/sso/oidc/callback"
+})
+```
+
+This allows you to configure a single callback URL in each IdP instead of provider-specific URLs.
+
+## Domain Verification
+
+Domain verification ensures only authorized users can configure SSO for a domain.
+
+### Request Verification
+
+```ts
+const { token } = await auth.api.requestDomainVerification({
+  domain: "example.com"
+})
+
+// Add TXT record to DNS:
+// _better-auth-token.example.com TXT "<token>"
+```
+
+### Verify Domain
+
+```ts
+const result = await auth.api.verifyDomain({
+  domain: "example.com"
+})
+
+if (result.verified) {
+  console.log("Domain verified!")
+}
+```
+
+### Custom Token Prefix
+
+Customize the DNS record prefix:
+
+```ts
+sso({
+  domainVerification: {
+    enabled: true,
+    tokenPrefix: "my-company" // DNS: _my-company.example.com
+  }
+})
+```
+
+## Organization Provisioning
+
+Automatically assign users to organizations based on their email domain:
+
+```ts
+sso({
+  organizationProvisioning: {
+    // Default role for auto-provisioned users
+    defaultRole: "member",
+    
+    // Dynamic role assignment
+    getRole: async ({ user, userInfo, token, provider }) => {
+      // Check custom claims or attributes
+      if (userInfo.groups?.includes("admins")) {
+        return "admin"
+      }
+      return "member"
+    }
+  }
+})
+```
+
+## User Provisioning Hook
+
+Customize user data during SSO authentication:
+
+```ts
+sso({
+  provisionUser: async ({ user, userInfo, token, provider }) => {
+    // Update user profile with IdP attributes
+    await db.user.update({
+      where: { id: user.id },
+      data: {
+        department: userInfo.department,
+        jobTitle: userInfo.jobTitle,
+        employeeId: userInfo.employeeId
+      }
+    })
+  }
+})
+```
+
+## Managing SSO Providers
+
+### List Providers
+
+```ts
+const providers = await auth.api.listSSOProviders({
+  organizationId: "org_123"
+})
+```
+
+### Get Provider
+
+```ts
+const provider = await auth.api.getSSOProvider({
+  providerId: "okta-saml"
+})
+```
+
+### Update Provider
+
+```ts
+await auth.api.updateSSOProvider({
+  providerId: "okta-saml",
+  samlConfig: {
+    cert: "-----BEGIN CERTIFICATE-----\nNEW_CERT...\n-----END CERTIFICATE-----"
+  }
+})
+```
+
+### Delete Provider
+
+```ts
+await auth.api.deleteSSOProvider({
+  providerId: "okta-saml"
+})
+```
+
+## Field Mapping
+
+### SAML Attribute Mapping
+
+Map SAML assertion attributes to user fields:
+
+```ts
+samlConfig: {
+  mapping: {
+    id: "NameID",
+    email: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress",
+    emailVerified: "email_verified",
+    name: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name",
+    firstName: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/givenname",
+    lastName: "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/surname",
+    extraFields: {
+      department: "department",
+      employeeId: "employeeId"
+    }
+  }
+}
+```
+
+### OIDC Claims Mapping
+
+Map OIDC claims to user fields:
+
+```ts
+oidc Config: {
+  mapping: {
+    id: "sub",
+    email: "email",
+    emailVerified: "email_verified",
+    name: "name",
+    image: "picture",
+    extraFields: {
+      locale: "locale",
+      timezone: "zoneinfo"
+    }
+  }
+}
+```
+
+## Security Best Practices
+
+<Warning>
+  Never trust email verification status from SSO providers without domain verification enabled. Enable `domainVerification` for production deployments.
+</Warning>
+
+### Provider Limits
+
+Limit the number of SSO providers per user:
+
+```ts
+sso({
+  providersLimit: 5,
+  // Or dynamic limits based on plan
+  providersLimit: async (user) => {
+    const plan = await getUserPlan(user.id)
+    return plan === "enterprise" ? 10 : 1
+  }
+})
+```
+
+### Disable Implicit Sign-Up
+
+Require explicit sign-up for new SSO users:
+
+```ts
+sso({
+  disableImplicitSignUp: true
+})
+
+// Require requestSignUp: true for new users
+await authClient.signIn.sso({
+  providerId: "okta-saml",
+  requestSignUp: true
+})
+```
+
+## Client-Side Usage
+
+### List Available Providers
+
+```tsx
+import { authClient } from "@/lib/auth-client"
+
+function SSOProviders() {
+  const [providers, setProviders] = useState([])
+
+  useEffect(() => {
+    authClient.sso.listProviders().then(({ data }) => {
+      setProviders(data)
+    })
+  }, [])
+
+  return (
+    <div>
+      {providers.map(provider => (
+        <button
+          key={provider.providerId}
+          onClick={() => authClient.signIn.sso({ 
+            providerId: provider.providerId 
+          })}
+        >
+          Sign in with {provider.domain}
+        </button>
+      ))}
+    </div>
+  )
+}
+```
+
+### Get Provider by Domain
+
+```ts
+const { data } = await authClient.sso.getProvider({
+  domain: "example.com"
+})
+
+if (data) {
+  await authClient.signIn.sso({
+    providerId: data.providerId
+  })
+}
+```
+
+## Database Schema
+
+The SSO plugin adds the `ssoProvider` table:
+
+```sql
+CREATE TABLE sso_provider (
+  id TEXT PRIMARY KEY,
+  issuer TEXT NOT NULL,
+  provider_id TEXT NOT NULL UNIQUE,
+  domain TEXT NOT NULL,
+  oidc_config TEXT,
+  saml_config TEXT,
+  user_id TEXT NOT NULL,
+  organization_id TEXT,
+  domain_verified BOOLEAN, -- if domainVerification is enabled
+  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+## Testing
+
+### Default SSO Providers
+
+Configure test providers that take precedence over database providers:
+
+```ts
+sso({
+  defaultSSO: [
+    {
+      domain: "test.com",
+      providerId: "test-saml",
+      samlConfig: {
+        issuer: "http://localhost:8080",
+        entryPoint: "http://localhost:8080/saml/sso",
+        cert: process.env.TEST_SAML_CERT!,
+        callbackUrl: "http://localhost:3000/api/auth/sso/saml2/callback",
+        spMetadata: {
+          entityID: "http://localhost:3000"
+        }
+      }
+    }
+  ]
+})
+```
+
+## Error Handling
+
+The SSO plugin provides detailed error codes:
+
+```ts
+import { DiscoveryError } from "@better-auth/sso"
+
+try {
+  await authClient.signIn.sso({ providerId: "invalid" })
+} catch (error) {
+  if (error instanceof DiscoveryError) {
+    console.error("OIDC discovery failed:", error.code)
+  }
+}
+```
+
+## API Reference
+
+For complete type definitions and all available options, see:
+- [SSO Types](https://github.com/better-auth/better-auth/blob/main/packages/sso/src/types.ts)
+- [SAML Configuration](https://github.com/better-auth/better-auth/blob/main/packages/sso/src/saml/index.ts)
+- [OIDC Configuration](https://github.com/better-auth/better-auth/blob/main/packages/sso/src/oidc/index.ts)

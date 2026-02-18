@@ -1,0 +1,618 @@
+---
+title: Testing Better Auth
+description: Comprehensive guide to testing Better Auth implementations, plugins, and adapters with Vitest.
+---
+
+This guide covers testing strategies for Better Auth applications, from basic authentication flows to custom plugins and adapters.
+
+## Testing Setup
+
+<Steps>
+
+<Step>
+
+### Install Dependencies
+
+```bash
+npm install -D vitest @better-auth/test-utils
+```
+
+</Step>
+
+<Step>
+
+### Configure Vitest
+
+Create a `vitest.config.ts` file:
+
+```typescript title="vitest.config.ts"
+import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: "node",
+    setupFiles: ["./test/setup.ts"],
+  },
+});
+```
+
+</Step>
+
+<Step>
+
+### Create Test Setup
+
+Create a setup file for test utilities:
+
+```typescript title="test/setup.ts"
+import { beforeAll, afterAll } from "vitest";
+
+beforeAll(async () => {
+  // Global setup
+  process.env.BETTER_AUTH_SECRET = "test-secret-key-32-characters-long";
+});
+
+afterAll(async () => {
+  // Global teardown
+});
+```
+
+</Step>
+
+</Steps>
+
+## Testing Basic Authentication
+
+### Using Test Instance Helper
+
+Better Auth provides `getTestInstance` for easy testing:
+
+```typescript title="auth.test.ts"
+import { describe, it, expect } from "vitest";
+import { getTestInstance } from "better-auth/test";
+
+describe("Authentication", async () => {
+  const { client, auth } = await getTestInstance({
+    emailAndPassword: {
+      enabled: true,
+    },
+  });
+
+  it("should sign up a new user", async () => {
+    const response = await client.signUp.email({
+      email: "test@example.com",
+      password: "SecurePassword123",
+      name: "Test User",
+    });
+
+    expect(response.data).toBeDefined();
+    expect(response.data?.user.email).toBe("test@example.com");
+    expect(response.error).toBeNull();
+  });
+
+  it("should sign in an existing user", async () => {
+    const headers = new Headers();
+    
+    const response = await client.signIn.email(
+      {
+        email: "test@example.com",
+        password: "SecurePassword123",
+      },
+      {
+        onSuccess: (ctx) => {
+          // Store session cookie
+          const setCookie = ctx.response.headers.get("set-cookie");
+          if (setCookie) headers.set("cookie", setCookie);
+        },
+      }
+    );
+
+    expect(response.data).toBeDefined();
+    expect(response.data?.user.email).toBe("test@example.com");
+  });
+
+  it("should fail with invalid credentials", async () => {
+    const response = await client.signIn.email({
+      email: "test@example.com",
+      password: "WrongPassword",
+    });
+
+    expect(response.error).toBeDefined();
+    expect(response.error?.status).toBe(401);
+  });
+});
+```
+
+### Session Management Tests
+
+```typescript title="session.test.ts"
+import { describe, it, expect } from "vitest";
+import { getTestInstance } from "better-auth/test";
+
+describe("Session Management", async () => {
+  const { client, sessionSetter } = await getTestInstance();
+
+  it("should get current session", async () => {
+    const headers = new Headers();
+    
+    await client.signUp.email(
+      {
+        email: "session@example.com",
+        password: "Password123",
+        name: "Session User",
+      },
+      {
+        onSuccess: sessionSetter(headers),
+      }
+    );
+
+    const session = await client.getSession({
+      fetchOptions: {
+        headers,
+      },
+    });
+
+    expect(session?.user.email).toBe("session@example.com");
+  });
+
+  it("should sign out", async () => {
+    const headers = new Headers();
+    
+    await client.signUp.email(
+      {
+        email: "signout@example.com",
+        password: "Password123",
+        name: "Signout User",
+      },
+      {
+        onSuccess: sessionSetter(headers),
+      }
+    );
+
+    await client.signOut({
+      fetchOptions: { headers },
+    });
+
+    const session = await client.getSession({
+      fetchOptions: { headers },
+    });
+
+    expect(session).toBeNull();
+  });
+});
+```
+
+## Testing Plugins
+
+### Testing Custom Plugin Functionality
+
+```typescript title="plugin.test.ts"
+import { describe, it, expect } from "vitest";
+import { getTestInstance } from "better-auth/test";
+import { myPlugin } from "./my-plugin";
+import { myPluginClient } from "./my-plugin/client";
+
+describe("My Plugin", async () => {
+  const { client, auth, sessionSetter } = await getTestInstance(
+    {
+      plugins: [myPlugin()],
+    },
+    {
+      clientOptions: {
+        plugins: [myPluginClient()],
+      },
+    }
+  );
+
+  it("should update custom field", async () => {
+    const headers = new Headers();
+    
+    // Create user
+    await client.signUp.email(
+      {
+        email: "plugin@example.com",
+        password: "Password123",
+        name: "Plugin User",
+      },
+      {
+        onSuccess: sessionSetter(headers),
+      }
+    );
+
+    // Test plugin endpoint
+    await client.updateCustomField("custom-value");
+
+    const session = await client.getSession({
+      fetchOptions: { headers },
+    });
+
+    expect(session?.user.customField).toBe("custom-value");
+  });
+
+  it("should validate plugin hooks", async () => {
+    const response = await client.signUp.email({
+      email: "blocked@blocked-domain.com",
+      password: "Password123",
+      name: "Blocked User",
+    });
+
+    expect(response.error).toBeDefined();
+    expect(response.error?.message).toContain("not allowed");
+  });
+});
+```
+
+### Testing Plugin with Username
+
+```typescript title="username-plugin.test.ts"
+import { describe, it, expect } from "vitest";
+import { getTestInstance } from "better-auth/test";
+import { username } from "better-auth/plugins";
+import { usernameClient } from "better-auth/plugins/username/client";
+
+describe("Username Plugin", async () => {
+  const { client } = await getTestInstance(
+    {
+      plugins: [
+        username({
+          minUsernameLength: 4,
+          maxUsernameLength: 20,
+        }),
+      ],
+    },
+    {
+      clientOptions: {
+        plugins: [usernameClient()],
+      },
+    }
+  );
+
+  it("should sign up with username", async () => {
+    const response = await client.signUp.email({
+      email: "user@example.com",
+      username: "testuser",
+      password: "Password123",
+      name: "Test User",
+    });
+
+    expect(response.error).toBeNull();
+    expect(response.data?.user.username).toBe("testuser");
+  });
+
+  it("should reject short username", async () => {
+    const response = await client.signUp.email({
+      email: "short@example.com",
+      username: "usr",
+      password: "Password123",
+      name: "Short User",
+    });
+
+    expect(response.error).toBeDefined();
+    expect(response.error?.code).toBe("USERNAME_TOO_SHORT");
+  });
+
+  it("should check username availability", async () => {
+    const response = await client.isUsernameAvailable({
+      username: "newuser",
+    });
+
+    expect(response.data?.available).toBe(true);
+  });
+});
+```
+
+## Testing Database Adapters
+
+### Using Adapter Test Suite
+
+Better Auth provides comprehensive adapter testing utilities:
+
+```typescript title="adapter.test.ts"
+import { describe } from "vitest";
+import { testAdapter } from "@better-auth/test-utils";
+import { createTestSuite } from "@better-auth/test-utils";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "./db";
+
+const testSuite = createTestSuite({
+  testName: "Drizzle Adapter Tests",
+});
+
+testAdapter({
+  adapter: (options) => drizzleAdapter(db, { schema: options.schema }),
+  runMigrations: async (options) => {
+    // Run your migration logic
+    await db.migrate();
+  },
+  tests: [testSuite()],
+  additionalCleanups: async () => {
+    // Clean up test database
+    await db.delete();
+  },
+}).execute();
+```
+
+### Custom Adapter Tests
+
+```typescript title="custom-adapter.test.ts"
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type { DBAdapter } from "better-auth/adapters";
+import { myCustomAdapter } from "./my-adapter";
+
+describe("Custom Adapter", () => {
+  let adapter: DBAdapter;
+
+  beforeAll(async () => {
+    adapter = myCustomAdapter({
+      connectionString: process.env.TEST_DATABASE_URL,
+    });
+  });
+
+  afterAll(async () => {
+    // Cleanup
+  });
+
+  it("should create a user", async () => {
+    const user = await adapter.create({
+      model: "user",
+      data: {
+        id: "test-id",
+        email: "test@example.com",
+        name: "Test User",
+        emailVerified: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    expect(user).toBeDefined();
+    expect(user.email).toBe("test@example.com");
+  });
+
+  it("should find a user", async () => {
+    const user = await adapter.findOne({
+      model: "user",
+      where: [{ field: "email", value: "test@example.com" }],
+    });
+
+    expect(user).toBeDefined();
+    expect(user?.email).toBe("test@example.com");
+  });
+
+  it("should update a user", async () => {
+    const updatedUser = await adapter.update({
+      model: "user",
+      where: [{ field: "email", value: "test@example.com" }],
+      update: {
+        name: "Updated Name",
+      },
+    });
+
+    expect(updatedUser.name).toBe("Updated Name");
+  });
+
+  it("should delete a user", async () => {
+    await adapter.delete({
+      model: "user",
+      where: [{ field: "email", value: "test@example.com" }],
+    });
+
+    const user = await adapter.findOne({
+      model: "user",
+      where: [{ field: "email", value: "test@example.com" }],
+    });
+
+    expect(user).toBeNull();
+  });
+});
+```
+
+## Integration Testing
+
+### Testing with Real Database
+
+```typescript title="integration.test.ts"
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db, migrate } from "./db";
+
+describe("Integration Tests", () => {
+  let auth: ReturnType<typeof betterAuth>;
+
+  beforeAll(async () => {
+    // Set up test database
+    await migrate();
+    
+    auth = betterAuth({
+      database: drizzleAdapter(db),
+      emailAndPassword: { enabled: true },
+      secret: process.env.BETTER_AUTH_SECRET || "test-secret",
+    });
+  });
+
+  afterAll(async () => {
+    // Clean up test database
+  });
+
+  it("should handle full authentication flow", async () => {
+    // Sign up
+    const signUpRes = await auth.api.signUpEmail({
+      body: {
+        email: "integration@example.com",
+        password: "Password123",
+        name: "Integration User",
+      },
+    });
+
+    expect(signUpRes.user).toBeDefined();
+
+    // Sign in
+    const signInRes = await auth.api.signInEmail({
+      body: {
+        email: "integration@example.com",
+        password: "Password123",
+      },
+    });
+
+    expect(signInRes.token).toBeDefined();
+
+    // Get session
+    const session = await auth.api.getSession({
+      headers: new Headers({
+        authorization: `Bearer ${signInRes.token}`,
+      }),
+    });
+
+    expect(session?.user.email).toBe("integration@example.com");
+  });
+});
+```
+
+## Mocking and Test Utilities
+
+### Mocking Email Sending
+
+```typescript title="email-mock.test.ts"
+import { describe, it, expect, vi } from "vitest";
+import { getTestInstance } from "better-auth/test";
+import { magicLink } from "better-auth/plugins";
+
+describe("Magic Link with Mock Email", async () => {
+  const sendMagicLinkMock = vi.fn();
+
+  const { client } = await getTestInstance({
+    plugins: [
+      magicLink({
+        sendMagicLink: sendMagicLinkMock,
+      }),
+    ],
+  });
+
+  it("should send magic link email", async () => {
+    await client.signIn.magicLink({
+      email: "user@example.com",
+    });
+
+    expect(sendMagicLinkMock).toHaveBeenCalledOnce();
+    expect(sendMagicLinkMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "user@example.com",
+        url: expect.stringContaining("/magic-link/verify"),
+      }),
+      expect.any(Object)
+    );
+  });
+});
+```
+
+### Session Helper Utilities
+
+```typescript title="test-helpers.ts"
+import type { Headers } from "node-fetch";
+
+export const createTestHeaders = () => new Headers();
+
+export const sessionSetter = (headers: Headers) => {
+  return (ctx: any) => {
+    const setCookie = ctx.response.headers.get("set-cookie");
+    if (setCookie) {
+      headers.set("cookie", setCookie);
+    }
+  };
+};
+
+export const getSessionToken = (headers: Headers): string | null => {
+  const cookie = headers.get("cookie");
+  if (!cookie) return null;
+  
+  const match = cookie.match(/better-auth\.session_token=([^;]+)/);
+  return match ? match[1] : null;
+};
+```
+
+## Running Tests
+
+### Run All Tests
+
+```bash
+npm run test
+```
+
+### Run Specific Test File
+
+```bash
+vitest auth.test.ts
+```
+
+### Run Tests in Watch Mode
+
+```bash
+vitest --watch
+```
+
+### Run with Coverage
+
+```bash
+vitest --coverage
+```
+
+## Best Practices
+
+<Tip>
+**Testing Tips:**
+
+1. **Isolate Tests**: Each test should be independent
+2. **Clean State**: Reset database state between tests
+3. **Use Factories**: Create test data factories for consistency
+4. **Mock External Services**: Mock email, SMS, and payment services
+5. **Test Error Cases**: Don't just test happy paths
+6. **Use Type Safety**: Leverage TypeScript in tests
+7. **Parallel Execution**: Be cautious with shared state
+</Tip>
+
+## Continuous Integration
+
+Example GitHub Actions workflow:
+
+```yaml title=".github/workflows/test.yml"
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - uses: actions/checkout@v3
+      
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      
+      - run: npm install
+      
+      - run: npm run test
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test
+          BETTER_AUTH_SECRET: test-secret-key-32-characters-long
+```
+
+## Next Steps
+
+- Learn about [Custom Plugin Development](/guides/custom-plugin)
+- Explore [Deployment Strategies](/guides/deployment)
+- Check out [Better Auth Test Utils](https://github.com/better-auth/better-auth/tree/main/packages/test-utils)

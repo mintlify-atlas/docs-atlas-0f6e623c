@@ -1,0 +1,728 @@
+---
+title: Anonymous
+description: Guest authentication for users without requiring credentials.
+---
+
+The Anonymous plugin allows users to access your application as guests without providing any credentials. This is useful for apps that want to provide instant access while still tracking user sessions and data, with the option to link the anonymous account to a real account later.
+
+## Installation
+
+<Steps>
+  <Step title="Add the plugin to your auth config">
+    Import the anonymous plugin and add it to your Better Auth configuration.
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth";
+    import { anonymous } from "better-auth/plugins/anonymous";
+
+    export const auth = betterAuth({
+      plugins: [anonymous()],
+    });
+    ```
+  </Step>
+
+  <Step title="Migrate the database">
+    Run the migration to add the `isAnonymous` field to the user table.
+
+    <Tabs>
+      <Tab title="migrate">
+        ```bash
+        npx @better-auth/cli migrate
+        ```
+      </Tab>
+      <Tab title="generate">
+        ```bash
+        npx @better-auth/cli generate
+        ```
+      </Tab>
+    </Tabs>
+
+    The plugin adds this field to the user table:
+    - `isAnonymous` (boolean): Whether the user is an anonymous/guest user
+  </Step>
+
+  <Step title="Add the client plugin">
+    Add the anonymous client plugin to your auth client.
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client";
+    import { anonymousClient } from "better-auth/plugins/anonymous/client";
+
+    export const authClient = createAuthClient({
+      plugins: [anonymousClient()],
+    });
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Sign In Anonymously
+
+Create an anonymous user session instantly without requiring any user information:
+
+```ts
+import { authClient } from "./auth-client";
+
+const { data, error } = await authClient.signIn.anonymous();
+
+if (data) {
+  console.log("Anonymous user created:", data.user);
+  console.log("User ID:", data.user.id);
+  console.log("Is anonymous:", data.user.isAnonymous); // true
+}
+```
+
+### Check if User is Anonymous
+
+You can check if the current user is anonymous:
+
+```ts
+const { data: session } = await authClient.getSession();
+
+if (session?.user?.isAnonymous) {
+  console.log("User is signed in anonymously");
+} else {
+  console.log("User has a real account");
+}
+```
+
+### Link Anonymous Account
+
+When an anonymous user signs up or signs in with real credentials, Better Auth automatically links the anonymous account to the new account. This preserves any data associated with the anonymous user.
+
+```tsx
+import { authClient } from "./auth-client";
+
+// User is currently anonymous
+const { data: session } = await authClient.getSession();
+console.log(session?.user?.isAnonymous); // true
+
+// User decides to sign up
+await authClient.signUp.email({
+  email: "user@example.com",
+  password: "password123",
+  name: "John Doe",
+});
+
+// The anonymous account is automatically linked
+// All data is preserved under the new authenticated user
+```
+
+The anonymous account is automatically deleted after linking, and the user's data is transferred to the new account.
+
+### Delete Anonymous User
+
+Users can delete their anonymous account:
+
+```ts
+import { authClient } from "./auth-client";
+
+const { data, error } = await authClient.deleteAnonymousUser();
+
+if (data?.success) {
+  console.log("Anonymous account deleted");
+}
+```
+
+<Note>
+  Only anonymous users can delete their own account using this method. Regular users must use the standard account deletion flow.
+</Note>
+
+## Configuration
+
+### Basic Configuration
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { anonymous } from "better-auth/plugins/anonymous";
+
+export const auth = betterAuth({
+  plugins: [
+    anonymous({
+      // Email domain for anonymous users (optional)
+      emailDomainName: "anonymous.yourapp.com",
+    }),
+  ],
+});
+```
+
+### Advanced Configuration
+
+```ts title="auth.ts"
+anonymous({
+  // Custom email domain for anonymous users
+  emailDomainName: "guest.yourapp.com",
+  
+  // Custom email generation
+  generateRandomEmail: async () => {
+    const randomId = generateUniqueId();
+    return `guest_${randomId}@yourapp.com`;
+  },
+  
+  // Custom name generation
+  generateName: async (ctx) => {
+    return `Guest User ${Date.now()}`;
+  },
+  
+  // Disable automatic deletion of anonymous accounts after linking
+  disableDeleteAnonymousUser: true,
+  
+  // Callback when anonymous account is linked to real account
+  onLinkAccount: async ({ anonymousUser, newUser, ctx }) => {
+    console.log("Linking anonymous user:", anonymousUser.user.id);
+    console.log("To new user:", newUser.user.id);
+    
+    // Transfer data from anonymous user to new user
+    await transferUserData(anonymousUser.user.id, newUser.user.id);
+  },
+})
+```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `emailDomainName` | string | - | Custom domain for anonymous user emails |
+| `generateRandomEmail` | function | - | Custom function to generate anonymous user email |
+| `generateName` | function | - | Custom function to generate anonymous user name |
+| `disableDeleteAnonymousUser` | boolean | false | Prevent automatic deletion of anonymous users after linking |
+| `onLinkAccount` | function | - | Callback when anonymous account is linked to real account |
+
+## Anonymous User Properties
+
+Anonymous users are created with:
+
+- **Unique ID**: A permanent user ID that persists even if linked later
+- **Email**: A generated email (e.g., `temp-{id}@{domain}.com`)
+- **Name**: Default "Anonymous" or custom generated name
+- **isAnonymous**: `true` flag indicating this is a guest user
+- **emailVerified**: `false` by default
+
+```ts
+{
+  id: "user_abc123",
+  email: "temp-abc123@example.com",
+  name: "Anonymous",
+  isAnonymous: true,
+  emailVerified: false,
+  createdAt: "2024-01-01T00:00:00.000Z",
+  updatedAt: "2024-01-01T00:00:00.000Z"
+}
+```
+
+## Account Linking
+
+When an anonymous user authenticates with real credentials, Better Auth automatically:
+
+1. Creates the new user account
+2. Calls the `onLinkAccount` callback (if provided)
+3. Deletes the anonymous user account (unless `disableDeleteAnonymousUser` is true)
+4. Transfers the session to the new account
+
+This works for all authentication methods:
+- Email & Password sign-up
+- Social provider sign-in
+- Magic link authentication
+- Email OTP
+- Phone number authentication
+- Passkey registration
+
+### Data Transfer Example
+
+Use the `onLinkAccount` callback to transfer data from the anonymous user to the new account:
+
+```ts title="auth.ts"
+anonymous({
+  onLinkAccount: async ({ anonymousUser, newUser, ctx }) => {
+    // Transfer cart items
+    await db.cartItem.updateMany({
+      where: { userId: anonymousUser.user.id },
+      data: { userId: newUser.user.id },
+    });
+    
+    // Transfer preferences
+    await db.preference.updateMany({
+      where: { userId: anonymousUser.user.id },
+      data: { userId: newUser.user.id },
+    });
+    
+    // Log the account linking
+    await db.auditLog.create({
+      data: {
+        action: "ANONYMOUS_ACCOUNT_LINKED",
+        oldUserId: anonymousUser.user.id,
+        newUserId: newUser.user.id,
+        timestamp: new Date(),
+      },
+    });
+  },
+})
+```
+
+## Client Methods
+
+### Sign In Anonymously
+
+```ts
+await authClient.signIn.anonymous();
+```
+
+### Delete Anonymous User
+
+```ts
+await authClient.deleteAnonymousUser();
+```
+
+### Check if User is Anonymous
+
+```ts
+const { data: session } = await authClient.getSession();
+const isAnonymous = session?.user?.isAnonymous;
+```
+
+## Examples
+
+### Guest Checkout Flow
+
+<Tabs>
+  <Tab title="React">
+    ```tsx
+    import { useState, useEffect } from "react";
+    import { authClient } from "./auth-client";
+
+    export function GuestCheckout() {
+      const [session, setSession] = useState(null);
+      const [showSignUp, setShowSignUp] = useState(false);
+
+      useEffect(() => {
+        // Automatically create anonymous session if not authenticated
+        const initSession = async () => {
+          const { data } = await authClient.getSession();
+          
+          if (!data) {
+            // No session, create anonymous user
+            await authClient.signIn.anonymous();
+            const { data: newSession } = await authClient.getSession();
+            setSession(newSession);
+          } else {
+            setSession(data);
+          }
+        };
+
+        initSession();
+      }, []);
+
+      const handleContinueAsGuest = async () => {
+        // Cart is already linked to anonymous user
+        window.location.href = "/checkout";
+      };
+
+      const handleSignUp = async () => {
+        setShowSignUp(true);
+      };
+
+      if (session?.user?.isAnonymous) {
+        return (
+          <div>
+            <h2>Checkout Options</h2>
+            <button onClick={handleContinueAsGuest}>
+              Continue as Guest
+            </button>
+            <button onClick={handleSignUp}>
+              Create Account (Save Your Cart)
+            </button>
+            {showSignUp && <SignUpForm />}
+          </div>
+        );
+      }
+
+      return (
+        <div>
+          <h2>Checkout</h2>
+          <p>Signed in as: {session?.user?.email}</p>
+        </div>
+      );
+    }
+
+    function SignUpForm() {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+
+      const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        
+        // Anonymous account will be automatically linked
+        await authClient.signUp.email({ email, password });
+        
+        // Cart items are preserved under new account
+        window.location.href = "/checkout";
+      };
+
+      return (
+        <form onSubmit={handleSubmit}>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Email"
+            required
+          />
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Password"
+            required
+          />
+          <button type="submit">Create Account</button>
+        </form>
+      );
+    }
+    ```
+  </Tab>
+  <Tab title="Vue">
+    ```vue
+    <script setup lang="ts">
+    import { ref, onMounted } from 'vue';
+    import { authClient } from './auth-client';
+
+    const session = ref(null);
+    const showSignUp = ref(false);
+    const email = ref('');
+    const password = ref('');
+
+    onMounted(async () => {
+      // Automatically create anonymous session if not authenticated
+      const { data } = await authClient.getSession();
+      
+      if (!data) {
+        await authClient.signIn.anonymous();
+        const { data: newSession } = await authClient.getSession();
+        session.value = newSession;
+      } else {
+        session.value = data;
+      }
+    });
+
+    const handleContinueAsGuest = async () => {
+      window.location.href = '/checkout';
+    };
+
+    const handleSignUp = async () => {
+      showSignUp.value = true;
+    };
+
+    const handleSubmit = async () => {
+      await authClient.signUp.email({
+        email: email.value,
+        password: password.value,
+      });
+      
+      window.location.href = '/checkout';
+    };
+    </script>
+
+    <template>
+      <div v-if=\"session?.user?.isAnonymous\">
+        <h2>Checkout Options</h2>
+        <button @click=\"handleContinueAsGuest\">
+          Continue as Guest
+        </button>
+        <button @click=\"handleSignUp\">
+          Create Account (Save Your Cart)
+        </button>
+        
+        <form v-if=\"showSignUp\" @submit.prevent=\"handleSubmit\">
+          <input
+            v-model=\"email\"
+            type=\"email\"
+            placeholder=\"Email\"
+            required
+          />
+          <input
+            v-model=\"password\"
+            type=\"password\"
+            placeholder=\"Password\"
+            required
+          />
+          <button type=\"submit\">Create Account</button>
+        </form>
+      </div>
+      <div v-else>
+        <h2>Checkout</h2>
+        <p>Signed in as: {{ session?.user?.email }}</p>
+      </div>
+    </template>
+    ```
+  </Tab>
+</Tabs>
+
+### Auto-Initialize Anonymous Session
+
+```tsx
+import { useEffect } from "react";
+import { authClient } from "./auth-client";
+
+export function useAutoAuth() {
+  useEffect(() => {
+    const initAuth = async () => {
+      const { data } = await authClient.getSession();
+      
+      if (!data) {
+        // No session exists, create anonymous user
+        await authClient.signIn.anonymous();
+      }
+    };
+
+    initAuth();
+  }, []);
+}
+
+// Usage in app
+export function App() {
+  useAutoAuth(); // Ensures user always has a session
+  
+  return <div>Your app content</div>;
+}
+```
+
+### Prompt to Save Anonymous Data
+
+```tsx
+import { useState, useEffect } from "react";
+import { authClient } from "./auth-client";
+
+export function SaveDataPrompt() {
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await authClient.getSession();
+      const anonymous = data?.user?.isAnonymous ?? false;
+      setIsAnonymous(anonymous);
+      
+      // Show prompt if user has been anonymous for more than 5 minutes
+      if (anonymous) {
+        setTimeout(() => setShowPrompt(true), 5 * 60 * 1000);
+      }
+    };
+
+    checkSession();
+  }, []);
+
+  if (!isAnonymous || !showPrompt) {
+    return null;
+  }
+
+  return (
+    <div className="save-prompt">
+      <h3>Save Your Progress?</h3>
+      <p>Create an account to save your data and access it from any device.</p>
+      <button onClick={() => window.location.href = "/signup"}>
+        Create Account
+      </button>
+      <button onClick={() => setShowPrompt(false)}>
+        Maybe Later
+      </button>
+    </div>
+  );
+}
+```
+
+## Schema
+
+The anonymous plugin adds the following field to the `user` table:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `isAnonymous` | boolean (nullable) | Whether the user is an anonymous/guest user |
+
+You can customize the schema:
+
+```ts title="auth.ts"
+anonymous({
+  schema: {
+    user: {
+      fields: {
+        isAnonymous: {
+          type: "boolean",
+          required: false,
+          defaultValue: false,
+        },
+      },
+    },
+  },
+})
+```
+
+## API Reference
+
+### Endpoints
+
+- `POST /sign-in/anonymous` - Create an anonymous user session
+- `POST /delete-anonymous-user` - Delete the current anonymous user (requires authentication)
+
+### Server API
+
+```ts
+// Create anonymous user
+auth.api.signInAnonymous();
+
+// Delete anonymous user
+auth.api.deleteAnonymousUser();
+```
+
+### Client API
+
+```ts
+// Sign in anonymously
+authClient.signIn.anonymous()
+
+// Delete anonymous user
+authClient.deleteAnonymousUser()
+
+// Check if user is anonymous
+const session = await authClient.getSession()
+const isAnonymous = session?.user?.isAnonymous
+```
+
+## Error Handling
+
+```ts
+const { error } = await authClient.signIn.anonymous();
+
+if (error) {
+  if (error.message.includes("cannot sign in again anonymously")) {
+    console.error("Already signed in as anonymous user");
+  } else {
+    console.error("Failed to create anonymous user:", error.message);
+  }
+}
+```
+
+## Security Considerations
+
+<Steps>
+  <Step title="Limit Anonymous User Capabilities">
+    Restrict what anonymous users can do in your application to prevent abuse.
+    
+    ```ts
+    // Check if user is anonymous before allowing action
+    const session = await authClient.getSession();
+    if (session?.user?.isAnonymous) {
+      // Limit to read-only operations or basic features
+      return { error: "Create an account to access this feature" };
+    }
+    ```
+  </Step>
+
+  <Step title="Implement Session Expiration">
+    Consider implementing shorter session expiration for anonymous users.
+    
+    ```ts
+    // In your auth configuration
+    session: {
+      expiresIn: 60 * 60 * 24 * 7, // 7 days for regular users
+    }
+    
+    // Conditionally reduce for anonymous users
+    ```
+  </Step>
+
+  <Step title="Rate Limit Anonymous Actions">
+    Implement stricter rate limiting for anonymous users to prevent abuse.
+  </Step>
+
+  <Step title="Clean Up Old Anonymous Users">
+    Periodically delete abandoned anonymous accounts to keep your database clean.
+    
+    ```ts
+    // Example: Delete anonymous users older than 30 days
+    await db.user.deleteMany({
+      where: {
+        isAnonymous: true,
+        createdAt: {
+          lt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        },
+      },
+    });
+    ```
+  </Step>
+
+  <Step title="Validate Data Transfer">
+    When linking accounts, validate and sanitize data being transferred from anonymous users.
+  </Step>
+</Steps>
+
+## Use Cases
+
+### E-Commerce
+
+- Allow users to add items to cart without signing up
+- Track browsing history and preferences
+- Preserve cart when user creates account
+
+### Content Platforms
+
+- Let users start creating content as guests
+- Track reading progress and bookmarks
+- Encourage sign-up to save work
+
+### Gaming
+
+- Allow instant play without registration
+- Save game progress temporarily
+- Offer account creation to sync across devices
+
+### SaaS Applications
+
+- Provide trial experience without barriers
+- Track feature usage and engagement
+- Convert to paid account seamlessly
+
+## Troubleshooting
+
+### Anonymous User Can't Sign In Again
+
+Anonymous users cannot sign in anonymously multiple times. If you need a new anonymous session, the current user must sign out first:
+
+```ts
+await authClient.signOut();
+await authClient.signIn.anonymous();
+```
+
+### Account Linking Fails
+
+Ensure the `onLinkAccount` callback doesn't throw errors. Wrap data transfer operations in try-catch blocks:
+
+```ts
+anonymous({
+  onLinkAccount: async ({ anonymousUser, newUser }) => {
+    try {
+      await transferUserData(anonymousUser.user.id, newUser.user.id);
+    } catch (error) {
+      console.error("Failed to transfer data:", error);
+      // Don't throw - allow the account linking to complete
+    }
+  },
+})
+```
+
+### Anonymous User Not Deleted After Linking
+
+Check if `disableDeleteAnonymousUser` is set to `true`. If you want automatic deletion, set it to `false` or omit it:
+
+```ts
+anonymous({
+  disableDeleteAnonymousUser: false, // Allow automatic deletion
+})
+```
+
+## Related Resources
+
+- [Session Management](/concepts/session-management) - Learn about session handling in Better Auth
+- [Email & Password](/authentication/email-password) - Link anonymous accounts to email authentication
+- [Social Providers](/authentication/social-providers) - Link anonymous accounts to social logins
+- [Magic Link](/authentication/magic-link) - Alternative authentication method

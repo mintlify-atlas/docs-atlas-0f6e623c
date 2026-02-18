@@ -1,0 +1,710 @@
+---
+title: Deployment Guide
+description: Deploy Better Auth to production on Vercel, Netlify, AWS, Docker, and other platforms with best practices and optimization strategies.
+---
+
+This guide covers deploying Better Auth applications to various platforms with production-ready configurations.
+
+## Pre-Deployment Checklist
+
+Before deploying, ensure you have:
+
+<Steps>
+
+<Step>
+
+### Environment Variables
+
+Set up required environment variables:
+
+```bash
+BETTER_AUTH_SECRET=your-secret-key-min-32-chars
+BETTER_AUTH_URL=https://your-domain.com
+DATABASE_URL=your-database-connection-string
+
+# OAuth providers (if using)
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GITHUB_CLIENT_ID=your-github-client-id
+GITHUB_CLIENT_SECRET=your-github-client-secret
+```
+
+<Warning>
+Never commit secrets to version control. Use `.env.local` for local development and platform-specific secret management for production.
+</Warning>
+
+</Step>
+
+<Step>
+
+### Generate Strong Secret
+
+Generate a secure secret key:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+</Step>
+
+<Step>
+
+### Database Setup
+
+Ensure your production database is:
+- Properly configured and accessible
+- Migrated with the latest schema
+- Has appropriate connection pooling
+- Configured with SSL/TLS if required
+
+</Step>
+
+</Steps>
+
+## Platform-Specific Deployments
+
+### Vercel
+
+Better Auth works seamlessly with Vercel and Next.js.
+
+<Steps>
+
+<Step>
+
+#### Install Vercel CLI
+
+```bash
+npm i -g vercel
+```
+
+</Step>
+
+<Step>
+
+#### Configure Project
+
+Create or update `vercel.json`:
+
+```json title="vercel.json"
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "regions": ["iad1"],
+  "env": {
+    "BETTER_AUTH_SECRET": "@better-auth-secret",
+    "BETTER_AUTH_URL": "https://your-app.vercel.app",
+    "DATABASE_URL": "@database-url"
+  }
+}
+```
+
+</Step>
+
+<Step>
+
+#### Set Environment Variables
+
+Using Vercel CLI:
+
+```bash
+vercel env add BETTER_AUTH_SECRET production
+vercel env add BETTER_AUTH_URL production
+vercel env add DATABASE_URL production
+```
+
+Or via Vercel Dashboard:
+1. Go to Project Settings → Environment Variables
+2. Add each variable for Production, Preview, and Development
+
+</Step>
+
+<Step>
+
+#### Deploy
+
+```bash
+vercel --prod
+```
+
+</Step>
+
+</Steps>
+
+#### Next.js Configuration
+
+```typescript title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import { nextCookies } from "better-auth/next-js";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "./db";
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db),
+  emailAndPassword: { enabled: true },
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    },
+  },
+  plugins: [
+    nextCookies(), // Required for Next.js
+  ],
+  trustedOrigins: [
+    "https://your-domain.com",
+    "https://*.vercel.app", // For preview deployments
+  ],
+});
+```
+
+### Netlify
+
+Deploy Better Auth with Netlify Functions.
+
+<Steps>
+
+<Step>
+
+#### Install Netlify CLI
+
+```bash
+npm i -g netlify-cli
+```
+
+</Step>
+
+<Step>
+
+#### Configure Netlify
+
+Create `netlify.toml`:
+
+```toml title="netlify.toml"
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/auth/*"
+  to = "/.netlify/functions/auth/:splat"
+  status = 200
+
+[[headers]]
+  for = "/api/auth/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "https://your-domain.com"
+    Access-Control-Allow-Methods = "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
+```
+
+</Step>
+
+<Step>
+
+#### Create Auth Function
+
+```typescript title="netlify/functions/auth.ts"
+import { auth } from "../../lib/auth";
+
+export const handler = async (event: any, context: any) => {
+  return auth.handler({
+    method: event.httpMethod,
+    path: event.path.replace("/.netlify/functions/auth", ""),
+    headers: new Headers(event.headers),
+    body: event.body ? JSON.parse(event.body) : undefined,
+  });
+};
+```
+
+</Step>
+
+<Step>
+
+#### Deploy
+
+```bash
+netlify deploy --prod
+```
+
+</Step>
+
+</Steps>
+
+### Docker
+
+Containerize your Better Auth application.
+
+```dockerfile title="Dockerfile"
+FROM node:20-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+# Build the application
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+ENV NEXT_TELEMETRY_DISABLED 1
+RUN npm run build
+
+# Production image
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+ENV HOSTNAME "0.0.0.0"
+
+CMD ["node", "server.js"]
+```
+
+```yaml title="docker-compose.yml"
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET}
+      - BETTER_AUTH_URL=${BETTER_AUTH_URL}
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=betterauth
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+```
+
+Build and run:
+
+```bash
+docker-compose up -d
+```
+
+### AWS
+
+#### AWS Elastic Beanstalk
+
+```yaml title=".ebextensions/nodecommand.config"
+option_settings:
+  aws:elasticbeanstalk:container:nodejs:
+    NodeCommand: "npm start"
+  aws:elasticbeanstalk:application:environment:
+    BETTER_AUTH_SECRET: "your-secret-key"
+    BETTER_AUTH_URL: "https://your-app.elasticbeanstalk.com"
+    DATABASE_URL: "your-rds-connection-string"
+```
+
+Deploy:
+
+```bash
+eb init
+eb create production-env
+eb deploy
+```
+
+#### AWS Lambda with Serverless Framework
+
+```yaml title="serverless.yml"
+service: better-auth-app
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: us-east-1
+  environment:
+    BETTER_AUTH_SECRET: ${env:BETTER_AUTH_SECRET}
+    BETTER_AUTH_URL: ${env:BETTER_AUTH_URL}
+    DATABASE_URL: ${env:DATABASE_URL}
+
+functions:
+  auth:
+    handler: handler.auth
+    events:
+      - http:
+          path: /api/auth/{proxy+}
+          method: ANY
+          cors: true
+
+plugins:
+  - serverless-offline
+```
+
+```typescript title="handler.ts"
+import { auth } from "./lib/auth";
+
+export const auth = async (event: any, context: any) => {
+  return auth.handler({
+    method: event.httpMethod,
+    path: event.path.replace("/api/auth", ""),
+    headers: new Headers(event.headers),
+    body: event.body ? JSON.parse(event.body) : undefined,
+  });
+};
+```
+
+Deploy:
+
+```bash
+serverless deploy
+```
+
+### Railway
+
+Railway provides simple deployment with integrated databases.
+
+<Steps>
+
+<Step>
+
+#### Install Railway CLI
+
+```bash
+npm i -g @railway/cli
+```
+
+</Step>
+
+<Step>
+
+#### Initialize Project
+
+```bash
+railway login
+railway init
+```
+
+</Step>
+
+<Step>
+
+#### Add PostgreSQL Database
+
+```bash
+railway add postgresql
+```
+
+</Step>
+
+<Step>
+
+#### Set Variables
+
+```bash
+railway variables set BETTER_AUTH_SECRET="your-secret"
+railway variables set BETTER_AUTH_URL="https://your-app.railway.app"
+```
+
+</Step>
+
+<Step>
+
+#### Deploy
+
+```bash
+railway up
+```
+
+</Step>
+
+</Steps>
+
+## Database Configurations
+
+### Connection Pooling
+
+For production, use connection pooling:
+
+```typescript title="lib/db.ts"
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+
+const connectionString = process.env.DATABASE_URL!;
+
+// Configure connection pool
+const client = postgres(connectionString, {
+  max: 10, // Maximum pool size
+  idle_timeout: 20, // Close idle connections after 20s
+  connect_timeout: 10, // Connection timeout
+});
+
+export const db = drizzle(client);
+```
+
+### Database Migrations
+
+Run migrations before deployment:
+
+```bash
+# Generate migration
+npx @better-auth/cli generate
+
+# Apply migration
+npm run db:migrate
+```
+
+Automated migrations in deployment:
+
+```json title="package.json"
+{
+  "scripts": {
+    "build": "npm run db:migrate && next build",
+    "db:migrate": "drizzle-kit migrate"
+  }
+}
+```
+
+## Production Optimizations
+
+### Caching Strategy
+
+```typescript title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import { cache } from "./cache";
+
+export const auth = betterAuth({
+  // ... other config
+  session: {
+    expiresIn: 60 * 60 * 24 * 7, // 7 days
+    updateAge: 60 * 60 * 24, // Update every 24 hours
+  },
+  advanced: {
+    useSecureCookies: process.env.NODE_ENV === "production",
+    cookiePrefix: "better-auth",
+    crossSubDomainCookies: {
+      enabled: true,
+      domain: ".yourdomain.com",
+    },
+  },
+});
+```
+
+### Rate Limiting
+
+```typescript title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  // ... other config
+  rateLimit: {
+    enabled: true,
+    window: 60, // 60 seconds
+    max: 10, // 10 requests per window
+  },
+});
+```
+
+### Security Headers
+
+```typescript title="next.config.js"
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: "/api/auth/:path*",
+        headers: [
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "X-Frame-Options",
+            value: "DENY",
+          },
+          {
+            key: "X-XSS-Protection",
+            value: "1; mode=block",
+          },
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains",
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+## Monitoring and Logging
+
+### Error Tracking with Sentry
+
+```typescript title="lib/auth.ts"
+import * as Sentry from "@sentry/node";
+import { betterAuth } from "better-auth";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+});
+
+export const auth = betterAuth({
+  // ... other config
+  logger: {
+    error: (message, error) => {
+      console.error(message, error);
+      Sentry.captureException(error);
+    },
+    warn: (message) => console.warn(message),
+    info: (message) => console.info(message),
+  },
+});
+```
+
+### Custom Logging
+
+```typescript title="lib/logger.ts"
+export const logger = {
+  info: (message: string, meta?: any) => {
+    console.log(JSON.stringify({ level: "info", message, meta, timestamp: new Date() }));
+  },
+  error: (message: string, error?: any) => {
+    console.error(JSON.stringify({ level: "error", message, error, timestamp: new Date() }));
+  },
+  warn: (message: string) => {
+    console.warn(JSON.stringify({ level: "warn", message, timestamp: new Date() }));
+  },
+};
+```
+
+## Health Checks
+
+```typescript title="app/api/health/route.ts"
+import { NextResponse } from "next/server";
+import { db } from "@/lib/db";
+
+export async function GET() {
+  try {
+    // Check database connection
+    await db.execute("SELECT 1");
+    
+    return NextResponse.json(
+      {
+        status: "healthy",
+        timestamp: new Date().toISOString(),
+        database: "connected",
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        status: "unhealthy",
+        timestamp: new Date().toISOString(),
+        database: "disconnected",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 503 }
+    );
+  }
+}
+```
+
+## Backup and Recovery
+
+### Automated Database Backups
+
+```bash title="scripts/backup.sh"
+#!/bin/bash
+DATE=$(date +%Y%m%d_%H%M%S)
+BACKUP_DIR="/backups"
+FILENAME="backup_$DATE.sql"
+
+pg_dump $DATABASE_URL > "$BACKUP_DIR/$FILENAME"
+
+# Upload to S3
+aws s3 cp "$BACKUP_DIR/$FILENAME" s3://your-bucket/backups/
+
+# Keep only last 7 days of backups
+find $BACKUP_DIR -name "backup_*.sql" -mtime +7 -delete
+```
+
+Schedule with cron:
+
+```bash
+0 2 * * * /path/to/backup.sh
+```
+
+## Best Practices
+
+<Tip>
+**Production Checklist:**
+
+1. ✅ Use strong secrets (min 32 characters)
+2. ✅ Enable HTTPS/TLS for all connections
+3. ✅ Set up proper CORS policies
+4. ✅ Configure rate limiting
+5. ✅ Implement monitoring and alerts
+6. ✅ Set up automated backups
+7. ✅ Use connection pooling
+8. ✅ Enable security headers
+9. ✅ Test OAuth callbacks in production
+10. ✅ Document deployment process
+</Tip>
+
+## Troubleshooting
+
+### Common Issues
+
+**Database Connection Errors**
+```typescript
+// Check connection string format
+console.log("DATABASE_URL:", process.env.DATABASE_URL?.replace(/:[^:@]+@/, ":***@"));
+```
+
+**OAuth Redirect Issues**
+```typescript
+// Ensure callback URLs match in OAuth provider settings
+console.log("BETTER_AUTH_URL:", process.env.BETTER_AUTH_URL);
+```
+
+**Session Issues**
+```typescript
+// Verify cookie settings
+console.log("Secure cookies:", process.env.NODE_ENV === "production");
+```
+
+## Next Steps
+
+- Learn about [Migration Strategies](/guides/migration)
+- Explore [Testing in Production](/guides/testing)
+- Review [Security Best Practices](/security/overview)

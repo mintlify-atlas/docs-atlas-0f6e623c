@@ -1,0 +1,572 @@
+---
+title: 'betterAuth()'
+description: 'Initialize Better Auth server instance'
+---
+
+## Overview
+
+`betterAuth()` is the main function for initializing Better Auth on the server. It creates an authentication handler with type-safe API methods, database integration, and plugin support.
+
+## Import
+
+```typescript
+import { betterAuth } from "better-auth"
+```
+
+For minimal mode (without Kysely):
+
+```typescript
+import { betterAuth } from "better-auth/minimal"
+```
+
+## Function Signature
+
+```typescript
+function betterAuth<Options extends BetterAuthOptions>(
+	options: Options
+): Auth<Options>
+```
+
+## Parameters
+
+<ParamField path="options" type="BetterAuthOptions" required>
+	Configuration options for Better Auth.
+
+	<Expandable title="Core Options">
+		<ParamField path="appName" type="string" optional>
+			The name of your application. Defaults to `"Better Auth"`.
+			
+			```typescript
+			appName: "My App"
+			```
+		</ParamField>
+
+		<ParamField path="baseURL" type="string" optional>
+			Base URL for the Better Auth server. If not explicitly set, checks `process.env.BETTER_AUTH_URL`.
+			
+			```typescript
+			baseURL: "https://example.com"
+			```
+		</ParamField>
+
+		<ParamField path="basePath" type="string" optional>
+			Base path for Better Auth routes. Defaults to `"/api/auth"`.
+			
+			```typescript
+			basePath: "/auth"
+			```
+		</ParamField>
+
+		<ParamField path="secret" type="string" optional>
+			Secret for encryption, signing, and hashing. Checks `process.env.BETTER_AUTH_SECRET` or `process.env.AUTH_SECRET`. Required in production.
+			
+			Generate a secure secret:
+			```bash
+			openssl rand -base64 32
+			```
+		</ParamField>
+
+		<ParamField path="database" type="DatabaseConfig" optional>
+			Database configuration. Can be a Kysely instance, database pool, adapter, or connection config.
+			
+			```typescript
+			// Kysely with Postgres
+			database: new PostgresDialect({
+				pool: new Pool({
+					connectionString: process.env.DATABASE_URL
+				})
+			})
+			
+			// With adapter
+			database: drizzleAdapter(db, { provider: "pg" })
+			```
+		</ParamField>
+
+		<ParamField path="plugins" type="BetterAuthPlugin[]" optional>
+			Array of Better Auth plugins to extend functionality.
+			
+			```typescript
+			plugins: [
+				twoFactor(),
+				organization(),
+				admin()
+			]
+			```
+		</ParamField>
+	</Expandable>
+
+	<Expandable title="Authentication Options">
+		<ParamField path="emailAndPassword" type="object" optional>
+			Email and password authentication configuration.
+			
+			<Expandable title="properties">
+				<ParamField path="enabled" type="boolean" required>
+					Enable email/password authentication.
+				</ParamField>
+
+				<ParamField path="requireEmailVerification" type="boolean" optional>
+					Require email verification before session creation. Defaults to `false`.
+				</ParamField>
+
+				<ParamField path="minPasswordLength" type="number" optional>
+					Minimum password length. Defaults to `8`.
+				</ParamField>
+
+				<ParamField path="maxPasswordLength" type="number" optional>
+					Maximum password length. Defaults to `128`.
+				</ParamField>
+
+				<ParamField path="autoSignIn" type="boolean" optional>
+					Automatically sign in after sign up. Defaults to `true`.
+				</ParamField>
+
+				<ParamField path="sendResetPassword" type="function" optional>
+					Function to send password reset emails.
+					
+					```typescript
+					sendResetPassword: async ({ user, url, token }, request) => {
+						await sendEmail({
+							to: user.email,
+							subject: "Reset Password",
+							body: `Reset your password: ${url}`
+						})
+					}
+					```
+				</ParamField>
+			</Expandable>
+		</ParamField>
+
+		<ParamField path="socialProviders" type="object" optional>
+			Social authentication providers configuration.
+			
+			```typescript
+			socialProviders: {
+				github: {
+					clientId: process.env.GITHUB_CLIENT_ID,
+					clientSecret: process.env.GITHUB_CLIENT_SECRET
+				},
+				google: {
+					clientId: process.env.GOOGLE_CLIENT_ID,
+					clientSecret: process.env.GOOGLE_CLIENT_SECRET
+				}
+			}
+			```
+		</ParamField>
+
+		<ParamField path="emailVerification" type="object" optional>
+			Email verification configuration.
+			
+			<Expandable title="properties">
+				<ParamField path="sendVerificationEmail" type="function" optional>
+					Function to send verification emails.
+					
+					```typescript
+					sendVerificationEmail: async ({ user, url, token }, request) => {
+						await sendEmail({
+							to: user.email,
+							subject: "Verify Email",
+							body: `Verify: ${url}`
+						})
+					}
+					```
+				</ParamField>
+
+				<ParamField path="sendOnSignUp" type="boolean" optional>
+					Send verification email on sign up.
+				</ParamField>
+
+				<ParamField path="autoSignInAfterVerification" type="boolean" optional>
+					Auto sign in after email verification.
+				</ParamField>
+			</Expandable>
+		</ParamField>
+	</Expandable>
+
+	<Expandable title="Session & Security">
+		<ParamField path="session" type="object" optional>
+			Session configuration.
+			
+			<Expandable title="properties">
+				<ParamField path="expiresIn" type="number" optional>
+					Session expiration time in seconds. Defaults to `604800` (7 days).
+				</ParamField>
+
+				<ParamField path="updateAge" type="number" optional>
+					How often to refresh session in seconds. Defaults to `86400` (1 day).
+				</ParamField>
+
+				<ParamField path="cookieCache" type="object" optional>
+					Enable session caching in cookies.
+					
+					```typescript
+					cookieCache: {
+						enabled: true,
+						maxAge: 300, // 5 minutes
+						strategy: "compact" // "compact" | "jwt" | "jwe"
+					}
+					```
+				</ParamField>
+			</Expandable>
+		</ParamField>
+
+		<ParamField path="rateLimit" type="object" optional>
+			Rate limiting configuration.
+			
+			```typescript
+			rateLimit: {
+				enabled: true,
+				window: 10, // seconds
+				max: 100, // requests per window
+				storage: "database" // "memory" | "database" | "secondary-storage"
+			}
+			```
+		</ParamField>
+
+		<ParamField path="trustedOrigins" type="string[] | function" optional>
+			List of trusted origins for CORS and redirect validation.
+			
+			```typescript
+			// Static list
+			trustedOrigins: ["https://example.com", "https://*.example.com"]
+			
+			// Dynamic function
+			trustedOrigins: async (request) => {
+				return ["https://example.com"]
+			}
+			```
+		</ParamField>
+	</Expandable>
+
+	<Expandable title="Advanced Options">
+		<ParamField path="advanced" type="object" optional>
+			Advanced configuration options.
+			
+			<Expandable title="properties">
+				<ParamField path="useSecureCookies" type="boolean" optional>
+					Use secure cookies. Defaults to `false`.
+				</ParamField>
+
+				<ParamField path="disableCSRFCheck" type="boolean" optional>
+					Disable CSRF protection. Not recommended. Defaults to `false`.
+				</ParamField>
+
+				<ParamField path="crossSubDomainCookies" type="object" optional>
+					Enable cookies across subdomains.
+					
+					```typescript
+					crossSubDomainCookies: {
+						enabled: true,
+						domain: ".example.com"
+					}
+					```
+				</ParamField>
+
+				<ParamField path="backgroundTasks" type="object" optional>
+					Configure background task handling.
+					
+					```typescript
+					// Vercel
+					import { waitUntil } from "@vercel/functions"
+					
+					backgroundTasks: {
+						handler: waitUntil
+					}
+					```
+				</ParamField>
+			</Expandable>
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+## Return Type
+
+Returns an `Auth<Options>` object with the following properties:
+
+<ResponseField name="handler" type="(request: Request) => Promise<Response>">
+	Request handler function for processing authentication requests.
+	
+	```typescript
+	const auth = betterAuth({ /* ... */ })
+	
+	// In your framework:
+	export const { GET, POST } = auth.handler
+	```
+</ResponseField>
+
+<ResponseField name="api" type="object">
+	Type-safe API object with methods for server-side operations.
+	
+	<Expandable title="Available Methods">
+		<ResponseField name="getSession" type="function">
+			Get session from request headers.
+			
+			```typescript
+			const session = await auth.api.getSession({
+				headers: request.headers
+			})
+			```
+		</ResponseField>
+
+		<ResponseField name="signIn.email" type="function">
+			Sign in with email and password.
+		</ResponseField>
+
+		<ResponseField name="signUp.email" type="function">
+			Sign up with email and password.
+		</ResponseField>
+
+		<ResponseField name="signOut" type="function">
+			Sign out user.
+		</ResponseField>
+
+		<ResponseField name="updateUser" type="function">
+			Update user information.
+		</ResponseField>
+
+		<ResponseField name="listSessions" type="function">
+			List all user sessions.
+		</ResponseField>
+
+		<ResponseField name="revokeSession" type="function">
+			Revoke a specific session.
+		</ResponseField>
+	</Expandable>
+</ResponseField>
+
+<ResponseField name="options" type="BetterAuthOptions">
+	The configuration options passed to `betterAuth()`.
+</ResponseField>
+
+<ResponseField name="$context" type="Promise<AuthContext>">
+	Promise that resolves to the authentication context with adapter, internal adapter, and other utilities.
+	
+	```typescript
+	const ctx = await auth.$context
+	const user = await ctx.internalAdapter.findUserById(userId)
+	```
+</ResponseField>
+
+<ResponseField name="$ERROR_CODES" type="object">
+	Error codes from core and plugins for type-safe error handling.
+	
+	```typescript
+	import { BetterAuthError } from "better-auth"
+	
+	throw new BetterAuthError(
+		auth.$ERROR_CODES.INVALID_EMAIL
+	)
+	```
+</ResponseField>
+
+<ResponseField name="$Infer" type="object">
+	Type inference utilities.
+	
+	```typescript
+	type Session = typeof auth.$Infer.Session
+	// { session: Session, user: User }
+	```
+</ResponseField>
+
+## Usage Examples
+
+### Basic Setup
+
+```typescript
+import { betterAuth } from "better-auth"
+import { Pool } from "pg"
+
+export const auth = betterAuth({
+	database: new Pool({
+		connectionString: process.env.DATABASE_URL
+	}),
+	emailAndPassword: {
+		enabled: true
+	}
+})
+```
+
+### With Social Providers
+
+```typescript
+import { betterAuth } from "better-auth"
+
+export const auth = betterAuth({
+	database: process.env.DATABASE_URL,
+	socialProviders: {
+		github: {
+			clientId: process.env.GITHUB_CLIENT_ID,
+			clientSecret: process.env.GITHUB_CLIENT_SECRET
+		},
+		google: {
+			clientId: process.env.GOOGLE_CLIENT_ID,
+			clientSecret: process.env.GOOGLE_CLIENT_SECRET
+		}
+	}
+})
+```
+
+### With Plugins
+
+```typescript
+import { betterAuth } from "better-auth"
+import { twoFactor } from "better-auth/plugins"
+
+export const auth = betterAuth({
+	database: process.env.DATABASE_URL,
+	emailAndPassword: {
+		enabled: true
+	},
+	plugins: [
+		twoFactor({
+			totpOptions: {
+				period: 30
+			}
+		})
+	]
+})
+```
+
+### Complete Configuration
+
+```typescript
+import { betterAuth } from "better-auth"
+import { drizzleAdapter } from "better-auth/adapters/drizzle"
+import { db } from "./db"
+
+export const auth = betterAuth({
+	appName: "My Application",
+	baseURL: process.env.BETTER_AUTH_URL,
+	secret: process.env.BETTER_AUTH_SECRET,
+	
+	database: drizzleAdapter(db, {
+		provider: "pg"
+	}),
+	
+	emailAndPassword: {
+		enabled: true,
+		requireEmailVerification: true,
+		minPasswordLength: 12,
+		sendResetPassword: async ({ user, url }) => {
+			await sendEmail(user.email, `Reset: ${url}`)
+		}
+	},
+	
+	emailVerification: {
+		sendVerificationEmail: async ({ user, url }) => {
+			await sendEmail(user.email, `Verify: ${url}`)
+		},
+		sendOnSignUp: true,
+		autoSignInAfterVerification: true
+	},
+	
+	session: {
+		expiresIn: 60 * 60 * 24 * 7, // 7 days
+		updateAge: 60 * 60 * 24, // 1 day
+		cookieCache: {
+			enabled: true,
+			maxAge: 300 // 5 minutes
+		}
+	},
+	
+	trustedOrigins: [
+		"https://example.com",
+		"https://*.example.com"
+	],
+	
+	rateLimit: {
+		enabled: true,
+		window: 60,
+		max: 100
+	},
+	
+	advanced: {
+		useSecureCookies: true,
+		crossSubDomainCookies: {
+			enabled: true,
+			domain: ".example.com"
+		}
+	}
+})
+```
+
+### Using the Handler
+
+<CodeGroup>
+
+```typescript Next.js App Router
+// app/api/auth/[...all]/route.ts
+import { auth } from "@/lib/auth"
+
+export const { GET, POST } = auth.handler
+```
+
+```typescript SvelteKit
+// src/routes/api/auth/[...all]/+server.ts
+import { auth } from "$lib/auth"
+
+export const { GET, POST } = auth.handler
+```
+
+```typescript Express
+// server.ts
+import express from "express"
+import { auth } from "./auth"
+
+const app = express()
+
+app.all("/api/auth/*", async (req, res) => {
+	const response = await auth.handler(req)
+	res.status(response.status).send(await response.text())
+})
+```
+
+</CodeGroup>
+
+### Server-Side API Usage
+
+```typescript
+import { auth } from "./auth"
+
+// Get session in API route
+const session = await auth.api.getSession({
+	headers: request.headers
+})
+
+if (!session) {
+	return new Response("Unauthorized", { status: 401 })
+}
+
+// Update user
+await auth.api.updateUser({
+	body: {
+		name: "New Name"
+	},
+	headers: request.headers
+})
+
+// List user sessions
+const sessions = await auth.api.listSessions({
+	headers: request.headers
+})
+```
+
+## Notes
+
+<Note>
+The `secret` option is required in production environments. Make sure to generate a cryptographically secure secret and store it in environment variables.
+</Note>
+
+<Warning>
+Do not expose your auth instance or configuration on the client side. The `betterAuth()` function should only be called on the server.
+</Warning>
+
+<Note>
+When using the minimal mode (`better-auth/minimal`), you must provide a database adapter directly. Kysely integration is not included.
+</Note>
+
+## Related
+
+- [Configuration Reference](/api/server/configuration)
+- [Context API](/api/server/context)
+- [Handlers](/api/server/handlers)
+- [Plugins](/api-reference/plugins/plugin-interface)

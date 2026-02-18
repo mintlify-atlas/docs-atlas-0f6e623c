@@ -1,0 +1,496 @@
+---
+title: TanStack Start Integration
+description: Integrate Better Auth with TanStack Start for full-stack authentication.
+---
+
+Better Auth supports both React and Solid.js versions of TanStack Start, providing full-stack authentication with type-safe server functions.
+
+## Prerequisites
+
+Make sure you have a Better Auth instance configured. If not, check out the [installation guide](/installation).
+
+## Installation
+
+<Steps>
+
+### Mount the Handler
+
+Create an API route to handle authentication requests:
+
+<Tabs items={['React', 'Solid.js']}>
+
+<Tab value="React">
+
+```ts title="app/routes/api/auth/$.ts"
+import { auth } from "~/lib/auth";
+
+export async function GET({ request }: { request: Request }) {
+  return auth.handler(request);
+}
+
+export async function POST({ request }: { request: Request }) {
+  return auth.handler(request);
+}
+```
+
+</Tab>
+
+<Tab value="Solid.js">
+
+```ts title="app/routes/api/auth/$.ts"
+import { auth } from "~/lib/auth";
+import { toSolidStartHandler } from "better-auth/solid-start";
+
+export const { GET, POST } = toSolidStartHandler(auth);
+```
+
+</Tab>
+
+</Tabs>
+
+This mounts the authentication API at `/api/auth/*` and handles all authentication requests.
+
+### Add Cookie Plugin
+
+For server functions and API routes to set cookies properly, add the TanStack Start cookie plugin:
+
+<Tabs items={['React', 'Solid.js']}>
+
+<Tab value="React">
+
+```ts title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import { tanstackStartCookies } from "better-auth/tanstack-start";
+
+export const auth = betterAuth({
+  // ... your config
+  plugins: [
+    tanstackStartCookies() // Add as the last plugin
+  ]
+});
+```
+
+</Tab>
+
+<Tab value="Solid.js">
+
+```ts title="lib/auth.ts"
+import { betterAuth } from "better-auth";
+import { tanstackStartCookies } from "better-auth/tanstack-start/solid";
+
+export const auth = betterAuth({
+  // ... your config
+  plugins: [
+    tanstackStartCookies() // Add as the last plugin
+  ]
+});
+```
+
+</Tab>
+
+</Tabs>
+
+<Note type="warn">
+Make sure to import from the correct path:
+- **React**: `better-auth/tanstack-start`
+- **Solid.js**: `better-auth/tanstack-start/solid`
+</Note>
+
+### Create Client Instance
+
+Create a client for making authentication requests:
+
+<Tabs items={['React', 'Solid.js']}>
+
+<Tab value="React">
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/react";
+
+export const authClient = createAuthClient({
+  // Optional: customize configuration
+});
+
+export const { useSession, signIn, signOut, signUp } = authClient;
+```
+
+<Note type="info">
+Import from `better-auth/react` for React-specific hooks using [nanostores](https://github.com/nanostores/nanostores).
+</Note>
+
+</Tab>
+
+<Tab value="Solid.js">
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/solid";
+
+export const authClient = createAuthClient({
+  // Optional: customize configuration
+});
+```
+
+<Note type="info">
+Import from `better-auth/solid` for Solid.js-specific reactivity using signals.
+</Note>
+
+</Tab>
+
+</Tabs>
+
+</Steps>
+
+## Usage
+
+### Client Components
+
+<Tabs items={['React', 'Solid.js']}>
+
+<Tab value="React">
+
+Use the `useSession` hook in your React components:
+
+```tsx title="components/user-profile.tsx"
+import { authClient } from "~/lib/auth-client";
+
+export function UserProfile() {
+  const session = authClient.useSession();
+
+  if (session.isPending) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session.data) {
+    return <button onClick={() => authClient.signIn.social({ provider: "github" })}>Sign In</button>;
+  }
+
+  return (
+    <div>
+      <h1>Welcome {session.data.user.name}!</h1>
+      <button onClick={() => authClient.signOut()}>Sign Out</button>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+<Tab value="Solid.js">
+
+Use the `useSession` accessor in Solid components:
+
+```tsx title="components/user-profile.tsx"
+import { authClient } from "~/lib/auth-client";
+import { Show } from "solid-js";
+
+export function UserProfile() {
+  const session = authClient.useSession();
+
+  return (
+    <Show when={!session().isPending} fallback={<p>Loading...</p>}>
+      <Show
+        when={session().data}
+        fallback={<button onClick={() => authClient.signIn.social({ provider: "github" })}>Sign In</button>}
+      >
+        {(user) => (
+          <div>
+            <h1>Welcome {user().user.name}!</h1>
+            <button onClick={() => authClient.signOut()}>Sign Out</button>
+          </div>
+        )}
+      </Show>
+    </Show>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
+
+### Server Functions
+
+<Tabs items={['React', 'Solid.js']}>
+
+<Tab value="React">
+
+Access session data in server functions:
+
+```ts title="lib/session.ts"
+import { auth } from "~/lib/auth";
+import { getWebRequest } from "@tanstack/react-start/server";
+
+export async function getSession() {
+  const request = getWebRequest();
+  
+  const session = await auth.api.getSession({
+    headers: request.headers
+  });
+
+  return session;
+}
+
+export async function requireAuth() {
+  const session = await getSession();
+  
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+  
+  return session;
+}
+```
+
+</Tab>
+
+<Tab value="Solid.js">
+
+Access session data in server functions:
+
+```ts title="lib/session.ts"
+"use server";
+
+import { auth } from "~/lib/auth";
+import { getRequestEvent } from "solid-js/web";
+
+export async function getSession() {
+  const event = getRequestEvent();
+  
+  if (!event) {
+    return null;
+  }
+
+  const session = await auth.api.getSession({
+    headers: event.request.headers
+  });
+
+  return session;
+}
+
+export async function requireAuth() {
+  const session = await getSession();
+  
+  if (!session) {
+    throw new Error("Unauthorized");
+  }
+  
+  return session;
+}
+```
+
+</Tab>
+
+</Tabs>
+
+### Protected Routes
+
+<Tabs items={['React', 'Solid.js']}>
+
+<Tab value="React">
+
+Create protected routes using server loaders:
+
+```tsx title="app/routes/dashboard.tsx"
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { auth } from "~/lib/auth";
+import { getWebRequest } from "@tanstack/react-start/server";
+
+export const Route = createFileRoute("/dashboard")(
+  createRoute({
+    async loader() {
+      const request = getWebRequest();
+      const session = await auth.api.getSession({
+        headers: request.headers
+      });
+
+      if (!session) {
+        throw redirect({ to: "/sign-in" });
+      }
+
+      return { user: session.user };
+    },
+    component: DashboardPage
+  })
+);
+
+function DashboardPage() {
+  const { user } = Route.useLoaderData();
+
+  return (
+    <div>
+      <h1>Welcome {user.name}!</h1>
+      <p>Email: {user.email}</p>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+<Tab value="Solid.js">
+
+Create protected routes using server functions:
+
+```tsx title="app/routes/dashboard.tsx"
+import { createAsync, redirect } from "@solidjs/router";
+import { auth } from "~/lib/auth";
+import { getRequestEvent } from "solid-js/web";
+
+export async function getSession() {
+  "use server";
+  
+  const event = getRequestEvent();
+  if (!event) return null;
+
+  const session = await auth.api.getSession({
+    headers: event.request.headers
+  });
+
+  if (!session) {
+    throw redirect("/sign-in");
+  }
+
+  return session;
+}
+
+export default function DashboardPage() {
+  const session = createAsync(() => getSession());
+
+  return (
+    <div>
+      <h1>Welcome {session()?.user.name}!</h1>
+      <p>Email: {session()?.user.email}</p>
+    </div>
+  );
+}
+```
+
+</Tab>
+
+</Tabs>
+
+## Example: Sign In Page
+
+<CodeGroup>
+
+```tsx title="React Client-Side"
+import { authClient } from "~/lib/auth-client";
+import { useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+
+export default function SignInPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  async function handleSignIn(e: React.FormEvent) {
+    e.preventDefault();
+    
+    await authClient.signIn.email(
+      { email, password },
+      {
+        onSuccess: () => {
+          navigate({ to: "/dashboard" });
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+        }
+      }
+    );
+  }
+
+  return (
+    <form onSubmit={handleSignIn}>
+      {error && <p>{error}</p>}
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Email"
+      />
+      <input
+        type="password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        placeholder="Password"
+      />
+      <button type="submit">Sign In</button>
+    </form>
+  );
+}
+```
+
+```tsx title="Solid.js Client-Side"
+import { authClient } from "~/lib/auth-client";
+import { useNavigate } from "@solidjs/router";
+import { createSignal } from "solid-js";
+
+export default function SignInPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = createSignal("");
+  const [password, setPassword] = createSignal("");
+  const [error, setError] = createSignal("");
+
+  async function handleSignIn(e: Event) {
+    e.preventDefault();
+    
+    await authClient.signIn.email(
+      { email: email(), password: password() },
+      {
+        onSuccess: () => {
+          navigate("/dashboard");
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+        }
+      }
+    );
+  }
+
+  return (
+    <form onSubmit={handleSignIn}>
+      {error() && <p>{error()}</p>}
+      <input
+        type="email"
+        value={email()}
+        onInput={(e) => setEmail(e.currentTarget.value)}
+        placeholder="Email"
+      />
+      <input
+        type="password"
+        value={password()}
+        onInput={(e) => setPassword(e.currentTarget.value)}
+        placeholder="Password"
+      />
+      <button type="submit">Sign In</button>
+    </form>
+  );
+}
+```
+
+</CodeGroup>
+
+## Social Sign In
+
+```tsx
+import { authClient } from "~/lib/auth-client";
+
+export function SocialSignIn() {
+  return (
+    <div>
+      <button onClick={() => authClient.signIn.social({ provider: "github" })}>
+        Continue with GitHub
+      </button>
+      <button onClick={() => authClient.signIn.social({ provider: "google" })}>
+        Continue with Google
+      </button>
+    </div>
+  );
+}
+```
+
+## Resources
+
+- [TanStack Start Documentation](https://tanstack.com/start)
+- [Better Auth Core Concepts](/concepts/database)

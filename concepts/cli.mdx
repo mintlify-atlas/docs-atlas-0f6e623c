@@ -1,0 +1,609 @@
+---
+title: CLI
+description: Use Better Auth's CLI for database migrations, schema generation, and project setup
+---
+
+## Overview
+
+Better Auth includes a powerful CLI that helps you manage database schemas, run migrations, and configure your authentication setup.
+
+## Installation
+
+The CLI is included with the Better Auth package:
+
+```bash
+npm install better-auth
+# or
+pnpm add better-auth
+# or
+yarn add better-auth
+```
+
+Run commands using npx:
+
+```bash
+npx auth [command]
+```
+
+**Source:** `/packages/cli/src/index.ts`
+
+## Commands
+
+### generate
+
+Generate database schema files for your ORM:
+
+```bash
+npx auth generate
+```
+
+This command:
+1. Reads your Better Auth configuration
+2. Generates schema definitions for your database adapter
+3. Creates/updates schema files
+
+**Source:** `/packages/cli/src/commands/generate.ts`
+
+#### Options
+
+```bash
+# Specify working directory
+npx auth generate --cwd ./path/to/project
+
+# Use specific config file
+npx auth generate --config ./auth.config.ts
+
+# Output to specific file
+npx auth generate --output ./db/auth-schema.ts
+
+# Auto-accept all prompts
+npx auth generate --yes
+```
+
+#### Output Examples
+
+<Tabs>
+  <Tab title="Drizzle">
+    ```typescript
+    // Generated: db/auth-schema.ts
+    import { pgTable, text, timestamp, boolean } from "drizzle-orm/pg-core";
+    
+    export const user = pgTable("user", {
+      id: text("id").primaryKey(),
+      email: text("email").notNull().unique(),
+      emailVerified: boolean("emailVerified").notNull(),
+      name: text("name").notNull(),
+      image: text("image"),
+      createdAt: timestamp("createdAt").notNull(),
+      updatedAt: timestamp("updatedAt").notNull()
+    });
+    
+    export const session = pgTable("session", {
+      id: text("id").primaryKey(),
+      userId: text("userId").notNull().references(() => user.id),
+      token: text("token").notNull().unique(),
+      expiresAt: timestamp("expiresAt").notNull(),
+      ipAddress: text("ipAddress"),
+      userAgent: text("userAgent"),
+      createdAt: timestamp("createdAt").notNull(),
+      updatedAt: timestamp("updatedAt").notNull()
+    });
+    
+    // ... more tables
+    ```
+  </Tab>
+  
+  <Tab title="Prisma">
+    ```prisma
+    // Generated additions to schema.prisma
+    model User {
+      id            String   @id
+      email         String   @unique
+      emailVerified Boolean
+      name          String
+      image         String?
+      createdAt     DateTime
+      updatedAt     DateTime
+      sessions      Session[]
+      accounts      Account[]
+    }
+    
+    model Session {
+      id         String   @id
+      userId     String
+      user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+      token      String   @unique
+      expiresAt  DateTime
+      ipAddress  String?
+      userAgent  String?
+      createdAt  DateTime
+      updatedAt  DateTime
+    }
+    
+    // ... more models
+    ```
+  </Tab>
+</Tabs>
+
+#### Workflow
+
+<Steps>
+
+### Generate Schema
+
+```bash
+npx auth generate
+```
+
+### Apply to Database
+
+Use your ORM's migration tools:
+
+```bash
+# Prisma
+npx prisma db push
+# or
+npx prisma migrate dev --name add_auth
+
+# Drizzle
+npx drizzle-kit push
+# or
+npx drizzle-kit generate
+npx drizzle-kit migrate
+```
+
+</Steps>
+
+### migrate
+
+Run database migrations automatically (Kysely only):
+
+```bash
+npx auth migrate
+```
+
+This command:
+1. Compares your configuration with the database
+2. Shows which tables/columns will be added
+3. Prompts for confirmation
+4. Applies migrations
+
+**Source:** `/packages/cli/src/commands/migrate.ts`
+
+<Warning>
+The `migrate` command only works with the built-in Kysely adapter in full mode. For Prisma/Drizzle adapters, use `generate` then your ORM's migration tools.
+</Warning>
+
+#### Options
+
+```bash
+# Specify working directory
+npx auth migrate --cwd ./path/to/project
+
+# Use specific config file
+npx auth migrate --config ./auth.config.ts
+
+# Auto-accept migration
+npx auth migrate --yes
+```
+
+#### Example Output
+
+```bash
+$ npx auth migrate
+
+🔑 The migration will affect the following:
+-> id, email, emailVerified, name fields on user table.
+-> id, userId, token, expiresAt fields on session table.
+-> id, userId, providerId, accountId fields on account table.
+
+? Are you sure you want to run these migrations? (y/N)
+
+migrating...
+🚀 migration was completed successfully!
+```
+
+**Source:** `/packages/cli/src/commands/migrate.ts:103`
+
+### secret
+
+Generate a secure secret for `BETTER_AUTH_SECRET`:
+
+```bash
+npx auth secret
+```
+
+Generates a cryptographically secure random string suitable for production use.
+
+**Source:** `/packages/cli/src/commands/secret.ts`
+
+Add to your environment:
+
+```bash
+# .env
+BETTER_AUTH_SECRET="your-generated-secret-here"
+```
+
+### init
+
+Initialize Better Auth in your project (interactive setup):
+
+```bash
+npx auth init
+```
+
+This command guides you through:
+1. Choosing your framework (Next.js, SvelteKit, etc.)
+2. Selecting database adapter
+3. Configuring authentication methods
+4. Creating configuration files
+
+**Source:** `/packages/cli/src/commands/init/`
+
+### info
+
+Display information about your Better Auth setup:
+
+```bash
+npx auth info
+```
+
+Shows:
+- Better Auth version
+- Configuration location
+- Database adapter
+- Installed plugins
+- Table structure
+
+**Source:** `/packages/cli/src/commands/info.ts`
+
+### login / logout
+
+Authenticate with Better Auth services:
+
+```bash
+# Login
+npx auth login
+
+# Logout  
+npx auth logout
+```
+
+Used for premium features or cloud services.
+
+**Source:** `/packages/cli/src/commands/login.ts`
+
+### mcp
+
+Manage MCP (Model Context Protocol) integration:
+
+```bash
+npx auth mcp
+```
+
+**Source:** `/packages/cli/src/commands/mcp.ts`
+
+## Configuration
+
+The CLI looks for configuration files in this order:
+
+1. `auth.ts`
+2. `auth.config.ts`
+3. `lib/auth.ts`
+4. `src/auth.ts`
+5. `auth/auth.ts`
+
+Or specify with `--config`:
+
+```bash
+npx auth generate --config ./config/auth.ts
+```
+
+**Source:** `/packages/cli/src/utils/get-config.ts`
+
+### Example Configuration
+
+```typescript
+// auth.ts
+import { betterAuth } from "better-auth";
+import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { db } from "./db";
+import { twoFactor, organization } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  database: drizzleAdapter(db, { provider: "pg" }),
+  
+  plugins: [
+    twoFactor(),
+    organization()
+  ],
+  
+  user: {
+    additionalFields: {
+      role: {
+        type: "string",
+        required: true,
+        defaultValue: "user"
+      }
+    }
+  }
+});
+```
+
+## Common Workflows
+
+### Initial Setup
+
+<Steps>
+
+### Install Better Auth
+
+```bash
+npm install better-auth
+```
+
+### Initialize
+
+```bash
+npx auth init
+```
+
+Follow the interactive prompts.
+
+### Generate Secret
+
+```bash
+npx auth secret
+```
+
+Add to `.env` file.
+
+### Generate Schema
+
+```bash
+npx auth generate
+```
+
+### Apply Migrations
+
+```bash
+# For Kysely
+npx auth migrate
+
+# For Prisma
+npx prisma db push
+
+# For Drizzle
+npx drizzle-kit push
+```
+
+</Steps>
+
+### Adding Plugins
+
+<Steps>
+
+### Update Configuration
+
+```typescript
+// auth.ts
+import { twoFactor } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  plugins: [
+    twoFactor() // Add plugin
+  ]
+});
+```
+
+### Regenerate Schema
+
+```bash
+npx auth generate
+```
+
+The CLI detects new plugin tables.
+
+### Apply Changes
+
+```bash
+npx auth migrate
+# or your ORM's migration tool
+```
+
+</Steps>
+
+### Schema Changes
+
+<Steps>
+
+### Modify Configuration
+
+```typescript
+export const auth = betterAuth({
+  user: {
+    additionalFields: {
+      phoneNumber: {
+        type: "string",
+        required: false
+      }
+    }
+  }
+});
+```
+
+### Generate Updated Schema
+
+```bash
+npx auth generate
+```
+
+### Review Changes
+
+Check the generated schema file for new fields.
+
+### Apply Migration
+
+```bash
+npx auth migrate --yes
+```
+
+</Steps>
+
+## Environment Variables
+
+The CLI respects these environment variables:
+
+```bash
+# Database connection
+DATABASE_URL="postgresql://..."
+
+# Better Auth secret
+BETTER_AUTH_SECRET="your-secret-key"
+
+# Base URL
+BETTER_AUTH_URL="https://yourdomain.com"
+
+# Custom variables in your config
+NEXT_PUBLIC_APP_URL="https://app.yourdomain.com"
+```
+
+Load with dotenv:
+
+```typescript
+// auth.ts
+import "dotenv/config";
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  database: process.env.DATABASE_URL,
+  secret: process.env.BETTER_AUTH_SECRET,
+  baseURL: process.env.BETTER_AUTH_URL
+});
+```
+
+## CI/CD Integration
+
+### Automated Migrations
+
+```yaml
+# .github/workflows/deploy.yml
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run migrations
+        run: npx auth migrate --yes
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+      
+      - name: Deploy
+        run: npm run deploy
+```
+
+### Schema Validation
+
+```yaml
+# .github/workflows/test.yml
+name: Test
+
+on: [pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node
+        uses: actions/setup-node@v3
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Check schema
+        run: npx auth generate --yes
+      
+      - name: Check for changes
+        run: |
+          if [[ -n $(git status --porcelain) ]]; then
+            echo "Schema is out of sync. Run 'npx auth generate'"
+            exit 1
+          fi
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No configuration file found">
+    Ensure you have an `auth.ts` or `auth.config.ts` file in your project root or specify the path:
+    
+    ```bash
+    npx auth generate --config ./path/to/auth.ts
+    ```
+  </Accordion>
+  
+  <Accordion title="Migrate command not supported">
+    The `migrate` command only works with Kysely adapter. For other adapters:
+    
+    ```bash
+    # Generate schema
+    npx auth generate
+    
+    # Then use your ORM's tools
+    npx prisma db push
+    # or
+    npx drizzle-kit push
+    ```
+  </Accordion>
+  
+  <Accordion title="Database connection error">
+    Ensure your `DATABASE_URL` is set correctly:
+    
+    ```bash
+    # Check environment variable
+    echo $DATABASE_URL
+    
+    # Or set temporarily
+    DATABASE_URL="postgresql://..." npx auth migrate
+    ```
+  </Accordion>
+  
+  <Accordion title="Permission denied">
+    Database user needs appropriate permissions:
+    
+    ```sql
+    -- PostgreSQL
+    GRANT CREATE ON DATABASE mydb TO myuser;
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO myuser;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Integration" href="/concepts/database" icon="database">
+    Learn about database adapters and schemas
+  </Card>
+  <Card title="Plugin System" href="/concepts/plugins" icon="plug">
+    Extend functionality with plugins
+  </Card>
+</CardGroup>

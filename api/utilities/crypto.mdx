@@ -1,0 +1,461 @@
+---
+title: 'Crypto Utilities'
+description: 'Cryptographic functions for encryption, hashing, and JWT operations'
+---
+
+## Overview
+
+Better Auth provides a comprehensive set of cryptographic utilities for secure password hashing, symmetric encryption, JWT operations, and digital signatures. These utilities are built on industry-standard algorithms and libraries.
+
+## Import
+
+```typescript
+import {
+  hashPassword,
+  verifyPassword,
+  symmetricEncrypt,
+  symmetricDecrypt,
+  signJWT,
+  verifyJWT,
+  symmetricEncodeJWT,
+  symmetricDecodeJWT,
+  makeSignature,
+  getCryptoKey,
+  constantTimeEqual,
+  generateRandomString
+} from "better-auth/crypto"
+```
+
+## Password Hashing
+
+### hashPassword
+
+Hashes a password using scrypt algorithm with secure defaults.
+
+```typescript
+function hashPassword(password: string): Promise<string>
+```
+
+<ParamField path="password" type="string" required>
+  The plaintext password to hash.
+</ParamField>
+
+**Returns:** Promise resolving to a string in the format `salt:hashedKey`
+
+**Configuration:**
+- Algorithm: scrypt
+- N: 16384 (CPU/memory cost)
+- r: 16 (block size)
+- p: 1 (parallelization)
+- dkLen: 64 (derived key length)
+- Salt: 16 random bytes
+
+**Example:**
+
+```typescript
+const hashedPassword = await hashPassword("user-password-123")
+// Returns: "a1b2c3d4e5f6...:1a2b3c4d5e6f..."
+```
+
+### verifyPassword
+
+Verifies a password against its hash using constant-time comparison.
+
+```typescript
+function verifyPassword(options: {
+  hash: string
+  password: string
+}): Promise<boolean>
+```
+
+<ParamField path="hash" type="string" required>
+  The password hash in `salt:key` format from `hashPassword`.
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  The plaintext password to verify.
+</ParamField>
+
+**Returns:** Promise resolving to `true` if the password matches, `false` otherwise
+
+**Example:**
+
+```typescript
+const isValid = await verifyPassword({
+  hash: storedHash,
+  password: "user-password-123"
+})
+
+if (isValid) {
+  // Password is correct
+}
+```
+
+<Note>
+The verification uses constant-time comparison to prevent timing attacks.
+</Note>
+
+## Symmetric Encryption
+
+### symmetricEncrypt
+
+Encrypts data using XChaCha20-Poly1305 with managed nonces.
+
+```typescript
+function symmetricEncrypt(options: {
+  key: string
+  data: string
+}): Promise<string>
+```
+
+<ParamField path="key" type="string" required>
+  The encryption key (will be hashed with SHA-256).
+</ParamField>
+
+<ParamField path="data" type="string" required>
+  The plaintext data to encrypt.
+</ParamField>
+
+**Returns:** Promise resolving to hex-encoded encrypted data
+
+**Example:**
+
+```typescript
+const encrypted = await symmetricEncrypt({
+  key: "my-secret-key",
+  data: "sensitive information"
+})
+```
+
+### symmetricDecrypt
+
+Decrypts data encrypted with `symmetricEncrypt`.
+
+```typescript
+function symmetricDecrypt(options: {
+  key: string
+  data: string
+}): Promise<string>
+```
+
+<ParamField path="key" type="string" required>
+  The same encryption key used for encryption.
+</ParamField>
+
+<ParamField path="data" type="string" required>
+  The hex-encoded encrypted data.
+</ParamField>
+
+**Returns:** Promise resolving to the decrypted plaintext string
+
+**Example:**
+
+```typescript
+const decrypted = await symmetricDecrypt({
+  key: "my-secret-key",
+  data: encryptedData
+})
+```
+
+## JWT Operations
+
+### signJWT
+
+Signs a JWT using HMAC-SHA256 (HS256).
+
+```typescript
+function signJWT(
+  payload: any,
+  secret: string,
+  expiresIn?: number
+): Promise<string>
+```
+
+<ParamField path="payload" type="any" required>
+  The payload to include in the JWT.
+</ParamField>
+
+<ParamField path="secret" type="string" required>
+  The secret key for signing.
+</ParamField>
+
+<ParamField path="expiresIn" type="number" default="3600">
+  Token expiration time in seconds.
+</ParamField>
+
+**Returns:** Promise resolving to the signed JWT string
+
+**Example:**
+
+```typescript
+const token = await signJWT(
+  { userId: "123", role: "admin" },
+  process.env.JWT_SECRET,
+  3600 // 1 hour
+)
+```
+
+### verifyJWT
+
+Verifies and decodes a JWT signed with `signJWT`.
+
+```typescript
+function verifyJWT<T = any>(
+  token: string,
+  secret: string
+): Promise<T | null>
+```
+
+<ParamField path="token" type="string" required>
+  The JWT to verify.
+</ParamField>
+
+<ParamField path="secret" type="string" required>
+  The secret key used for signing.
+</ParamField>
+
+**Returns:** Promise resolving to the decoded payload or `null` if verification fails
+
+**Example:**
+
+```typescript
+const payload = await verifyJWT<{ userId: string }>(token, process.env.JWT_SECRET)
+
+if (payload) {
+  console.log("User ID:", payload.userId)
+} else {
+  console.log("Invalid or expired token")
+}
+```
+
+### symmetricEncodeJWT
+
+Creates an encrypted JWT (JWE) using HKDF key derivation and A256CBC-HS512 encryption.
+
+```typescript
+function symmetricEncodeJWT<T extends Record<string, any>>(
+  payload: T,
+  secret: string,
+  salt: string,
+  expiresIn?: number
+): Promise<string>
+```
+
+<ParamField path="payload" type="Record<string, any>" required>
+  The payload to encrypt.
+</ParamField>
+
+<ParamField path="secret" type="string" required>
+  The secret key for encryption.
+</ParamField>
+
+<ParamField path="salt" type="string" required>
+  Salt for HKDF key derivation.
+</ParamField>
+
+<ParamField path="expiresIn" type="number" default="3600">
+  Token expiration time in seconds.
+</ParamField>
+
+**Returns:** Promise resolving to the encrypted JWT (JWE) string
+
+**Encryption Details:**
+- Algorithm: `dir` (Direct Key Agreement)
+- Encryption: `A256CBC-HS512` (AES-256-CBC with HMAC-SHA-512)
+- Key Derivation: HKDF with SHA-256
+- Key Size: 64 bytes
+
+**Example:**
+
+```typescript
+const encryptedToken = await symmetricEncodeJWT(
+  { userId: "123", sessionData: { /* ... */ } },
+  process.env.SECRET,
+  "better-auth-session",
+  300 // 5 minutes
+)
+```
+
+### symmetricDecodeJWT
+
+Decrypts and verifies a JWT created with `symmetricEncodeJWT`.
+
+```typescript
+function symmetricDecodeJWT<T = any>(
+  token: string,
+  secret: string,
+  salt: string
+): Promise<T | null>
+```
+
+<ParamField path="token" type="string" required>
+  The encrypted JWT to decrypt.
+</ParamField>
+
+<ParamField path="secret" type="string" required>
+  The same secret used for encryption.
+</ParamField>
+
+<ParamField path="salt" type="string" required>
+  The same salt used for encryption.
+</ParamField>
+
+**Returns:** Promise resolving to the decrypted payload or `null` if decryption fails
+
+**Example:**
+
+```typescript
+const payload = await symmetricDecodeJWT<SessionData>(
+  encryptedToken,
+  process.env.SECRET,
+  "better-auth-session"
+)
+
+if (payload) {
+  console.log("Session data:", payload)
+}
+```
+
+<Note>
+The function includes a 15-second clock tolerance for token expiration checks.
+</Note>
+
+## Digital Signatures
+
+### getCryptoKey
+
+Converts a secret string or buffer into a CryptoKey for HMAC operations.
+
+```typescript
+function getCryptoKey(
+  secret: string | BufferSource
+): Promise<CryptoKey>
+```
+
+<ParamField path="secret" type="string | BufferSource" required>
+  The secret key material.
+</ParamField>
+
+**Returns:** Promise resolving to a CryptoKey configured for HMAC-SHA256 signing and verification
+
+**Example:**
+
+```typescript
+const cryptoKey = await getCryptoKey("my-secret")
+```
+
+### makeSignature
+
+Creates a base64-encoded HMAC-SHA256 signature.
+
+```typescript
+function makeSignature(
+  value: string,
+  secret: string | BufferSource
+): Promise<string>
+```
+
+<ParamField path="value" type="string" required>
+  The value to sign.
+</ParamField>
+
+<ParamField path="secret" type="string | BufferSource" required>
+  The secret key for signing.
+</ParamField>
+
+**Returns:** Promise resolving to a base64-encoded signature (always 44 characters)
+
+**Example:**
+
+```typescript
+const signature = await makeSignature(
+  "data-to-sign",
+  process.env.SECRET
+)
+```
+
+## Buffer Utilities
+
+### constantTimeEqual
+
+Compares two buffers or strings in constant time to prevent timing attacks.
+
+```typescript
+function constantTimeEqual(
+  a: ArrayBuffer | Uint8Array | string,
+  b: ArrayBuffer | Uint8Array | string
+): boolean
+```
+
+<ParamField path="a" type="ArrayBuffer | Uint8Array | string" required>
+  First value to compare.
+</ParamField>
+
+<ParamField path="b" type="ArrayBuffer | Uint8Array | string" required>
+  Second value to compare.
+</ParamField>
+
+**Returns:** `true` if the values are equal, `false` otherwise
+
+**Example:**
+
+```typescript
+const isEqual = constantTimeEqual(
+  storedHash,
+  computedHash
+)
+```
+
+<Warning>
+Always use constant-time comparison for security-sensitive operations like password or token verification to prevent timing attacks.
+</Warning>
+
+## Random Generation
+
+### generateRandomString
+
+Generates a cryptographically secure random string.
+
+```typescript
+function generateRandomString(length?: number): string
+```
+
+<ParamField path="length" type="number" optional>
+  Length of the random string to generate.
+</ParamField>
+
+**Returns:** A random string containing alphanumeric characters, hyphens, and underscores
+
+**Character Set:** `a-z`, `A-Z`, `0-9`, `-`, `_`
+
+**Example:**
+
+```typescript
+const token = generateRandomString(32)
+const verifier = generateRandomString(64)
+```
+
+## Security Notes
+
+<Note>
+**Best Practices:**
+- Always use environment variables for secrets
+- Use `hashPassword` and `verifyPassword` for user passwords
+- Use `symmetricEncodeJWT` for sensitive session data that needs encryption
+- Use `signJWT` for non-sensitive data that only needs integrity protection
+- Use `constantTimeEqual` for all security-sensitive comparisons
+</Note>
+
+<Warning>
+**Security Considerations:**
+- Never log or expose encrypted data or keys
+- Store secrets securely using environment variables or secret management systems
+- Rotate encryption keys periodically
+- Use appropriate token expiration times based on your security requirements
+</Warning>
+
+## Related
+
+- [Cookies Utilities](/api-reference/utilities/cookies)
+- [OAuth2 Utilities](/api-reference/utilities/oauth2)
+- [Server Configuration](/api-reference/server/better-auth)
