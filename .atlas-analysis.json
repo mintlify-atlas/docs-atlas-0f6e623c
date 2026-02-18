@@ -1,0 +1,185 @@
+{
+  "projectType": "framework",
+  "projectName": "Better Auth",
+  "projectDescription": "The most comprehensive authentication framework for TypeScript",
+  "theme": "palm",
+  "primaryColor": "#0066FF",
+  "lightColor": "#3399FF",
+  "darkColor": "#0052CC",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/database",
+              "concepts/session-management",
+              "concepts/api",
+              "concepts/client",
+              "concepts/plugins",
+              "concepts/hooks",
+              "concepts/typescript"
+            ]
+          },
+          {
+            "group": "Authentication Methods",
+            "pages": [
+              "authentication/email-password",
+              "authentication/oauth",
+              "authentication/magic-link",
+              "authentication/passkey",
+              "authentication/two-factor",
+              "authentication/social-providers"
+            ]
+          },
+          {
+            "group": "Database Adapters",
+            "pages": [
+              "adapters/overview",
+              "adapters/prisma",
+              "adapters/drizzle",
+              "adapters/mongodb",
+              "adapters/kysely",
+              "adapters/custom"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "integrations/nextjs",
+              "integrations/sveltekit",
+              "integrations/solid-start",
+              "integrations/react",
+              "integrations/vue",
+              "integrations/express",
+              "integrations/other"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/organization",
+              "plugins/two-factor",
+              "plugins/admin",
+              "plugins/jwt",
+              "plugins/bearer",
+              "plugins/magic-link",
+              "plugins/email-otp",
+              "plugins/phone-number",
+              "plugins/username",
+              "plugins/anonymous",
+              "plugins/oauth-proxy",
+              "plugins/multi-session",
+              "plugins/oidc-provider",
+              "plugins/device-authorization",
+              "plugins/custom"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/migration-from-nextauth",
+              "guides/migration-from-clerk",
+              "guides/migration-from-supabase",
+              "guides/creating-custom-adapter",
+              "guides/creating-custom-plugin",
+              "guides/saml-sso",
+              "guides/performance-optimization"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Server API",
+            "pages": [
+              "api-reference/server/betterauth",
+              "api-reference/server/configuration",
+              "api-reference/server/endpoints",
+              "api-reference/server/middleware",
+              "api-reference/server/rate-limiting"
+            ]
+          },
+          {
+            "group": "Client API",
+            "pages": [
+              "api-reference/client/create-auth-client",
+              "api-reference/client/react",
+              "api-reference/client/vue",
+              "api-reference/client/svelte",
+              "api-reference/client/solid"
+            ]
+          },
+          {
+            "group": "Plugin API",
+            "pages": [
+              "api-reference/plugins/plugin-interface",
+              "api-reference/plugins/hooks",
+              "api-reference/plugins/schema-extension"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "api-reference/cli/overview",
+              "api-reference/cli/commands"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/examples",
+              "resources/faq",
+              "resources/security",
+              "resources/contributing",
+              "resources/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Framework-agnostic authentication",
+    "Comprehensive plugin ecosystem",
+    "OAuth2/OIDC support",
+    "Multi-tenant & multi-session",
+    "2FA & passkey authentication",
+    "Built-in database adapters",
+    "Type-safe TypeScript API",
+    "SSO & SAML support",
+    "Rate limiting & security",
+    "Client SDKs for React, Vue, Svelte, Solid"
+  ],
+  "publicApiSurface": [
+    "betterAuth() - Main server initialization",
+    "createAuthClient() - Client initialization",
+    "Database adapters - prismaAdapter(), drizzleAdapter(), mongoAdapter()",
+    "Social providers - google, github, discord, apple, etc.",
+    "Plugins - organization(), twoFactor(), admin(), jwt(), bearer()",
+    "React hooks - useAuth(), useSession()",
+    "Vue composables - useAuth(), useSession()",
+    "Svelte stores - $auth, $session",
+    "Solid signals - createAuth(), createSession()",
+    "Middleware - rateLimit(), cors(), originCheck()",
+    "CLI commands - better-auth migrate, better-auth generate"
+  ]
+}
