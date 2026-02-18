@@ -1,0 +1,237 @@
+---
+title: Changelog
+description: Track updates, new features, bug fixes, and improvements to Better Auth.
+---
+
+Stay up to date with the latest changes, features, and improvements to Better Auth.
+
+<Note>
+  For detailed release notes and breaking changes, visit the [GitHub Releases](https://github.com/better-auth/better-auth/releases) page.
+</Note>
+
+## Latest Version
+
+### v1.5.0-beta.15 (Current)
+
+The latest beta release includes various improvements and bug fixes. Check the [GitHub releases](https://github.com/better-auth/better-auth/releases) for detailed information.
+
+## How to Update
+
+Update Better Auth to the latest version:
+
+```bash
+# npm
+npm update better-auth
+
+# pnpm
+pnpm update better-auth
+
+# yarn
+yarn upgrade better-auth
+```
+
+### Update Specific Version
+
+```bash
+# npm
+npm install better-auth@latest
+
+# pnpm
+pnpm add better-auth@latest
+
+# yarn
+yarn add better-auth@latest
+```
+
+## Release Channels
+
+Better Auth uses different release channels:
+
+- **Latest** (`latest`) - Stable releases for production use
+- **Beta** (`beta`) - Pre-release versions with new features
+- **Canary** (`canary`) - Bleeding edge, built from the main branch
+
+### Installing Beta Releases
+
+```bash
+pnpm add better-auth@beta
+```
+
+### Installing Canary Releases
+
+```bash
+pnpm add better-auth@canary
+```
+
+<Warning>
+  Beta and canary releases may contain breaking changes and are not recommended for production use.
+</Warning>
+
+## Version History
+
+For complete version history and detailed release notes:
+
+<CardGroup cols={2}>
+  <Card title="GitHub Releases" icon="github" href="https://github.com/better-auth/better-auth/releases">
+    View all releases, release notes, and breaking changes on GitHub.
+  </Card>
+
+  <Card title="npm Package" icon="npm" href="https://www.npmjs.com/package/better-auth">
+    View package versions and download statistics on npm.
+  </Card>
+</CardGroup>
+
+## Migration Guides
+
+When upgrading between major versions, refer to our migration guides:
+
+<Accordion title="v1.x to v2.x Migration">
+  Migration guide coming when v2.0 is released.
+  
+  Subscribe to updates:
+  - Watch the [GitHub repository](https://github.com/better-auth/better-auth)
+  - Follow [@better_auth](https://twitter.com/better_auth) on Twitter
+  - Join our [Discord community](https://discord.gg/better-auth)
+</Accordion>
+
+<Accordion title="v0.x to v1.x Migration">
+  Check the [v1.0 release notes](https://github.com/better-auth/better-auth/releases) for migration instructions from v0.x to v1.x.
+</Accordion>
+
+## Breaking Changes
+
+Better Auth follows [Semantic Versioning](https://semver.org/):
+
+- **Major versions** (e.g., 1.0.0 → 2.0.0) - Breaking changes
+- **Minor versions** (e.g., 1.0.0 → 1.1.0) - New features, backward compatible
+- **Patch versions** (e.g., 1.0.0 → 1.0.1) - Bug fixes, backward compatible
+
+Breaking changes are only introduced in major version releases and are clearly documented in release notes.
+
+## What's Coming
+
+Interested in upcoming features? Check out:
+
+- [GitHub Roadmap](https://github.com/better-auth/better-auth/discussions/categories/roadmap)
+- [Feature Requests](https://github.com/better-auth/better-auth/discussions/categories/ideas)
+- [Open Pull Requests](https://github.com/better-auth/better-auth/pulls)
+
+## Recent Highlights
+
+Some notable features and improvements added in recent releases:
+
+### Authentication Features
+- ✅ Passkeys (WebAuthn) support
+- ✅ Two-factor authentication (TOTP)
+- ✅ Magic link authentication
+- ✅ Social OAuth providers (20+ providers)
+- ✅ Multi-factor authentication
+
+### Enterprise Features
+- ✅ SSO with SAML 2.0 and OIDC
+- ✅ SCIM 2.0 user provisioning
+- ✅ Organization and team management
+- ✅ Role-based access control (RBAC)
+- ✅ Member invitations and management
+
+### Developer Experience
+- ✅ TypeScript-first with full type safety
+- ✅ Framework-agnostic design
+- ✅ Plugin architecture
+- ✅ CLI tools for migrations
+- ✅ Comprehensive documentation
+
+### Integrations
+- ✅ Stripe payment integration
+- ✅ Multiple database adapters (Prisma, Drizzle, Kysely, MongoDB)
+- ✅ Redis secondary storage
+- ✅ Expo and Electron support
+- ✅ Edge runtime compatibility
+
+## Staying Updated
+
+Stay informed about new releases:
+
+### GitHub Watch
+
+Watch the repository for releases:
+
+1. Go to [better-auth/better-auth](https://github.com/better-auth/better-auth)
+2. Click "Watch" → "Custom" → "Releases"
+3. Get notified of new releases
+
+### Social Media
+
+- Follow [@better_auth](https://twitter.com/better_auth) on Twitter
+- Join our [Discord community](https://discord.gg/better-auth)
+- Subscribe to our [YouTube channel](https://youtube.com/@better-auth) (if available)
+
+### RSS Feed
+
+Subscribe to the GitHub releases RSS feed:
+
+```
+https://github.com/better-auth/better-auth/releases.atom
+```
+
+## Release Process
+
+Better Auth follows this release process:
+
+1. **Development** - Features and fixes merged to `canary` branch
+2. **Beta Testing** - Pre-releases published with `beta` tag
+3. **Release Candidate** - Final testing before stable release
+4. **Stable Release** - Published with `latest` tag
+5. **Patch Releases** - Bug fixes and security updates
+
+## Versioning Policy
+
+We aim for stability:
+
+- **No breaking changes in minor/patch releases**
+- **Clear migration guides for major versions**
+- **Deprecation warnings before removal**
+- **Security patches backported when possible**
+
+## Changelogs
+
+Detailed changelogs are maintained:
+
+- **GitHub Releases** - User-facing changes with descriptions
+- **Commit History** - Detailed development changes
+- **Migration Guides** - Breaking changes and upgrade paths
+
+<Note>
+  Changes marked with `fix:` and `feat:` in commit messages are included in the changelog. Documentation (`docs:`) and chore (`chore:`) changes are typically not included.
+</Note>
+
+## Report Issues
+
+Found a bug in the latest release?
+
+1. Check [existing issues](https://github.com/better-auth/better-auth/issues)
+2. Create a [new issue](https://github.com/better-auth/better-auth/issues/new) if needed
+3. Include:
+   - Better Auth version
+   - Framework and version
+   - Minimal reproduction
+   - Expected vs actual behavior
+
+## Contributing
+
+Want to contribute to the next release?
+
+- Read the [Contributing Guide](/resources/contributing)
+- Check [good first issues](https://github.com/better-auth/better-auth/labels/good%20first%20issue)
+- Join discussions in [Discord](https://discord.gg/better-auth)
+
+## Support
+
+Need help upgrading?
+
+- **Documentation** - Check our [docs](https://better-auth.com/docs)
+- **Discord** - Ask in [Discord community](https://discord.gg/better-auth)
+- **GitHub Discussions** - Post in [Discussions](https://github.com/better-auth/better-auth/discussions)
+- **Enterprise Support** - Contact for enterprise support options
+
+Thank you for using Better Auth! 🚀

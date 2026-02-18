@@ -1,0 +1,382 @@
+---
+title: 'Plugin Interface'
+description: 'Complete reference for the Better Auth plugin interface'
+---
+
+Plugins are the primary way to extend Better Auth functionality. A plugin can add new endpoints, extend database schemas, use hooks, and more.
+
+## BetterAuthPlugin
+
+The main plugin interface that all Better Auth plugins must implement.
+
+### Properties
+
+<ParamField path="id" type="string" required>
+  Unique identifier for the plugin. This should be a descriptive kebab-case string.
+  
+  ```ts
+  id: "my-custom-plugin"
+  ```
+</ParamField>
+
+<ParamField path="init" type="function">
+  Called when the plugin is initialized. Can return additional context or modify options.
+  
+  **Parameters:**
+  - `ctx: AuthContext` - The authentication context
+  
+  **Returns:** `Promise<{ context?: Partial<AuthContext>, options?: Partial<BetterAuthOptions> }>`
+  
+  ```ts
+  init: async (ctx) => {
+    return {
+      context: {
+        customHelper: async () => { /* ... */ }
+      },
+      options: {
+        // Modify auth options
+      }
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="endpoints" type="Record<string, Endpoint>">
+  Custom API endpoints added by the plugin.
+  
+  ```ts
+  endpoints: {
+    myEndpoint: createAuthEndpoint("/my-plugin/action", {
+      method: "POST",
+      body: z.object({
+        data: z.string()
+      })
+    }, async (ctx) => {
+      return ctx.json({ success: true })
+    })
+  }
+  ```
+</ParamField>
+
+<ParamField path="schema" type="BetterAuthPluginDBSchema">
+  Database schema definition for tables the plugin needs.
+  
+  ```ts
+  schema: {
+    myTable: {
+      fields: {
+        userId: {
+          type: "string",
+          references: {
+            model: "user",
+            field: "id",
+            onDelete: "cascade"
+          }
+        },
+        customField: {
+          type: "string",
+          required: true,
+          unique: false
+        },
+        timestamp: {
+          type: "date"
+        }
+      }
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="middlewares" type="Array<{ path: string, middleware: Middleware }>">
+  Middlewares that run on specific paths. Only executes on API requests from clients.
+  
+  ```ts
+  middlewares: [
+    {
+      path: "/my-plugin/*",
+      middleware: createAuthMiddleware(async (ctx) => {
+        // Validate or transform request
+        return { context: ctx }
+      })
+    }
+  ]
+  ```
+</ParamField>
+
+<ParamField path="hooks" type="{ before?: Hook[], after?: Hook[] }">
+  Hooks that run before or after specific endpoints are called.
+  
+  See the [Hooks reference](/api-reference/plugins/hooks) for detailed information.
+</ParamField>
+
+<ParamField path="onRequest" type="function">
+  Called before every request is processed.
+  
+  **Parameters:**
+  - `request: Request` - The incoming request
+  - `ctx: AuthContext` - The authentication context
+  
+  **Returns:** `Promise<{ response: Response } | { request: Request } | void>`
+  
+  ```ts
+  onRequest: async (request, ctx) => {
+    // Modify request or return early response
+    if (shouldBlock(request)) {
+      return { response: new Response("Blocked", { status: 403 }) }
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="onResponse" type="function">
+  Called after a response is generated.
+  
+  **Parameters:**
+  - `response: Response` - The outgoing response
+  - `ctx: AuthContext` - The authentication context
+  
+  **Returns:** `Promise<{ response: Response } | void>`
+  
+  ```ts
+  onResponse: async (response, ctx) => {
+    // Modify response headers, body, etc.
+    const headers = new Headers(response.headers)
+    headers.set("X-Custom-Header", "value")
+    return {
+      response: new Response(response.body, {
+        ...response,
+        headers
+      })
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="rateLimit" type="Array<RateLimitRule>">
+  Custom rate limiting rules for plugin endpoints.
+  
+  **Properties:**
+  - `window: number` - Time window in seconds
+  - `max: number` - Maximum number of requests
+  - `pathMatcher: (path: string) => boolean` - Function to match paths
+  
+  ```ts
+  rateLimit: [
+    {
+      window: 60,
+      max: 10,
+      pathMatcher: (path) => path.startsWith("/my-plugin/")
+    }
+  ]
+  ```
+</ParamField>
+
+<ParamField path="migrations" type="Record<string, Migration>">
+  Manual database migrations for the plugin. Only use if you're not using the `schema` option.
+  
+  ```ts
+  migrations: {
+    "001_add_custom_table": {
+      up: async (db) => {
+        await db.schema
+          .createTable("custom_table")
+          .addColumn("id", "text", (col) => col.primaryKey())
+          .execute()
+      },
+      down: async (db) => {
+        await db.schema.dropTable("custom_table").execute()
+      }
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="adapter" type="Record<string, Function>">
+  Custom database operations that override default behavior.
+  
+  ```ts
+  adapter: {
+    createCustomRecord: async (data) => {
+      // Custom DB operation
+      return { id: "...", ...data }
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="$ERROR_CODES" type="Record<string, RawError>">
+  Error codes specific to the plugin.
+  
+  ```ts
+  $ERROR_CODES: {
+    CUSTOM_ERROR: {
+      code: "CUSTOM_ERROR",
+      message: "A custom error occurred"
+    }
+  }
+  ```
+</ParamField>
+
+<ParamField path="options" type="Record<string, any>">
+  Configuration options for the plugin.
+  
+  ```ts
+  options: {
+    enableFeature: true,
+    customSetting: "value"
+  }
+  ```
+</ParamField>
+
+## Context Object
+
+The `AuthContext` object available in plugin functions:
+
+<ResponseField name="appName" type="string">
+  Application name (default: "Better Auth")
+</ResponseField>
+
+<ResponseField name="options" type="BetterAuthOptions">
+  Better Auth configuration options
+</ResponseField>
+
+<ResponseField name="tables" type="Record<string, TableSchema>">
+  Core tables definition with schema information
+</ResponseField>
+
+<ResponseField name="baseURL" type="string">
+  Base URL of the auth server (e.g., `http://localhost:3000/api/auth`)
+</ResponseField>
+
+<ResponseField name="session" type="SessionConfig">
+  Session configuration with `updateAge` and `expiresIn`
+</ResponseField>
+
+<ResponseField name="secret" type="string">
+  Secret key for encryption and signing
+</ResponseField>
+
+<ResponseField name="authCookie" type="CookieConfig">
+  Default cookie configuration for auth cookies
+</ResponseField>
+
+<ResponseField name="logger" type="Logger">
+  Logger instance used by Better Auth
+</ResponseField>
+
+<ResponseField name="db" type="Kysely">
+  Kysely database instance for raw SQL queries
+</ResponseField>
+
+<ResponseField name="adapter" type="Adapter">
+  ORM-like database adapter with helper functions
+</ResponseField>
+
+<ResponseField name="internalAdapter" type="InternalAdapter">
+  Internal database operations (e.g., `createSession(userId)`)
+</ResponseField>
+
+<ResponseField name="createAuthCookie" type="function">
+  Helper to create cookie configuration with proper prefixes
+</ResponseField>
+
+<ResponseField name="trustedOrigins" type="string[]">
+  List of trusted origins from configuration
+</ResponseField>
+
+<ResponseField name="isTrustedOrigin" type="function">
+  Check if a URL is in the trusted origins list
+  
+  **Parameters:**
+  - `url: string` - URL to check
+  - `options?: { allowRelativePaths?: boolean }` - Options
+  
+  **Returns:** `boolean`
+</ResponseField>
+
+## Example Plugin
+
+```ts
+import { createAuthEndpoint } from "better-auth/api"
+import type { BetterAuthPlugin } from "better-auth"
+import { z } from "zod"
+
+export const myPlugin = (options?: { enableFeature?: boolean }) => {
+  return {
+    id: "my-plugin",
+    
+    init: async (ctx) => {
+      console.log("Plugin initialized")
+      return {
+        context: {
+          myHelper: () => "helper function"
+        }
+      }
+    },
+    
+    schema: {
+      customData: {
+        fields: {
+          userId: {
+            type: "string",
+            references: {
+              model: "user",
+              field: "id",
+              onDelete: "cascade"
+            }
+          },
+          data: {
+            type: "string",
+            required: true
+          },
+          createdAt: {
+            type: "date"
+          }
+        }
+      }
+    },
+    
+    endpoints: {
+      saveCustomData: createAuthEndpoint("/my-plugin/save-data", {
+        method: "POST",
+        body: z.object({
+          data: z.string()
+        })
+      }, async (ctx) => {
+        const session = ctx.context.session
+        if (!session) {
+          return ctx.json({ error: "Unauthorized" }, { status: 401 })
+        }
+        
+        await ctx.context.adapter.create({
+          model: "customData",
+          data: {
+            userId: session.user.id,
+            data: ctx.body.data,
+            createdAt: new Date()
+          }
+        })
+        
+        return ctx.json({ success: true })
+      })
+    },
+    
+    hooks: {
+      after: [{
+        matcher: (ctx) => ctx.path === "/sign-in/email",
+        handler: createAuthMiddleware(async (ctx) => {
+          console.log("User signed in")
+        })
+      }]
+    },
+    
+    rateLimit: [
+      {
+        window: 60,
+        max: 10,
+        pathMatcher: (path) => path.startsWith("/my-plugin/")
+      }
+    ]
+  } satisfies BetterAuthPlugin
+}
+```

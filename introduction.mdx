@@ -1,0 +1,308 @@
+---
+title: Introduction to Better Auth
+description: The most comprehensive authentication framework for TypeScript - framework-agnostic, feature-rich, and extensible.
+---
+
+<Note>
+Better Auth is a framework-agnostic authentication and authorization framework for TypeScript that provides a comprehensive set of features out of the box.
+</Note>
+
+## What is Better Auth?
+
+Better Auth is **the most comprehensive authentication framework for TypeScript**. It provides a complete authentication solution that works with any TypeScript framework, whether you're building with Next.js, SvelteKit, Nuxt, Solid, or vanilla JavaScript.
+
+Unlike traditional authentication libraries that require extensive boilerplate code for anything beyond basic features, Better Auth gives you powerful functionality through a simple, plugin-based architecture. Whether you need OAuth, two-factor authentication, passkeys, multi-tenant support, or even enterprise features like SSO, Better Auth lets you focus on building your application instead of reinventing the wheel.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Framework Agnostic" icon="layer-group">
+    Works seamlessly with Next.js, SvelteKit, Nuxt, Solid, Express, Hono, and more. One library for all your TypeScript projects.
+  </Card>
+  
+  <Card title="Email & Password" icon="envelope">
+    Built-in email and password authentication with secure password hashing, automatic sign-in, and customizable validation.
+  </Card>
+  
+  <Card title="OAuth Providers" icon="users">
+    Support for 50+ OAuth providers including GitHub, Google, Apple, Discord, Twitter, and more out of the box.
+  </Card>
+  
+  <Card title="Two-Factor Authentication" icon="shield-halved">
+    TOTP-based 2FA with QR code generation, backup codes, and trusted device management.
+  </Card>
+  
+  <Card title="Passkeys & WebAuthn" icon="fingerprint">
+    Modern passwordless authentication using passkeys, biometrics, and security keys.
+  </Card>
+  
+  <Card title="Magic Link" icon="wand-magic-sparkles">
+    Passwordless email authentication with secure, time-limited magic links.
+  </Card>
+  
+  <Card title="Database Agnostic" icon="database">
+    Works with PostgreSQL, MySQL, SQLite, MongoDB, and more. Use your preferred database or ORM (Prisma, Drizzle, etc.).
+  </Card>
+  
+  <Card title="Plugin Ecosystem" icon="puzzle-piece">
+    Extensive plugin system for advanced features: organizations, multi-session, admin panels, access control, and more.
+  </Card>
+  
+  <Card title="Type-Safe" icon="code">
+    Full TypeScript support with end-to-end type safety from server to client.
+  </Card>
+  
+  <Card title="Session Management" icon="clock">
+    Flexible session handling with support for stateless JWT or database-backed sessions.
+  </Card>
+  
+  <Card title="Social Accounts" icon="link">
+    Link multiple social accounts to a single user, manage account connections seamlessly.
+  </Card>
+  
+  <Card title="Enterprise Ready" icon="building">
+    Multi-tenancy, SSO, organizations, role-based access control, and audit logging.
+  </Card>
+</CardGroup>
+
+## Why Better Auth?
+
+Authentication in the TypeScript ecosystem has been a half-solved problem. Existing open-source libraries often require significant additional code for anything beyond basic authentication. Rather than pushing third-party services as the only solution, Better Auth provides a comprehensive, self-hosted alternative that gives you complete control.
+
+### Complete Solution
+
+```typescript
+import { betterAuth } from "better-auth";
+import { twoFactor, passkey, organization } from "better-auth/plugins";
+
+export const auth = betterAuth({
+  database: db,
+  emailAndPassword: {
+    enabled: true,
+  },
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    },
+  },
+  plugins: [
+    twoFactor(),
+    passkey(),
+    organization(),
+  ],
+});
+```
+
+With just a few lines of configuration, you get:
+- Email and password authentication
+- GitHub OAuth integration
+- Two-factor authentication
+- Passkey support
+- Multi-tenant organizations
+
+## How It Works
+
+Better Auth consists of two main parts:
+
+<Steps>
+  <Step title="Server Instance">
+    Create an auth instance on your server that handles all authentication logic, database operations, and API routes.
+    
+    ```typescript title="lib/auth.ts"
+    import { betterAuth } from "better-auth";
+    
+    export const auth = betterAuth({
+      database: db,
+      emailAndPassword: { enabled: true },
+    });
+    ```
+  </Step>
+  
+  <Step title="Client SDK">
+    Use the framework-specific client to interact with authentication from your frontend.
+    
+    ```typescript title="lib/auth-client.ts"
+    import { createAuthClient } from "better-auth/react";
+    
+    export const authClient = createAuthClient();
+    ```
+  </Step>
+  
+  <Step title="Start Building">
+    Use the client methods to sign in, sign up, and manage sessions.
+    
+    ```tsx title="components/login.tsx"
+    import { authClient } from "@/lib/auth-client";
+    
+    const { data, error } = await authClient.signIn.email({
+      email: "user@example.com",
+      password: "password123",
+    });
+    ```
+  </Step>
+</Steps>
+
+## What's Included
+
+<Tabs items={["Authentication", "Authorization", "Advanced Features", "Integrations"]}>
+  <Tab value="Authentication">
+    - **Email & Password**: Secure authentication with customizable validation
+    - **OAuth Providers**: 50+ providers including GitHub, Google, Apple, Discord
+    - **Magic Links**: Passwordless email authentication
+    - **Passkeys**: WebAuthn-based passwordless authentication
+    - **Phone Number**: SMS-based authentication
+    - **Username**: Username-based authentication
+    - **Anonymous**: Guest user support
+  </Tab>
+  
+  <Tab value="Authorization">
+    - **Organizations**: Multi-tenant organization support
+    - **Role-Based Access Control**: Fine-grained permissions
+    - **Access Control**: Flexible authorization policies
+    - **Admin Panel**: Built-in user management
+    - **Audit Logging**: Track user actions and changes
+  </Tab>
+  
+  <Tab value="Advanced Features">
+    - **Two-Factor Authentication**: TOTP with backup codes
+    - **Multi-Session**: Multiple concurrent sessions
+    - **Device Authorization**: OAuth 2.0 device flow
+    - **Custom Sessions**: Extend session data
+    - **JWT Support**: Stateless authentication
+    - **Email Verification**: Verify user email addresses
+    - **Password Reset**: Secure password recovery
+  </Tab>
+  
+  <Tab value="Integrations">
+    - **Frameworks**: Next.js, SvelteKit, Nuxt, SolidStart, Astro, TanStack Start
+    - **Databases**: PostgreSQL, MySQL, SQLite, MongoDB, and more
+    - **ORMs**: Prisma, Drizzle, Kysely
+    - **Runtimes**: Node.js, Bun, Deno, Cloudflare Workers, Vercel Edge
+  </Tab>
+</Tabs>
+
+## Philosophy
+
+Better Auth is built on three core principles:
+
+1. **Developer Experience**: Simple API, excellent TypeScript support, and minimal boilerplate
+2. **Flexibility**: Framework-agnostic design that works with any stack
+3. **Extensibility**: Plugin-based architecture for advanced features without bloat
+
+## Quick Example
+
+Here's a complete authentication flow:
+
+<CodeGroup>
+```typescript title="Server (lib/auth.ts)"
+import { betterAuth } from "better-auth";
+import Database from "better-sqlite3";
+
+export const auth = betterAuth({
+  database: new Database("./db.sqlite"),
+  emailAndPassword: {
+    enabled: true,
+  },
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    },
+  },
+});
+```
+
+```typescript title="Client (lib/auth-client.ts)"
+import { createAuthClient } from "better-auth/react";
+
+export const authClient = createAuthClient();
+
+export const { signIn, signOut, signUp, useSession } = authClient;
+```
+
+```tsx title="Component (components/auth.tsx)"
+import { authClient } from "@/lib/auth-client";
+
+export function Auth() {
+  const { data: session } = authClient.useSession();
+  
+  if (session) {
+    return (
+      <div>
+        <p>Welcome, {session.user.name}!</p>
+        <button onClick={() => authClient.signOut()}>Sign Out</button>
+      </div>
+    );
+  }
+  
+  return (
+    <button onClick={() => authClient.signIn.social({ provider: "github" })}>
+      Sign in with GitHub
+    </button>
+  );
+}
+```
+</CodeGroup>
+
+## Getting Started
+
+Ready to add authentication to your app? Choose your path:
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Get up and running in 5 minutes with a complete working example
+  </Card>
+  
+  <Card title="Installation" icon="download" href="/installation">
+    Step-by-step installation guide with database setup
+  </Card>
+  
+  <Card title="API Reference" icon="book" href="/api-reference">
+    Explore the complete API documentation
+  </Card>
+  
+  <Card title="Plugins" icon="puzzle-piece" href="/plugins">
+    Browse available plugins and extensions
+  </Card>
+</CardGroup>
+
+## AI Tooling
+
+Better Auth provides AI-friendly tooling to help you integrate authentication faster:
+
+### MCP Server
+
+Better Auth includes a Model Context Protocol (MCP) server that AI coding assistants can use:
+
+```bash
+npx auth mcp --open-code
+```
+
+### Skills
+
+Add Better Auth skills to your AI assistant:
+
+```bash
+npx skills add better-auth/skills
+```
+
+### LLMs.txt
+
+Access the AI-optimized documentation at [https://better-auth.com/llms.txt](https://better-auth.com/llms.txt)
+
+## Community
+
+<CardGroup cols={2}>
+  <Card title="Discord" icon="discord" href="https://discord.gg/better-auth">
+    Join our Discord community for help and discussions
+  </Card>
+  
+  <Card title="GitHub" icon="github" href="https://github.com/better-auth/better-auth">
+    Star the project and contribute on GitHub
+  </Card>
+</CardGroup>
+
+<Info>
+Better Auth is free and open source under the MIT License. You have complete freedom to use it in your projects.
+</Info>

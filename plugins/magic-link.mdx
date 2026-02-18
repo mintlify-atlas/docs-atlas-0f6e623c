@@ -1,0 +1,219 @@
+---
+title: Magic Link
+description: Passwordless authentication via email links
+---
+
+Magic link authentication allows users to sign in without a password. When users enter their email, they receive a link that authenticates them when clicked.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the server plugin
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { magicLink } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        magicLink({
+          sendMagicLink: async ({ email, token, url }, ctx) => {
+            // Send email to user
+            await sendEmail({
+              to: email,
+              subject: "Sign in to your account",
+              html: `Click here to sign in: <a href="${url}">${url}</a>`
+            })
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { magicLinkClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        magicLinkClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Send Magic Link
+
+Request a magic link for a user's email:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.signIn.magicLink({
+  email: "user@example.com",
+  callbackURL: "/dashboard",
+  newUserCallbackURL: "/welcome", // Optional: redirect for new users
+  errorCallbackURL: "/error" // Optional: redirect on error
+})
+```
+
+<Callout>
+If the user hasn't signed up and `disableSignUp` is not set to `true`, they'll be automatically signed up.
+</Callout>
+
+### Verify Magic Link
+
+When users click the link, they're automatically authenticated and redirected to `callbackURL`. If no callback is provided, they're redirected to the root URL.
+
+<Callout type="warn">
+If an error occurs and no `errorCallbackURL` is provided, users are redirected to `callbackURL` with an `error` query parameter.
+</Callout>
+
+### Manual Verification
+
+If you need to handle verification manually:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.magicLink.verify({
+  token: "verification-token",
+  callbackURL: "/dashboard" // Optional
+})
+```
+
+## Configuration Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { magicLink } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    magicLink({
+      // Required: function to send magic link
+      sendMagicLink: async ({ email, url, token }, ctx) => {
+        await sendEmail({
+          to: email,
+          subject: "Your magic link",
+          html: `<a href="${url}">Click to sign in</a>`
+        })
+      },
+      
+      // Token expiration time in seconds
+      expiresIn: 300, // 5 minutes (default)
+      
+      // Allowed verification attempts
+      allowedAttempts: 1, // Default: 1, use Infinity for unlimited
+      
+      // Disable automatic sign up
+      disableSignUp: false,
+      
+      // Custom token generation
+      generateToken: (email) => {
+        // Return cryptographically secure random string
+        return generateSecureToken()
+      },
+      
+      // How to store token in database
+      storeToken: "plain", // or "hashed" or custom hasher
+    })
+  ]
+})
+```
+
+### Store Token Options
+
+The `storeToken` option controls how tokens are stored:
+
+**Plain text:**
+```ts
+storeToken: "plain"
+```
+
+**Hashed:**
+```ts
+storeToken: "hashed"
+```
+
+**Custom hasher:**
+```ts
+storeToken: {
+  type: "custom-hasher",
+  hash: async (token: string) => {
+    return await customHashFunction(token)
+  }
+}
+```
+
+<Callout type="warn">
+When using `generateToken`, ensure the returned string is hard to guess. By default, a long, cryptographically secure string is used.
+</Callout>
+
+## Example: Complete Implementation
+
+```tsx title="app/login/page.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useState } from "react"
+
+export default function LoginPage() {
+  const [email, setEmail] = useState("")
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState("")
+  
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    
+    const { data, error: signInError } = await authClient.signIn.magicLink({
+      email,
+      callbackURL: "/dashboard",
+    })
+    
+    if (signInError) {
+      setError(signInError.message)
+    } else {
+      setSent(true)
+    }
+  }
+  
+  if (sent) {
+    return (
+      <div>
+        <h2>Check your email</h2>
+        <p>We sent a magic link to {email}</p>
+      </div>
+    )
+  }
+  
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Enter your email"
+        required
+      />
+      <button type="submit">Send Magic Link</button>
+      {error && <p>{error}</p>}
+    </form>
+  )
+}
+```
+
+## Security Considerations
+
+1. **Token Expiration**: Tokens expire after the configured time (default: 5 minutes)
+2. **Attempt Limits**: Limit verification attempts to prevent brute force
+3. **Secure Generation**: Use cryptographically secure token generation
+4. **HTTPS Only**: Always use HTTPS in production
+5. **Email Security**: Ensure your email delivery is secure

@@ -1,0 +1,548 @@
+---
+title: 'Schema Extension'
+description: 'Extend database schemas with custom tables and fields'
+---
+
+Plugins can extend the database schema by adding new tables or fields to existing tables. Better Auth automatically generates migrations for schema changes.
+
+## Schema Definition
+
+Define schemas in the `schema` property of your plugin:
+
+```ts
+schema: {
+  tableName: {
+    fields: {
+      fieldName: {
+        type: "string" | "number" | "boolean" | "date",
+        required?: boolean,
+        unique?: boolean,
+        references?: {
+          model: string,
+          field: string,
+          onDelete?: "cascade" | "set null" | "no action"
+        },
+        defaultValue?: any
+      }
+    },
+    modelName?: string,
+    disableMigration?: boolean
+  }
+}
+```
+
+## Field Types
+
+### String Fields
+
+```ts
+fields: {
+  name: {
+    type: "string",
+    required: true
+  },
+  email: {
+    type: "string",
+    unique: true,
+    required: true
+  },
+  bio: {
+    type: "string",
+    required: false
+  }
+}
+```
+
+### Number Fields
+
+```ts
+fields: {
+  age: {
+    type: "number",
+    required: true
+  },
+  score: {
+    type: "number",
+    defaultValue: 0
+  }
+}
+```
+
+### Boolean Fields
+
+```ts
+fields: {
+  isActive: {
+    type: "boolean",
+    defaultValue: true
+  },
+  emailVerified: {
+    type: "boolean",
+    defaultValue: false
+  }
+}
+```
+
+### Date Fields
+
+```ts
+fields: {
+  createdAt: {
+    type: "date",
+    required: true
+  },
+  updatedAt: {
+    type: "date"
+  },
+  expiresAt: {
+    type: "date"
+  }
+}
+```
+
+## Field Properties
+
+<ParamField path="type" type="'string' | 'number' | 'boolean' | 'date'" required>
+  The data type of the field
+</ParamField>
+
+<ParamField path="required" type="boolean" default="true">
+  Whether the field is required when creating new records
+</ParamField>
+
+<ParamField path="unique" type="boolean" default="false">
+  Whether the field must have unique values across all records
+</ParamField>
+
+<ParamField path="defaultValue" type="any">
+  Default value for the field when not provided
+</ParamField>
+
+<ParamField path="references" type="object">
+  Foreign key reference to another table:
+  
+  - `model: string` - The table name to reference
+  - `field: string` - The field name in the referenced table
+  - `onDelete?: 'cascade' | 'set null' | 'no action'` - Action on referenced record deletion (default: "cascade")
+</ParamField>
+
+## Creating New Tables
+
+Define completely new tables for plugin-specific data:
+
+```ts
+schema: {
+  apiKeys: {
+    fields: {
+      userId: {
+        type: "string",
+        required: true,
+        references: {
+          model: "user",
+          field: "id",
+          onDelete: "cascade"
+        }
+      },
+      key: {
+        type: "string",
+        required: true,
+        unique: true
+      },
+      name: {
+        type: "string",
+        required: true
+      },
+      lastUsed: {
+        type: "date"
+      },
+      createdAt: {
+        type: "date",
+        required: true
+      },
+      expiresAt: {
+        type: "date"
+      }
+    }
+  }
+}
+```
+
+## Extending Core Tables
+
+Add fields to existing Better Auth tables like `user` or `session`:
+
+```ts
+schema: {
+  user: {
+    fields: {
+      phoneNumber: {
+        type: "string",
+        unique: true
+      },
+      dateOfBirth: {
+        type: "date"
+      },
+      subscription: {
+        type: "string",
+        defaultValue: "free"
+      }
+    }
+  },
+  session: {
+    fields: {
+      ipAddress: {
+        type: "string"
+      },
+      userAgent: {
+        type: "string"
+      },
+      lastActivity: {
+        type: "date"
+      }
+    }
+  }
+}
+```
+
+<Warning>
+  Don't store sensitive information in the `user` or `session` tables as these are often returned to clients. Create separate tables for sensitive data.
+</Warning>
+
+## Type Inference
+
+When you extend core tables, the types are automatically inferred:
+
+```ts
+// Plugin adds phoneNumber to user
+schema: {
+  user: {
+    fields: {
+      phoneNumber: {
+        type: "string"
+      }
+    }
+  }
+}
+
+// Now TypeScript knows about phoneNumber
+const session = await auth.api.getSession({ headers })
+if (session) {
+  console.log(session.user.phoneNumber) // ✅ Type-safe!
+}
+```
+
+## References and Relations
+
+Define relationships between tables:
+
+### One-to-Many
+
+```ts
+schema: {
+  posts: {
+    fields: {
+      userId: {
+        type: "string",
+        required: true,
+        references: {
+          model: "user",
+          field: "id",
+          onDelete: "cascade" // Delete posts when user is deleted
+        }
+      },
+      title: {
+        type: "string",
+        required: true
+      },
+      content: {
+        type: "string"
+      }
+    }
+  }
+}
+```
+
+### Many-to-Many (Junction Table)
+
+```ts
+schema: {
+  groups: {
+    fields: {
+      name: {
+        type: "string",
+        required: true
+      }
+    }
+  },
+  userGroups: {
+    fields: {
+      userId: {
+        type: "string",
+        required: true,
+        references: {
+          model: "user",
+          field: "id",
+          onDelete: "cascade"
+        }
+      },
+      groupId: {
+        type: "string",
+        required: true,
+        references: {
+          model: "groups",
+          field: "id",
+          onDelete: "cascade"
+        }
+      },
+      joinedAt: {
+        type: "date",
+        required: true
+      }
+    }
+  }
+}
+```
+
+## Schema Options
+
+### Custom Model Name
+
+Use a different name in the database:
+
+```ts
+schema: {
+  myTable: {
+    modelName: "custom_table_name",
+    fields: {
+      // ...
+    }
+  }
+}
+```
+
+### Disable Migration
+
+Skip automatic migration for a table:
+
+```ts
+schema: {
+  rateLimit: {
+    fields: {
+      key: {
+        type: "string"
+      }
+    },
+    disableMigration: true // Handle migration manually
+  }
+}
+```
+
+Useful when:
+- Using external storage (Redis, Memory)
+- Table is managed by another system
+- Conditional schema based on configuration
+
+## Working with Schema
+
+Once defined, use the adapter to interact with your schema:
+
+### Create Records
+
+```ts
+await ctx.context.adapter.create({
+  model: "apiKeys",
+  data: {
+    userId: session.user.id,
+    key: generateKey(),
+    name: "Production API Key",
+    createdAt: new Date()
+  }
+})
+```
+
+### Query Records
+
+```ts
+const apiKeys = await ctx.context.adapter.findMany({
+  model: "apiKeys",
+  where: [
+    {
+      field: "userId",
+      value: session.user.id
+    }
+  ]
+})
+```
+
+### Update Records
+
+```ts
+await ctx.context.adapter.update({
+  model: "apiKeys",
+  where: [
+    {
+      field: "id",
+      value: keyId
+    }
+  ],
+  update: {
+    lastUsed: new Date()
+  }
+})
+```
+
+### Delete Records
+
+```ts
+await ctx.context.adapter.delete({
+  model: "apiKeys",
+  where: [
+    {
+      field: "id",
+      value: keyId
+    }
+  ]
+})
+```
+
+## Migration Generation
+
+Better Auth automatically generates migrations:
+
+```bash
+# Generate schema files
+npx auth generate
+
+# Run migrations (Kysely only)
+npx auth migrate
+```
+
+For ORMs:
+- **Drizzle**: Run `drizzle-kit push` or `drizzle-kit migrate`
+- **Prisma**: Run `prisma migrate dev` or `prisma db push`
+
+## Complete Example
+
+```ts
+import type { BetterAuthPlugin } from "better-auth"
+import { createAuthEndpoint } from "better-auth/api"
+import { z } from "zod"
+
+export const notesPlugin = () => {
+  return {
+    id: "notes",
+    
+    schema: {
+      notes: {
+        fields: {
+          userId: {
+            type: "string",
+            required: true,
+            references: {
+              model: "user",
+              field: "id",
+              onDelete: "cascade"
+            }
+          },
+          title: {
+            type: "string",
+            required: true
+          },
+          content: {
+            type: "string",
+            required: true
+          },
+          isPublic: {
+            type: "boolean",
+            defaultValue: false
+          },
+          createdAt: {
+            type: "date",
+            required: true
+          },
+          updatedAt: {
+            type: "date"
+          }
+        }
+      },
+      noteTags: {
+        fields: {
+          noteId: {
+            type: "string",
+            required: true,
+            references: {
+              model: "notes",
+              field: "id",
+              onDelete: "cascade"
+            }
+          },
+          tag: {
+            type: "string",
+            required: true
+          }
+        }
+      }
+    },
+    
+    endpoints: {
+      createNote: createAuthEndpoint("/notes/create", {
+        method: "POST",
+        body: z.object({
+          title: z.string(),
+          content: z.string(),
+          tags: z.array(z.string()).optional()
+        }),
+        use: [sessionMiddleware]
+      }, async (ctx) => {
+        const session = ctx.context.session
+        
+        const note = await ctx.context.adapter.create({
+          model: "notes",
+          data: {
+            userId: session.user.id,
+            title: ctx.body.title,
+            content: ctx.body.content,
+            createdAt: new Date()
+          }
+        })
+        
+        if (ctx.body.tags) {
+          for (const tag of ctx.body.tags) {
+            await ctx.context.adapter.create({
+              model: "noteTags",
+              data: {
+                noteId: note.id,
+                tag
+              }
+            })
+          }
+        }
+        
+        return ctx.json({ note })
+      })
+    }
+  } satisfies BetterAuthPlugin
+}
+```
+
+## Best Practices
+
+<Card title="Use Foreign Keys" icon="link">
+  Always use `references` for relationships to maintain data integrity.
+</Card>
+
+<Card title="Choose Appropriate Types" icon="database">
+  Use the correct field type for your data (string, number, boolean, date).
+</Card>
+
+<Card title="Set Required Fields" icon="asterisk">
+  Mark fields as required only when they must always have a value.
+</Card>
+
+<Card title="Index Unique Fields" icon="magnifying-glass">
+  Use `unique: true` for fields that should be indexed and unique.
+</Card>
+
+<Card title="Cascade Deletes" icon="trash">
+  Use `onDelete: "cascade"` to automatically clean up related records.
+</Card>

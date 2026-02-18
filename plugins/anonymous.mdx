@@ -1,0 +1,288 @@
+---
+title: Anonymous
+description: Enable guest users without requiring authentication
+---
+
+The Anonymous plugin allows users to have an authenticated experience without providing an email, password, OAuth, or any Personally Identifiable Information (PII). Users can later link an authentication method to their account.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { anonymous } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        anonymous()
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+      ```bash
+      npx auth migrate
+      ```
+      </Tab>
+      <Tab value="generate">
+      ```bash
+      npx auth generate
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { anonymousClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        anonymousClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Sign In Anonymously
+
+Create an anonymous session:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.signIn.anonymous()
+
+if (data) {
+  console.log("Anonymous user:", data.user)
+  // User can now use the app without authentication
+}
+```
+
+### Link Account
+
+When an anonymous user signs in or signs up with another method, their anonymous activities can be linked to the new account.
+
+First, provide an `onLinkAccount` callback:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { anonymous } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    anonymous({
+      onLinkAccount: async ({ anonymousUser, newUser }) => {
+        // Move data from anonymous user to new user
+        await moveCartItems(anonymousUser.id, newUser.id)
+        await transferUserData(anonymousUser.id, newUser.id)
+      }
+    })
+  ]
+})
+```
+
+Then when the user signs in or signs up, the accounts are automatically linked:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+// Anonymous user signs up with email
+const { data } = await authClient.signUp.email({
+  email: "user@example.com",
+  password: "secure-password",
+  name: "John Doe"
+})
+
+// onLinkAccount callback is triggered
+// Anonymous user is deleted by default
+```
+
+### Delete Anonymous User
+
+Manually delete an anonymous user:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.deleteAnonymousUser()
+```
+
+<Callout type="info">
+**Notes:**
+- Anonymous users are deleted by default when accounts are linked
+- Setting `disableDeleteAnonymousUser: true` prevents deletion and disables the `/delete-anonymous-user` endpoint
+</Callout>
+
+## Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { anonymous } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    anonymous({
+      // Email domain for anonymous users
+      emailDomainName: "example.com", // temp-{id}@example.com
+      
+      // Custom email generation
+      generateRandomEmail: () => {
+        const id = crypto.randomUUID()
+        return `guest-${id}@example.com`
+      },
+      
+      // Callback when account is linked
+      onLinkAccount: async ({ anonymousUser, newUser }) => {
+        // Transfer data from anonymous user to new user
+        await transferUserData(anonymousUser.id, newUser.id)
+      },
+      
+      // Disable automatic deletion of anonymous users
+      disableDeleteAnonymousUser: true,
+      
+      // Custom name generation
+      generateName: () => {
+        return `Guest ${Math.floor(Math.random() * 10000)}`
+      },
+    })
+  ]
+})
+```
+
+### Email Generation
+
+**Default format:**
+```
+temp@{user-id}.com
+```
+
+**With emailDomainName:**
+```ts
+emailDomainName: "example.com" // temp-{user-id}@example.com
+```
+
+**Custom generation:**
+```ts
+generateRandomEmail: () => {
+  const id = crypto.randomUUID()
+  return `guest-${id}@example.com`
+}
+```
+
+<Callout type="info">
+When `generateRandomEmail` is provided, `emailDomainName` is ignored. Ensure the email is unique and in valid format.
+</Callout>
+
+## Schema
+
+The plugin adds one field to the user table:
+
+- `isAnonymous` (boolean, optional): Indicates whether the user is anonymous
+
+## Example: Shopping Cart
+
+```tsx title="app/cart/page.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useEffect, useState } from "react"
+
+export default function CartPage() {
+  const [user, setUser] = useState(null)
+  
+  useEffect(() => {
+    const initUser = async () => {
+      // Try to get existing session
+      const { data: session } = await authClient.getSession()
+      
+      if (!session) {
+        // Create anonymous session if no session exists
+        const { data } = await authClient.signIn.anonymous()
+        setUser(data?.user)
+      } else {
+        setUser(session.user)
+      }
+    }
+    
+    initUser()
+  }, [])
+  
+  const handleSignUp = async () => {
+    // When anonymous user signs up, cart is automatically linked
+    const { data } = await authClient.signUp.email({
+      email: "user@example.com",
+      password: "password",
+      name: "John Doe"
+    })
+    
+    if (data) {
+      setUser(data.user)
+      // Cart items have been transferred to new account
+    }
+  }
+  
+  return (
+    <div>
+      <h2>Shopping Cart</h2>
+      
+      {user?.isAnonymous ? (
+        <div>
+          <p>You're browsing as a guest</p>
+          <button onClick={handleSignUp}>Sign up to save your cart</button>
+        </div>
+      ) : (
+        <p>Welcome, {user?.name}!</p>
+      )}
+      
+      {/* Cart items */}
+    </div>
+  )
+}
+```
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { anonymous } from "better-auth/plugins"
+import { db } from "@/lib/db"
+
+export const auth = betterAuth({
+  plugins: [
+    anonymous({
+      onLinkAccount: async ({ anonymousUser, newUser }) => {
+        // Transfer cart items from anonymous user to new user
+        await db.cartItem.updateMany({
+          where: { userId: anonymousUser.id },
+          data: { userId: newUser.id }
+        })
+        
+        // Transfer other user data
+        await db.userPreferences.updateMany({
+          where: { userId: anonymousUser.id },
+          data: { userId: newUser.id }
+        })
+      }
+    })
+  ]
+})
+```
+
+## Use Cases
+
+1. **E-commerce**: Allow users to add items to cart before signing up
+2. **Content Platforms**: Let users explore content before registration
+3. **Games**: Enable gameplay before account creation
+4. **Surveys**: Collect responses without requiring login
+5. **Collaborative Tools**: Allow guest access to shared resources

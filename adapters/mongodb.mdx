@@ -1,0 +1,408 @@
+---
+title: MongoDB Adapter
+description: Integrate Better Auth with MongoDB for flexible NoSQL database access.
+---
+
+# MongoDB Adapter
+
+MongoDB is a popular NoSQL database that is widely used for building scalable and flexible applications. It provides a flexible schema that allows for easy data modeling and querying.
+
+Before getting started, make sure you have MongoDB installed and configured. For more information, see [MongoDB Documentation](https://www.mongodb.com/docs/).
+
+## Installation
+
+<Steps>
+### Install MongoDB Driver
+
+Install the MongoDB Node.js driver:
+
+```bash
+npm install mongodb
+```
+
+### Setup MongoDB
+
+Ensure you have a MongoDB instance running. You can use:
+
+- **Local MongoDB**: Install MongoDB locally
+- **MongoDB Atlas**: Cloud-hosted MongoDB (recommended)
+- **Docker**: Run MongoDB in a container
+
+```bash title="Docker"
+docker run -d -p 27017:27017 --name mongodb mongo:latest
+```
+</Steps>
+
+## Basic Usage
+
+Connect MongoDB to Better Auth:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { MongoClient } from "mongodb";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+
+const client = new MongoClient("mongodb://localhost:27017/mydb");
+const db = client.db();
+
+export const auth = betterAuth({
+  database: mongodbAdapter(db, {
+    // Optional: enable transactions
+    client,
+  }),
+});
+```
+
+### Using MongoDB Atlas
+
+For MongoDB Atlas (cloud):
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { MongoClient } from "mongodb";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+
+const client = new MongoClient(
+  process.env.MONGODB_URI || "mongodb+srv://username:password@cluster.mongodb.net/mydb"
+);
+
+await client.connect();
+const db = client.db();
+
+export const auth = betterAuth({
+  database: mongodbAdapter(db, {
+    client,
+  }),
+});
+```
+
+<Note>
+If you don't provide a `client`, database transactions won't be enabled. For production applications, it's recommended to provide the client to enable transaction support.
+</Note>
+
+## Schema Generation
+
+For MongoDB, we don't need to generate or migrate the schema manually. MongoDB automatically creates collections when you insert documents.
+
+However, you may still want to run the CLI to generate types or documentation:
+
+```bash
+npx auth@latest generate
+```
+
+### Collections Structure
+
+Better Auth will create the following collections:
+
+- **user** - User accounts
+- **session** - User sessions
+- **account** - OAuth accounts and credentials
+- **verification** - Email verification tokens
+
+### Example Document Structure
+
+<CodeGroup>
+```json title="User Collection"
+{
+  "_id": ObjectId("507f1f77bcf86cd799439011"),
+  "name": "John Doe",
+  "email": "john@example.com",
+  "emailVerified": true,
+  "image": "https://example.com/avatar.jpg",
+  "createdAt": ISODate("2024-01-01T00:00:00Z"),
+  "updatedAt": ISODate("2024-01-15T00:00:00Z")
+}
+```
+
+```json title="Session Collection"
+{
+  "_id": ObjectId("507f1f77bcf86cd799439012"),
+  "expiresAt": ISODate("2024-02-01T00:00:00Z"),
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "ipAddress": "192.168.1.1",
+  "userAgent": "Mozilla/5.0...",
+  "userId": ObjectId("507f1f77bcf86cd799439011")
+}
+```
+
+```json title="Account Collection"
+{
+  "_id": ObjectId("507f1f77bcf86cd799439013"),
+  "accountId": "12345",
+  "providerId": "google",
+  "userId": ObjectId("507f1f77bcf86cd799439011"),
+  "accessToken": "ya29.a0AfH6...",
+  "refreshToken": "1//0gQ...",
+  "idToken": "eyJhbGc...",
+  "expiresAt": ISODate("2024-01-01T01:00:00Z"),
+  "password": null
+}
+```
+
+```json title="Verification Collection"
+{
+  "_id": ObjectId("507f1f77bcf86cd799439014"),
+  "identifier": "john@example.com",
+  "value": "abc123def456",
+  "expiresAt": ISODate("2024-01-01T01:00:00Z"),
+  "createdAt": ISODate("2024-01-01T00:00:00Z")
+}
+```
+</CodeGroup>
+
+## Configuration Options
+
+### Client (Optional)
+
+Provide the MongoDB client for transaction support:
+
+```ts
+mongodbAdapter(db, {
+  client, // MongoClient instance
+})
+```
+
+<Note type="warn">
+If your MongoDB instance doesn't support transactions (e.g., standalone server without a replica set), you must explicitly set `transaction: false`.
+</Note>
+
+### Transactions
+
+Control transaction behavior:
+
+```ts
+mongodbAdapter(db, {
+  client,
+  transaction: true, // Default: true when client is provided
+})
+```
+
+To disable transactions:
+
+```ts
+mongodbAdapter(db, {
+  client,
+  transaction: false, // Disable transactions
+})
+```
+
+### Plural Collection Names
+
+Use plural collection names (e.g., `users` instead of `user`):
+
+```ts
+mongodbAdapter(db, {
+  client,
+  usePlural: true,
+})
+```
+
+### Debug Logs
+
+Enable detailed logging:
+
+```ts
+mongodbAdapter(db, {
+  client,
+  debugLogs: true,
+})
+```
+
+## Experimental Joins
+
+Database joins can significantly improve performance. Endpoints like `/get-session` and `/get-full-organization` can see 2-3x performance improvements.
+
+The MongoDB adapter supports joins using MongoDB's aggregation pipeline since version 1.4.0.
+
+### Enable Joins
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  database: mongodbAdapter(db, {
+    client,
+  }),
+  experimental: { joins: true },
+});
+```
+
+<Note>
+MongoDB joins are implemented using the `$lookup` aggregation operator. This works best when your foreign key fields are indexed.
+</Note>
+
+## ID Field Handling
+
+MongoDB uses `_id` as the primary key field, but Better Auth uses `id`. The adapter automatically handles this conversion:
+
+- When writing to MongoDB: `id` → `_id`
+- When reading from MongoDB: `_id` → `id`
+
+### Custom ID Generation
+
+By default, MongoDB uses ObjectId for primary keys. To use custom IDs:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+
+export const auth = betterAuth({
+  database: mongodbAdapter(db, { client }),
+  advanced: {
+    database: {
+      generateId: () => {
+        // Return your custom ID (e.g., UUID, CUID, etc.)
+        return crypto.randomUUID();
+      },
+    },
+  },
+});
+```
+
+## Indexes
+
+For optimal performance, create indexes on frequently queried fields:
+
+```ts title="setup-indexes.ts"
+import { MongoClient } from "mongodb";
+
+const client = new MongoClient("mongodb://localhost:27017/mydb");
+await client.connect();
+const db = client.db();
+
+// User collection indexes
+await db.collection("user").createIndex({ email: 1 }, { unique: true });
+
+// Session collection indexes
+await db.collection("session").createIndex({ token: 1 }, { unique: true });
+await db.collection("session").createIndex({ userId: 1 });
+await db.collection("session").createIndex({ expiresAt: 1 });
+
+// Account collection indexes
+await db.collection("account").createIndex({ userId: 1 });
+await db.collection("account").createIndex({ providerId: 1, accountId: 1 }, { unique: true });
+
+// Verification collection indexes
+await db.collection("verification").createIndex({ identifier: 1, value: 1 }, { unique: true });
+await db.collection("verification").createIndex({ expiresAt: 1 });
+
+await client.close();
+```
+
+## Replica Sets and Transactions
+
+For transactions to work, MongoDB must be running as a replica set.
+
+### Local Development
+
+To enable replica set locally:
+
+```bash
+# Start MongoDB with replica set
+mongod --replSet rs0
+
+# In MongoDB shell, initialize replica set
+mongosh
+rs.initiate()
+```
+
+### Docker Compose
+
+```yaml title="docker-compose.yml"
+version: '3.8'
+services:
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    command: mongod --replSet rs0
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongodb_data:/data/db
+
+volumes:
+  mongodb_data:
+```
+
+After starting the container, initialize the replica set:
+
+```bash
+docker exec -it mongodb mongosh --eval "rs.initiate()"
+```
+
+### Standalone MongoDB (No Transactions)
+
+If you're using a standalone MongoDB instance:
+
+```ts title="auth.ts"
+export const auth = betterAuth({
+  database: mongodbAdapter(db, {
+    transaction: false, // Explicitly disable transactions
+  }),
+});
+```
+
+## Example: Complete Setup
+
+<CodeGroup>
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { mongodbAdapter } from "better-auth/adapters/mongodb";
+import { db, client } from "./db";
+
+export const auth = betterAuth({
+  database: mongodbAdapter(db, {
+    client,
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  experimental: {
+    joins: true,
+  },
+});
+```
+
+```ts title="db/index.ts"
+import { MongoClient } from "mongodb";
+
+const uri = process.env.MONGODB_URI || "mongodb://localhost:27017/mydb";
+
+export const client = new MongoClient(uri);
+
+// Connect to MongoDB
+await client.connect();
+
+export const db = client.db();
+
+// Create indexes for optimal performance
+await db.collection("user").createIndex({ email: 1 }, { unique: true });
+await db.collection("session").createIndex({ token: 1 }, { unique: true });
+await db.collection("session").createIndex({ userId: 1 });
+await db.collection("account").createIndex({ userId: 1 });
+await db.collection("account").createIndex(
+  { providerId: 1, accountId: 1 },
+  { unique: true }
+);
+await db.collection("verification").createIndex(
+  { identifier: 1, value: 1 },
+  { unique: true }
+);
+
+console.log("Connected to MongoDB");
+```
+
+```env title=".env"
+MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/mydb?retryWrites=true&w=majority
+```
+</CodeGroup>
+
+## Additional Resources
+
+- [MongoDB Documentation](https://www.mongodb.com/docs/)
+- [MongoDB Node.js Driver](https://www.mongodb.com/docs/drivers/node/current/)
+- [MongoDB Atlas](https://www.mongodb.com/cloud/atlas) - Managed MongoDB in the cloud
+- [Performance Optimization Guide](/guides/optimizing-for-performance)
+- [Better Auth CLI Reference](/concepts/cli)

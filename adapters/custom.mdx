@@ -1,0 +1,515 @@
+---
+title: Custom Adapter
+description: Create a custom database adapter for Better Auth to integrate with any database.
+---
+
+# Custom Adapter
+
+While Better Auth provides official adapters for popular databases, you can create a custom adapter to integrate with any database system. This guide will walk you through creating your own adapter.
+
+## When to Create a Custom Adapter
+
+Consider creating a custom adapter when:
+
+- You're using a database not officially supported
+- You need custom data transformation logic
+- You want to integrate with a proprietary database system
+- You need to implement custom caching or data access patterns
+
+## Adapter Interface
+
+A Better Auth adapter must implement the `Adapter` interface, which includes methods for CRUD operations:
+
+```ts
+import type { Adapter } from "better-auth/adapters";
+
+interface Adapter {
+  // Create operations
+  create(params: CreateParams): Promise<any>;
+  
+  // Read operations
+  findOne(params: FindOneParams): Promise<any | null>;
+  findMany(params: FindManyParams): Promise<any[]>;
+  count(params: CountParams): Promise<number>;
+  
+  // Update operations
+  update(params: UpdateParams): Promise<any>;
+  updateMany(params: UpdateManyParams): Promise<number>;
+  
+  // Delete operations
+  delete(params: DeleteParams): Promise<void>;
+  deleteMany(params: DeleteManyParams): Promise<number>;
+}
+```
+
+## Creating a Custom Adapter
+
+Let's create a custom adapter step by step.
+
+### Step 1: Setup Adapter Factory
+
+Use the `createAdapterFactory` helper to create your adapter:
+
+```ts title="my-adapter.ts"
+import type { BetterAuthOptions } from "better-auth";
+import type {
+  AdapterFactoryOptions,
+  DBAdapter,
+} from "better-auth/adapters";
+import { createAdapterFactory } from "better-auth/adapters";
+
+export const myCustomAdapter = (client: YourDatabaseClient) => {
+  const createCustomAdapter = (client: YourDatabaseClient) => {
+    return ({ getFieldName, getModelName, schema, options }) => {
+      return {
+        async create({ model, data }) {
+          // Implement create logic
+        },
+        async findOne({ model, where, select }) {
+          // Implement findOne logic
+        },
+        async findMany({ model, where, limit, select, offset, sortBy }) {
+          // Implement findMany logic
+        },
+        async count({ model, where }) {
+          // Implement count logic
+        },
+        async update({ model, where, update }) {
+          // Implement update logic
+        },
+        async updateMany({ model, where, update }) {
+          // Implement updateMany logic
+        },
+        async delete({ model, where }) {
+          // Implement delete logic
+        },
+        async deleteMany({ model, where }) {
+          // Implement deleteMany logic
+        },
+      };
+    };
+  };
+
+  const adapterOptions: AdapterFactoryOptions = {
+    config: {
+      adapterId: "my-custom-adapter",
+      adapterName: "My Custom Adapter",
+      debugLogs: false,
+    },
+    adapter: createCustomAdapter(client),
+  };
+
+  const adapter = createAdapterFactory(adapterOptions);
+  
+  return (options: BetterAuthOptions): DBAdapter<BetterAuthOptions> => {
+    return adapter(options);
+  };
+};
+```
+
+### Step 2: Implement CRUD Operations
+
+Each method receives parameters specific to the operation:
+
+#### Create
+
+```ts
+async create({ model, data }) {
+  // model: table/collection name (e.g., "user", "session")
+  // data: object with values to insert
+  
+  const result = await client.collection(model).insertOne(data);
+  return { id: result.insertedId, ...data };
+}
+```
+
+#### Find One
+
+```ts
+async findOne({ model, where, select, join }) {
+  // model: table name
+  // where: array of where conditions
+  // select: array of field names to select
+  // join: optional join configuration
+  
+  const query = buildWhereClause(where);
+  const result = await client.collection(model).findOne(query);
+  
+  if (select && result) {
+    return pickFields(result, select);
+  }
+  
+  return result;
+}
+```
+
+#### Find Many
+
+```ts
+async findMany({ model, where, limit, select, offset, sortBy, join }) {
+  // model: table name
+  // where: array of where conditions
+  // limit: maximum number of results
+  // select: fields to select
+  // offset: number of records to skip
+  // sortBy: { field: string, direction: "asc" | "desc" }
+  // join: optional join configuration
+  
+  let query = client.collection(model).find(buildWhereClause(where));
+  
+  if (limit) query = query.limit(limit);
+  if (offset) query = query.skip(offset);
+  if (sortBy) {
+    query = query.sort({ [sortBy.field]: sortBy.direction === "desc" ? -1 : 1 });
+  }
+  
+  const results = await query.toArray();
+  
+  if (select) {
+    return results.map(result => pickFields(result, select));
+  }
+  
+  return results;
+}
+```
+
+#### Count
+
+```ts
+async count({ model, where }) {
+  const query = buildWhereClause(where);
+  return await client.collection(model).countDocuments(query);
+}
+```
+
+#### Update
+
+```ts
+async update({ model, where, update }) {
+  const query = buildWhereClause(where);
+  const result = await client.collection(model).findOneAndUpdate(
+    query,
+    { $set: update },
+    { returnDocument: "after" }
+  );
+  return result.value;
+}
+```
+
+#### Update Many
+
+```ts
+async updateMany({ model, where, update }) {
+  const query = buildWhereClause(where);
+  const result = await client.collection(model).updateMany(
+    query,
+    { $set: update }
+  );
+  return result.modifiedCount;
+}
+```
+
+#### Delete
+
+```ts
+async delete({ model, where }) {
+  const query = buildWhereClause(where);
+  await client.collection(model).deleteOne(query);
+}
+```
+
+#### Delete Many
+
+```ts
+async deleteMany({ model, where }) {
+  const query = buildWhereClause(where);
+  const result = await client.collection(model).deleteMany(query);
+  return result.deletedCount;
+}
+```
+
+### Step 3: Handle Where Clauses
+
+The `where` parameter is an array of conditions:
+
+```ts
+interface Where {
+  field: string;
+  value: any;
+  operator?: "eq" | "ne" | "in" | "not_in" | "lt" | "lte" | "gt" | "gte" | "contains" | "starts_with" | "ends_with";
+  connector?: "AND" | "OR";
+}
+```
+
+Implement a helper to build queries:
+
+```ts
+function buildWhereClause(where: Where[]) {
+  if (!where || where.length === 0) return {};
+  
+  const andConditions: any[] = [];
+  const orConditions: any[] = [];
+  
+  for (const condition of where) {
+    const { field, value, operator = "eq", connector = "AND" } = condition;
+    
+    let clause: any;
+    switch (operator) {
+      case "eq":
+        clause = { [field]: value };
+        break;
+      case "ne":
+        clause = { [field]: { $ne: value } };
+        break;
+      case "in":
+        clause = { [field]: { $in: value } };
+        break;
+      case "not_in":
+        clause = { [field]: { $nin: value } };
+        break;
+      case "lt":
+        clause = { [field]: { $lt: value } };
+        break;
+      case "lte":
+        clause = { [field]: { $lte: value } };
+        break;
+      case "gt":
+        clause = { [field]: { $gt: value } };
+        break;
+      case "gte":
+        clause = { [field]: { $gte: value } };
+        break;
+      case "contains":
+        clause = { [field]: { $regex: value, $options: "i" } };
+        break;
+      case "starts_with":
+        clause = { [field]: { $regex: `^${value}`, $options: "i" } };
+        break;
+      case "ends_with":
+        clause = { [field]: { $regex: `${value}$`, $options: "i" } };
+        break;
+    }
+    
+    if (connector === "OR") {
+      orConditions.push(clause);
+    } else {
+      andConditions.push(clause);
+    }
+  }
+  
+  const query: any = {};
+  if (andConditions.length > 0) query.$and = andConditions;
+  if (orConditions.length > 0) query.$or = orConditions;
+  
+  return query;
+}
+```
+
+## Adapter Configuration
+
+Configure your adapter with appropriate options:
+
+```ts
+const adapterOptions: AdapterFactoryOptions = {
+  config: {
+    adapterId: "my-adapter",
+    adapterName: "My Custom Adapter",
+    
+    // Enable/disable features
+    supportsUUIDs: true,
+    supportsArrays: true,
+    supportsJSON: true,
+    supportsNumericIds: false,
+    supportsBooleans: true,
+    supportsDates: true,
+    
+    // Table/field naming
+    usePlural: false,
+    
+    // Debug logs
+    debugLogs: false,
+    
+    // Transaction support
+    transaction: false,
+  },
+  adapter: createCustomAdapter(client),
+};
+```
+
+## Using Your Custom Adapter
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { myCustomAdapter } from "./my-adapter";
+import { YourDatabaseClient } from "your-database";
+
+const client = new YourDatabaseClient({
+  connectionString: process.env.DATABASE_URL,
+});
+
+export const auth = betterAuth({
+  database: myCustomAdapter(client),
+});
+```
+
+## Advanced Features
+
+### Transaction Support
+
+To support transactions:
+
+```ts
+const adapterOptions: AdapterFactoryOptions = {
+  config: {
+    // ... other config
+    transaction: (callback) => {
+      return client.transaction(async (tx) => {
+        const txAdapter = createAdapterFactory({
+          config: adapterOptions.config,
+          adapter: createCustomAdapter(tx),
+        })(options);
+        return callback(txAdapter);
+      });
+    },
+  },
+  adapter: createCustomAdapter(client),
+};
+```
+
+### Field Name Mapping
+
+Use the `getFieldName` helper for custom field names:
+
+```ts
+async create({ model, data }) {
+  const mappedData: Record<string, any> = {};
+  
+  for (const [key, value] of Object.entries(data)) {
+    const fieldName = getFieldName({ model, field: key });
+    mappedData[fieldName] = value;
+  }
+  
+  return await client.collection(model).insertOne(mappedData);
+}
+```
+
+### Join Support (Experimental)
+
+To support joins:
+
+```ts
+async findOne({ model, where, select, join }) {
+  if (!join) {
+    // Standard query
+    return await client.collection(model).findOne(buildWhereClause(where));
+  }
+  
+  // Build query with joins
+  const pipeline = [
+    { $match: buildWhereClause(where) },
+  ];
+  
+  for (const [joinModel, joinConfig] of Object.entries(join)) {
+    pipeline.push({
+      $lookup: {
+        from: joinModel,
+        localField: joinConfig.on.from,
+        foreignField: joinConfig.on.to,
+        as: joinModel,
+      },
+    });
+    
+    // Unwind for one-to-one relations
+    if (joinConfig.relation === "one-to-one") {
+      pipeline.push({
+        $unwind: {
+          path: `$${joinModel}`,
+          preserveNullAndEmptyArrays: true,
+        },
+      });
+    }
+  }
+  
+  const results = await client.collection(model).aggregate(pipeline).toArray();
+  return results[0] || null;
+}
+```
+
+## Testing Your Adapter
+
+Create tests for your adapter:
+
+```ts title="my-adapter.test.ts"
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { myCustomAdapter } from "./my-adapter";
+import { YourDatabaseClient } from "your-database";
+
+describe("My Custom Adapter", () => {
+  let client: YourDatabaseClient;
+  let adapter: ReturnType<typeof myCustomAdapter>;
+  
+  beforeAll(async () => {
+    client = new YourDatabaseClient({ connectionString: "test://" });
+    await client.connect();
+    adapter = myCustomAdapter(client);
+  });
+  
+  afterAll(async () => {
+    await client.close();
+  });
+  
+  it("should create a record", async () => {
+    const result = await adapter.create({
+      model: "user",
+      data: { name: "John", email: "john@example.com" },
+    });
+    
+    expect(result).toHaveProperty("id");
+    expect(result.name).toBe("John");
+  });
+  
+  it("should find a record", async () => {
+    const result = await adapter.findOne({
+      model: "user",
+      where: [{ field: "email", value: "john@example.com" }],
+    });
+    
+    expect(result).toBeTruthy();
+    expect(result?.email).toBe("john@example.com");
+  });
+  
+  // Add more tests...
+});
+```
+
+## Community Adapters
+
+The Better Auth community has created adapters for various databases:
+
+| Adapter | Database | Author |
+|---------|----------|--------|
+| [convex-better-auth](https://github.com/get-convex/better-auth) | Convex Database | [@erquhart](https://github.com/erquhart) |
+| [surreal-better-auth](https://github.com/oskar-gmerek/surreal-better-auth) | SurrealDB | [Oskar Gmerek](https://oskargmerek.com) |
+| [surrealdb-better-auth](https://github.com/Necmttn/surrealdb-better-auth) | SurrealDB | [@Necmttn](https://github.com/Necmttn) |
+| [better-auth-surrealdb](https://github.com/msanchezdev/better-auth-surrealdb) | SurrealDB | [@msanchezdev](https://github.com/msanchezdev) |
+| [@payload-auth/better-auth-plugin](https://github.com/payload-auth/payload-auth) | Payload CMS | [@forrestdevs](https://github.com/forrestdevs) |
+| [better-auth-instantdb](https://github.com/daveyplate/better-auth-instantdb) | InstantDB | [@daveycodez](https://github.com/daveycodez) |
+| [@nerdfolio/remult-better-auth](https://github.com/nerdfolio/remult-better-auth) | Remult | [@taivo](https://github.com/taivo) |
+| [pocketbase-better-auth](https://github.com/LightInn/pocketbase-better-auth) | PocketBase | [@LightInn](https://github.com/LightInn) |
+| [better-auth-firestore](https://github.com/yultyyev/better-auth-firestore) | Firebase Firestore | [@yultyyev](https://github.com/yultyyev) |
+| [@zenstackhq/better-auth](https://github.com/zenstackhq/zenstack-v3/tree/main/packages/auth-adapters/better-auth) | ZenStack | [@zenstackhq](https://github.com/zenstackhq) |
+| [@strapi-community/plugin-better-auth](https://github.com/strapi-community/plugin-better-auth) | Strapi CMS | [@boazpoolman](https://github.com/boazpoolman) |
+
+## Share Your Adapter
+
+Created a custom adapter? Share it with the community!
+
+1. Publish your adapter to npm
+2. Create a GitHub repository with documentation
+3. Submit a PR to add your adapter to this list
+
+## Additional Resources
+
+- [Adapter Core API Reference](/api-reference/adapters)
+- [Better Auth Source Code](https://github.com/better-auth/better-auth) - See official adapter implementations
+- [Performance Optimization Guide](/guides/optimizing-for-performance)

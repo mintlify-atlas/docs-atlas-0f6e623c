@@ -1,0 +1,285 @@
+---
+title: JWT Plugin
+description: Generate and verify JWT tokens with JWKS support
+---
+
+The JWT plugin provides endpoints to retrieve JWT tokens and a JWKS endpoint to verify them. This enables authentication for services that require JWT tokens.
+
+<Callout type="info">
+This plugin is not meant as a replacement for sessions. It's for services that require JWT tokens. For JWT-based authentication, check out the [Bearer Plugin](/plugins/bearer).
+</Callout>
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { jwt } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        jwt()
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+      ```bash
+      npx auth migrate
+      ```
+      </Tab>
+      <Tab value="generate">
+      ```bash
+      npx auth generate
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { jwtClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        jwtClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Retrieve JWT Token
+
+There are three ways to get a JWT token:
+
+**1. Using the client plugin (recommended):**
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.token()
+if (data) {
+  const jwtToken = data.token
+  // Use token for external API requests
+}
+```
+
+**2. From the token endpoint:**
+
+```ts
+const response = await fetch("/api/auth/token", {
+  headers: {
+    "Cookie": document.cookie // session cookie
+  }
+})
+const { token } = await response.json()
+```
+
+**3. From getSession header:**
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.getSession({
+  fetchOptions: {
+    onSuccess: (ctx) => {
+      const jwt = ctx.response.headers.get("set-auth-jwt")
+      // Use jwt token
+    }
+  }
+})
+```
+
+### Verify JWT Token
+
+The token can be verified using the JWKS endpoint at `/api/auth/jwks`.
+
+**Using jose with remote JWKS:**
+
+```ts
+import { jwtVerify, createRemoteJWKSet } from 'jose'
+
+async function validateToken(token: string) {
+  try {
+    const JWKS = createRemoteJWKSet(
+      new URL('http://localhost:3000/api/auth/jwks')
+    )
+    
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: 'http://localhost:3000',
+      audience: 'http://localhost:3000',
+    })
+    
+    return payload
+  } catch (error) {
+    console.error('Token validation failed:', error)
+    throw error
+  }
+}
+```
+
+**Using jose with local JWKS:**
+
+```ts
+import { jwtVerify, createLocalJWKSet } from 'jose'
+
+async function validateToken(token: string) {
+  const jwksResponse = await fetch('http://localhost:3000/api/auth/jwks')
+  const jwks = await jwksResponse.json()
+  
+  const JWKS = createLocalJWKSet(jwks)
+  
+  const { payload } = await jwtVerify(token, JWKS, {
+    issuer: 'http://localhost:3000',
+    audience: 'http://localhost:3000',
+  })
+  
+  return payload
+}
+```
+
+## Configuration
+
+### Key Pair Algorithm
+
+The default algorithm is **EdDSA** with **Ed25519** curve. Available options:
+
+```ts title="auth.ts"
+import { jwt } from "better-auth/plugins"
+
+jwt({
+  jwks: {
+    keyPairConfig: {
+      alg: "EdDSA", // EdDSA, ES256, RSA256, PS256, ECDH-ES, ES512
+      crv: "Ed25519" // For EdDSA: Ed25519 or Ed448
+    }
+  }
+})
+```
+
+### Key Rotation
+
+```ts title="auth.ts"
+jwt({
+  jwks: {
+    rotationInterval: 60 * 60 * 24 * 30, // 30 days
+    gracePeriod: 60 * 60 * 24 * 30 // 30 days
+  }
+})
+```
+
+### Custom JWT Payload
+
+```ts title="auth.ts"
+jwt({
+  jwt: {
+    definePayload: ({ user }) => {
+      return {
+        id: user.id,
+        email: user.email,
+        role: user.role
+      }
+    },
+    issuer: "https://example.com",
+    audience: "https://example.com",
+    expirationTime: "1h",
+    getSubject: (session) => session.user.email
+  }
+})
+```
+
+### Custom JWKS Path
+
+```ts title="auth.ts"
+jwt({
+  jwks: {
+    jwksPath: "/.well-known/jwks.json"
+  }
+})
+```
+
+Don't forget to configure the client:
+
+```ts title="auth-client.ts"
+import { createAuthClient } from "better-auth/client"
+import { jwtClient } from "better-auth/client/plugins"
+
+export const authClient = createAuthClient({
+  plugins: [
+    jwtClient({
+      jwks: {
+        jwksPath: "/.well-known/jwks.json"
+      }
+    })
+  ]
+})
+```
+
+### Remote JWKS URL
+
+```ts title="auth.ts"
+jwt({
+  jwks: {
+    remoteUrl: "https://example.com/.well-known/jwks.json",
+    keyPairConfig: {
+      alg: 'ES256',
+    },
+  }
+})
+```
+
+### OAuth Provider Mode
+
+For OAuth compliance (OIDC, MCP plugins):
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { jwt } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  disabledPaths: ["/token"],
+  plugins: [
+    jwt({
+      disableSettingJwtHeader: true,
+    })
+  ]
+})
+```
+
+### Disable Private Key Encryption
+
+```ts title="auth.ts"
+jwt({
+  jwks: {
+    disablePrivateKeyEncryption: true
+  }
+})
+```
+
+<Callout type="warn">
+For security, it's recommended to keep private keys encrypted.
+</Callout>
+
+## Schema
+
+The plugin adds a `jwks` table:
+
+- `id` (string): Unique identifier
+- `publicKey` (string): Public key
+- `privateKey` (string): Encrypted private key
+- `createdAt` (Date): Creation timestamp
+- `expiresAt` (Date): Expiration timestamp

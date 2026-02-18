@@ -1,0 +1,442 @@
+---
+title: React Integration
+description: Use Better Auth with React (SPA) for client-side authentication.
+---
+
+This guide covers integrating Better Auth with standalone React applications (Single Page Applications). For framework-specific integrations, see [Next.js](/docs/integrations/nextjs) or [React Router](/docs/integrations/react-router).
+
+## Prerequisites
+
+- A Better Auth backend instance running (see [installation guide](/docs/installation))
+- A React application (using Vite, Create React App, or another setup)
+
+## Installation
+
+<Steps>
+
+### Setup Backend
+
+First, ensure you have a Better Auth backend running. This could be a separate Express server, Next.js API routes, or any other Node.js server.
+
+See the [Express integration](/docs/integrations/express) or other server integrations for backend setup.
+
+### Create Client Instance
+
+Install Better Auth and create a client instance:
+
+```bash
+npm install better-auth
+# or
+pnpm add better-auth
+# or
+yarn add better-auth
+```
+
+Create a client:
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/react";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000", // Your backend URL
+});
+
+export const { useSession, signIn, signOut, signUp } = authClient;
+```
+
+<Note>
+Make sure the `baseURL` points to your Better Auth backend server.
+</Note>
+
+</Steps>
+
+## Usage
+
+### Session Management
+
+Use the `useSession` hook to access session state:
+
+```tsx title="components/UserProfile.tsx"
+import { authClient } from "../lib/auth-client";
+
+export function UserProfile() {
+  const session = authClient.useSession();
+
+  if (session.isPending) {
+    return <div>Loading...</div>;
+  }
+
+  if (session.error) {
+    return <div>Error: {session.error.message}</div>;
+  }
+
+  if (!session.data) {
+    return <div>Not authenticated</div>;
+  }
+
+  return (
+    <div>
+      <h1>Welcome {session.data.user.name}!</h1>
+      <p>Email: {session.data.user.email}</p>
+      <button onClick={() => authClient.signOut()}>
+        Sign Out
+      </button>
+    </div>
+  );
+}
+```
+
+### Sign Up
+
+```tsx title="pages/SignUp.tsx"
+import { authClient } from "../lib/auth-client";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+export function SignUpPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    await authClient.signUp.email(
+      {
+        email,
+        password,
+        name
+      },
+      {
+        onSuccess: () => {
+          navigate("/dashboard");
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  return (
+    <div>
+      <h1>Sign Up</h1>
+      <form onSubmit={handleSignUp}>
+        {error && <p className="error">{error}</p>}
+        
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+          required
+        />
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          required
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          required
+        />
+        <button type="submit" disabled={loading}>
+          {loading ? "Creating account..." : "Sign Up"}
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+### Sign In
+
+```tsx title="pages/SignIn.tsx"
+import { authClient } from "../lib/auth-client";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+export function SignInPage() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+
+    await authClient.signIn.email(
+      {
+        email,
+        password
+      },
+      {
+        onSuccess: () => {
+          navigate("/dashboard");
+        },
+        onError: (ctx) => {
+          setError(ctx.error.message);
+          setLoading(false);
+        }
+      }
+    );
+  };
+
+  return (
+    <div>
+      <h1>Sign In</h1>
+      <form onSubmit={handleSignIn}>
+        {error && <p className="error">{error}</p>}
+        
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="Email"
+          required
+        />
+        <input
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="Password"
+          required
+        />
+        <button type="submit" disabled={loading}>
+          {loading ? "Signing in..." : "Sign In"}
+        </button>
+      </form>
+    </div>
+  );
+}
+```
+
+### Social Sign In
+
+```tsx title="components/SocialSignIn.tsx"
+import { authClient } from "../lib/auth-client";
+
+export function SocialSignIn() {
+  return (
+    <div>
+      <button
+        onClick={() => authClient.signIn.social({
+          provider: "github",
+          callbackURL: "/dashboard"
+        })}
+      >
+        Continue with GitHub
+      </button>
+      <button
+        onClick={() => authClient.signIn.social({
+          provider: "google",
+          callbackURL: "/dashboard"
+        })}
+      >
+        Continue with Google
+      </button>
+    </div>
+  );
+}
+```
+
+### Protected Routes
+
+Create a component to protect routes:
+
+```tsx title="components/ProtectedRoute.tsx"
+import { authClient } from "../lib/auth-client";
+import { Navigate } from "react-router-dom";
+import { ReactNode } from "react";
+
+interface ProtectedRouteProps {
+  children: ReactNode;
+}
+
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const session = authClient.useSession();
+
+  if (session.isPending) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session.data) {
+    return <Navigate to="/sign-in" replace />;
+  }
+
+  return <>{children}</>;
+}
+```
+
+Use it in your routes:
+
+```tsx title="App.tsx"
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { SignInPage } from "./pages/SignIn";
+import { DashboardPage } from "./pages/Dashboard";
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/sign-in" element={<SignInPage />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DashboardPage />
+            </ProtectedRoute>
+          }
+        />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
+```
+
+## API Calls with Authentication
+
+Make authenticated API calls using the built-in fetch:
+
+```tsx title="lib/api.ts"
+import { authClient } from "./auth-client";
+
+export async function fetchUserData() {
+  const { data, error } = await authClient.$fetch("/api/user", {
+    method: "GET"
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+
+export async function updateProfile(name: string) {
+  const { data, error } = await authClient.$fetch("/api/user", {
+    method: "PATCH",
+    body: { name }
+  });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data;
+}
+```
+
+## Session Refresh
+
+Better Auth automatically handles session refresh. You can manually refresh the session:
+
+```tsx
+import { authClient } from "./lib/auth-client";
+
+function RefreshButton() {
+  const session = authClient.useSession();
+
+  return (
+    <button
+      onClick={() => session.refetch()}
+      disabled={session.isRefetching}
+    >
+      {session.isRefetching ? "Refreshing..." : "Refresh Session"}
+    </button>
+  );
+}
+```
+
+## Environment Variables
+
+Set the backend URL via environment variables:
+
+```env title=".env"
+VITE_AUTH_URL=http://localhost:3000
+```
+
+```ts title="lib/auth-client.ts"
+import { createAuthClient } from "better-auth/react";
+
+export const authClient = createAuthClient({
+  baseURL: import.meta.env.VITE_AUTH_URL || "http://localhost:3000"
+});
+```
+
+## CORS Configuration
+
+Ensure your backend allows CORS requests from your React app:
+
+```ts title="server.ts"
+import express from "express";
+import cors from "cors";
+import { toNodeHandler } from "better-auth/node";
+import { auth } from "./auth";
+
+const app = express();
+
+app.use(
+  cors({
+    origin: "http://localhost:5173", // Your React app URL
+    credentials: true
+  })
+);
+
+app.all("/api/auth/*", toNodeHandler(auth));
+
+app.listen(3000);
+```
+
+## TypeScript Types
+
+Infer session types from your auth instance:
+
+```ts title="types/auth.ts"
+import type { authClient } from "../lib/auth-client";
+
+export type Session = typeof authClient.$Infer.Session;
+export type User = Session["user"];
+```
+
+Use in your components:
+
+```tsx
+import type { User } from "../types/auth";
+
+interface UserCardProps {
+  user: User;
+}
+
+export function UserCard({ user }: UserCardProps) {
+  return (
+    <div>
+      <h2>{user.name}</h2>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+## Resources
+
+- [React Example](https://github.com/better-auth/examples/tree/main/react-example)
+- [Express Integration](/docs/integrations/express)
+- [Better Auth Core Concepts](/docs/concepts/overview)

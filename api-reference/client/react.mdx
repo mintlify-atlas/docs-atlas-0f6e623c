@@ -1,0 +1,503 @@
+---
+title: 'React Client'
+description: 'Type-safe authentication client for React applications'
+---
+
+## Overview
+
+The React client provides React-specific hooks and utilities built on top of the core authentication client. It uses React's `useSyncExternalStore` for optimal performance and consistency.
+
+## Installation
+
+```bash
+npm install better-auth
+```
+
+## Import
+
+```tsx
+import { createAuthClient } from "better-auth/react"
+```
+
+## Setup
+
+```tsx client.ts
+import { createAuthClient } from "better-auth/react"
+
+const client = createAuthClient({
+	baseURL: "http://localhost:3000"
+})
+
+export default client
+```
+
+## Hooks
+
+### useSession
+
+React hook for accessing session data with automatic updates.
+
+#### Signature
+
+```typescript
+function useSession(): {
+	data: Session | null
+	error: BetterFetchError | null
+	isPending: boolean
+	isRefetching: boolean
+	refetch: (queryParams?: { query?: SessionQueryParams }) => Promise<void>
+}
+```
+
+#### Return Type
+
+<ResponseField name="data" type="Session | null">
+	The current session data including user and session information. `null` if not authenticated.
+	
+	```typescript
+	type Session = {
+		user: {
+			id: string
+			email: string
+			name: string
+			emailVerified: boolean
+			image?: string
+			createdAt: Date
+			updatedAt: Date
+		}
+		session: {
+			id: string
+			userId: string
+			expiresAt: Date
+			token: string
+			ipAddress?: string
+			userAgent?: string
+		}
+	}
+	```
+</ResponseField>
+
+<ResponseField name="error" type="BetterFetchError | null">
+	Error object if the session fetch failed.
+	
+	```typescript
+	type BetterFetchError = {
+		message: string
+		status: number
+		statusText: string
+		data?: any
+	}
+	```
+</ResponseField>
+
+<ResponseField name="isPending" type="boolean">
+	`true` during the initial session fetch, `false` once complete.
+</ResponseField>
+
+<ResponseField name="isRefetching" type="boolean">
+	`true` when refetching an existing session, `false` otherwise.
+</ResponseField>
+
+<ResponseField name="refetch" type="(queryParams?: { query?: SessionQueryParams }) => Promise<void>">
+	Function to manually refetch the session data.
+	
+	<Expandable title="parameters">
+		<ParamField path="queryParams.query.disableCookieCache" type="boolean" optional>
+			Bypass cookie cache and fetch fresh session data.
+		</ParamField>
+
+		<ParamField path="queryParams.query.disableRefresh" type="boolean" optional>
+			Disable automatic session refresh.
+		</ParamField>
+	</Expandable>
+</ResponseField>
+
+#### Usage
+
+```tsx
+import { useSession } from "./client"
+
+function UserProfile() {
+	const { data: session, isPending, error } = client.useSession()
+
+	if (isPending) {
+		return <div>Loading...</div>
+	}
+
+	if (error) {
+		return <div>Error: {error.message}</div>
+	}
+
+	if (!session) {
+		return <div>Not logged in</div>
+	}
+
+	return (
+		<div>
+			<h1>Welcome, {session.user.name}</h1>
+			<p>Email: {session.user.email}</p>
+		</div>
+	)
+}
+```
+
+#### Manual Refetch
+
+```tsx
+function SessionManager() {
+	const { data: session, refetch } = client.useSession()
+
+	const handleRefresh = async () => {
+		await refetch({
+			query: {
+				disableCookieCache: true
+			}
+		})
+	}
+
+	return (
+		<button onClick={handleRefresh}>
+			Refresh Session
+		</button>
+	)
+}
+```
+
+### Dynamic Plugin Hooks
+
+When using plugins, additional hooks are automatically generated based on the plugin's atoms.
+
+```tsx
+import { createAuthClient } from "better-auth/react"
+import { organizationClient } from "better-auth/client/plugins"
+
+const client = createAuthClient({
+	plugins: [organizationClient()]
+})
+
+// Auto-generated hook from organization plugin
+function OrganizationSelector() {
+	const organization = client.useActiveOrganization()
+
+	return (
+		<div>
+			{organization && (
+				<p>Active Org: {organization.name}</p>
+			)}
+		</div>
+	)
+}
+```
+
+## useStore Helper
+
+Low-level hook for subscribing to nanostores atoms.
+
+### Signature
+
+```typescript
+function useStore<SomeStore extends Store>(
+	store: SomeStore,
+	options?: UseStoreOptions<SomeStore>
+): StoreValue<SomeStore>
+```
+
+### Parameters
+
+<ParamField path="store" type="Store" required>
+	A nanostores atom to subscribe to.
+</ParamField>
+
+<ParamField path="options" type="UseStoreOptions" optional>
+	Optional configuration.
+	
+	<Expandable title="properties">
+		<ParamField path="keys" type="string[]" optional>
+			Only re-render when specific keys change (for map stores).
+		</ParamField>
+
+		<ParamField path="deps" type="DependencyList" optional>
+			Custom dependency array. Defaults to `[store, options.keys]`.
+		</ParamField>
+	</Expandable>
+</ParamField>
+
+### Usage
+
+```tsx
+import { useStore } from "better-auth/react"
+import client from "./client"
+
+function SessionDebug() {
+	// Access the raw session atom
+	const sessionAtom = client.$store.atoms.session
+	const sessionState = useStore(sessionAtom)
+
+	return (
+		<pre>
+			{JSON.stringify(sessionState, null, 2)}
+		</pre>
+	)
+}
+```
+
+## Authentication Methods
+
+All authentication methods are auto-generated based on your server configuration and are fully type-safe.
+
+### Sign In
+
+```tsx
+import client from "./client"
+
+function SignInForm() {
+	const [email, setEmail] = useState("")
+	const [password, setPassword] = useState("")
+
+	const handleSubmit = async (e: React.FormEvent) => {
+		e.preventDefault()
+
+		const { data, error } = await client.signIn.email({
+			email,
+			password
+		})
+
+		if (error) {
+			console.error("Sign in failed:", error.message)
+			return
+		}
+
+		console.log("Signed in:", data)
+	}
+
+	return (
+		<form onSubmit={handleSubmit}>
+			<input
+				type="email"
+				value={email}
+				onChange={(e) => setEmail(e.target.value)}
+				placeholder="Email"
+			/>
+			<input
+				type="password"
+				value={password}
+				onChange={(e) => setPassword(e.target.value)}
+				placeholder="Password"
+			/>
+			<button type="submit">Sign In</button>
+		</form>
+	)
+}
+```
+
+### Sign Up
+
+```tsx
+const handleSignUp = async () => {
+	const { data, error } = await client.signUp.email({
+		email: "user@example.com",
+		password: "password123",
+		name: "John Doe"
+	})
+
+	if (error) {
+		console.error("Sign up failed:", error)
+		return
+	}
+
+	console.log("User created:", data)
+}
+```
+
+### Sign Out
+
+```tsx
+function SignOutButton() {
+	const handleSignOut = async () => {
+		const { error } = await client.signOut()
+
+		if (error) {
+			console.error("Sign out failed:", error)
+			return
+		}
+
+		console.log("Signed out successfully")
+	}
+
+	return <button onClick={handleSignOut}>Sign Out</button>
+}
+```
+
+### OAuth Sign In
+
+```tsx
+function OAuthButtons() {
+	const handleGoogleSignIn = async () => {
+		await client.signIn.social({
+			provider: "google",
+			callbackURL: "/dashboard"
+		})
+	}
+
+	const handleGitHubSignIn = async () => {
+		await client.signIn.social({
+			provider: "github",
+			callbackURL: "/dashboard"
+		})
+	}
+
+	return (
+		<div>
+			<button onClick={handleGoogleSignIn}>
+				Sign in with Google
+			</button>
+			<button onClick={handleGitHubSignIn}>
+				Sign in with GitHub
+			</button>
+		</div>
+	)
+}
+```
+
+## Protected Routes
+
+```tsx
+import { Navigate } from "react-router-dom"
+import client from "./client"
+
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+	const { data: session, isPending } = client.useSession()
+
+	if (isPending) {
+		return <div>Loading...</div>
+	}
+
+	if (!session) {
+		return <Navigate to="/login" replace />
+	}
+
+	return <>{children}</>
+}
+
+// Usage
+function App() {
+	return (
+		<Routes>
+			<Route path="/login" element={<LoginPage />} />
+			<Route
+				path="/dashboard"
+				element={
+					<ProtectedRoute>
+						<Dashboard />
+					</ProtectedRoute>
+				}
+			/>
+		</Routes>
+	)
+}
+```
+
+## Server Components (Next.js App Router)
+
+For Next.js App Router with Server Components, use the vanilla client on the server and React client on the client:
+
+```tsx app/providers.tsx
+"use client"
+
+import { createAuthClient } from "better-auth/react"
+
+const client = createAuthClient({
+	baseURL: process.env.NEXT_PUBLIC_API_URL
+})
+
+export default client
+```
+
+```tsx app/profile/page.tsx
+import client from "@/app/providers"
+
+function ProfilePage() {
+	const { data: session } = client.useSession()
+
+	return (
+		<div>
+			<h1>{session?.user.name}</h1>
+		</div>
+	)
+}
+```
+
+## Type Safety
+
+```typescript
+import type { InferClientAPI } from "better-auth/client"
+import type client from "./client"
+
+// Infer types from client
+type Session = typeof client.$Infer.Session
+type User = Session["user"]
+type SessionData = Session["session"]
+
+// Use inferred types in components
+function UserCard({ user }: { user: User }) {
+	return (
+		<div>
+			<h2>{user.name}</h2>
+			<p>{user.email}</p>
+		</div>
+	)
+}
+```
+
+## Error Handling
+
+```tsx
+function SignInWithErrorHandling() {
+	const [error, setError] = useState<string | null>(null)
+
+	const handleSubmit = async (email: string, password: string) => {
+		const { data, error: apiError } = await client.signIn.email({
+			email,
+			password
+		})
+
+		if (apiError) {
+			// Type-safe error code checking
+			if (apiError.code === client.$ERROR_CODES.INVALID_EMAIL) {
+				setError("Invalid email address")
+			} else if (apiError.code === client.$ERROR_CODES.INVALID_PASSWORD) {
+				setError("Invalid password")
+			} else {
+				setError("An error occurred. Please try again.")
+			}
+			return
+		}
+
+		setError(null)
+	}
+
+	return (
+		<div>
+			{error && <div className="error">{error}</div>}
+			{/* Form fields */}
+		</div>
+	)
+}
+```
+
+## Notes
+
+<Note>
+The React client uses `useSyncExternalStore` for optimal performance and ensures consistency between server and client renders.
+</Note>
+
+<Warning>
+Do not create multiple client instances. Always export a single instance and import it where needed to maintain consistent state.
+</Warning>
+
+## Related
+
+- [createAuthClient](/api-reference/client/create-auth-client)
+- [Vue Client](/api-reference/client/vue)
+- [Svelte Client](/api-reference/client/svelte)
+- [Solid Client](/api-reference/client/solid)

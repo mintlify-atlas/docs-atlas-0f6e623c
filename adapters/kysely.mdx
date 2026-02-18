@@ -1,0 +1,458 @@
+---
+title: Kysely Adapter
+description: Integrate Better Auth with Kysely for type-safe SQL queries across multiple database dialects.
+---
+
+# Kysely Adapter
+
+Kysely is a type-safe SQL query builder for TypeScript. It provides excellent TypeScript support and works with multiple database dialects including PostgreSQL, MySQL, SQLite, and MS SQL Server.
+
+Better Auth uses Kysely under the hood for all SQL database operations, making any Kysely-supported database compatible with Better Auth.
+
+For more information, see [Kysely Documentation](https://kysely.dev/).
+
+## Installation
+
+<Steps>
+### Install Kysely
+
+Install Kysely:
+
+```bash
+npm install kysely
+```
+
+### Install Database Driver
+
+Install the appropriate driver for your database:
+
+<CodeGroup>
+```bash title="PostgreSQL"
+npm install pg
+npm install -D @types/pg
+```
+
+```bash title="MySQL"
+npm install mysql2
+```
+
+```bash title="SQLite"
+npm install better-sqlite3
+npm install -D @types/better-sqlite3
+```
+
+```bash title="MS SQL Server"
+npm install tedious
+npm install -D @types/tedious
+```
+</CodeGroup>
+</Steps>
+
+## Basic Usage
+
+Connect Kysely to Better Auth with your database dialect:
+
+<CodeGroup>
+```ts title="PostgreSQL"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely, PostgresDialect } from "kysely";
+import { Pool } from "pg";
+
+const db = new Kysely({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      connectionString: process.env.DATABASE_URL,
+    }),
+  }),
+});
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "postgres",
+  }),
+});
+```
+
+```ts title="MySQL"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely, MysqlDialect } from "kysely";
+import { createPool } from "mysql2";
+
+const db = new Kysely({
+  dialect: new MysqlDialect({
+    pool: createPool({
+      uri: process.env.DATABASE_URL,
+    }),
+  }),
+});
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "mysql",
+  }),
+});
+```
+
+```ts title="SQLite"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely, SqliteDialect } from "kysely";
+import Database from "better-sqlite3";
+
+const db = new Kysely({
+  dialect: new SqliteDialect({
+    database: new Database("db.sqlite"),
+  }),
+});
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "sqlite",
+  }),
+});
+```
+
+```ts title="MS SQL Server"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely, MssqlDialect } from "kysely";
+import { Tedious } from "tedious";
+import { TediousPool } from "tedious-pool";
+
+const db = new Kysely({
+  dialect: new MssqlDialect({
+    tarn: {
+      ...TediousPool.defaults,
+      options: {
+        max: 10,
+      },
+    },
+    tedious: {
+      ...Tedious.defaults,
+      server: "localhost",
+      authentication: {
+        type: "default",
+        options: {
+          userName: "username",
+          password: "password",
+        },
+      },
+    },
+  }),
+});
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "mssql",
+  }),
+});
+```
+</CodeGroup>
+
+## Direct Database Connection
+
+You can also pass database connection pools directly to Better Auth, and Kysely will be used internally:
+
+<CodeGroup>
+```ts title="PostgreSQL Pool"
+import { betterAuth } from "better-auth";
+import { Pool } from "pg";
+
+export const auth = betterAuth({
+  database: new Pool({
+    connectionString: "postgres://user:password@localhost:5432/database",
+  }),
+});
+```
+
+```ts title="MySQL Pool"
+import { betterAuth } from "better-auth";
+import { createPool } from "mysql2";
+
+export const auth = betterAuth({
+  database: createPool({
+    uri: "mysql://user:password@localhost:3306/database",
+  }),
+});
+```
+</CodeGroup>
+
+<Note>
+When passing a database pool directly, Better Auth automatically creates a Kysely instance with the appropriate dialect. You can still access all Kysely features by using the `kyselyAdapter` explicitly.
+</Note>
+
+## Schema Generation & Migration
+
+The Better Auth CLI supports both schema generation and migrations for Kysely-based databases.
+
+### Generate Schema
+
+Generate SQL schema files:
+
+```bash
+npx auth@latest generate
+```
+
+This creates SQL files in your project for the required tables.
+
+### Apply Migrations
+
+Apply schema changes directly to your database:
+
+```bash
+npx auth@latest migrate
+```
+
+<Note>
+Both schema generation and migrations are fully supported for all Kysely dialects.
+</Note>
+
+## Configuration Options
+
+### Database Type
+
+Specify your database type:
+
+```ts
+kyselyAdapter(db, {
+  type: "postgres", // "postgres", "mysql", "sqlite", or "mssql"
+})
+```
+
+### Plural Table Names
+
+Use plural table names:
+
+```ts
+kyselyAdapter(db, {
+  type: "postgres",
+  usePlural: true,
+})
+```
+
+### Transactions
+
+Enable database transactions:
+
+```ts
+kyselyAdapter(db, {
+  type: "postgres",
+  transaction: true,
+})
+```
+
+### Debug Logs
+
+Enable detailed logging:
+
+```ts
+kyselyAdapter(db, {
+  type: "postgres",
+  debugLogs: true,
+})
+```
+
+## Experimental Joins
+
+Kysely adapter supports experimental joins for improved performance.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "postgres",
+  }),
+  experimental: { joins: true },
+});
+```
+
+<Note type="warn">
+After enabling joins, you may need to run migrations to add necessary foreign key constraints:
+
+```bash
+npx auth@latest migrate
+```
+</Note>
+
+## Supported Dialects
+
+Better Auth supports all Kysely dialects, including:
+
+### Core Dialects
+
+- **PostgreSQL** - Full support with all features
+- **MySQL** - Full support with all features
+- **SQLite** - Full support with all features
+- **MS SQL Server** - Full support with all features
+
+### Kysely Organization Dialects
+
+- [Postgres.js](https://github.com/kysely-org/kysely-postgres-js)
+- [SingleStore Data API](https://github.com/kysely-org/kysely-singlestore)
+- [Supabase](https://github.com/kysely-org/kysely-supabase)
+
+### Community Dialects
+
+Better Auth works with any Kysely community dialect:
+
+- [PlanetScale Serverless Driver](https://github.com/depot/kysely-planetscale)
+- [Cloudflare D1](https://github.com/aidenwallis/kysely-d1)
+- [AWS RDS Data API](https://github.com/serverless-stack/kysely-data-api)
+- [Prisma Postgres](https://github.com/kysely-org/kysely-prisma-postgres)
+- [SurrealDB](https://github.com/igalklebanov/kysely-surrealdb)
+- [Neon](https://github.com/seveibar/kysely-neon)
+- [Xata](https://github.com/xataio/client-ts/tree/main/packages/plugin-client-kysely)
+- [libSQL/sqld](https://github.com/libsql/kysely-libsql)
+- [TiDB Cloud](https://github.com/tidbcloud/kysely)
+- [PGLite](https://github.com/czeidler/kysely-pglite-dialect)
+- [BigQuery](https://github.com/maktouch/kysely-bigquery)
+- [ClickHouse](https://github.com/founderpathcom/kysely-clickhouse)
+- And many more!
+
+For a complete list, see [Kysely Dialects](https://kysely.dev/docs/dialects).
+
+## Example: PlanetScale
+
+Using PlanetScale's serverless driver:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely } from "kysely";
+import { PlanetScaleDialect } from "kysely-planetscale";
+
+const db = new Kysely({
+  dialect: new PlanetScaleDialect({
+    url: process.env.DATABASE_URL,
+  }),
+});
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "mysql",
+  }),
+});
+```
+
+## Example: Cloudflare D1
+
+Using Cloudflare D1 (SQLite at the edge):
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely } from "kysely";
+import { D1Dialect } from "kysely-d1";
+
+export default {
+  async fetch(request: Request, env: Env) {
+    const db = new Kysely({
+      dialect: new D1Dialect({ database: env.DB }),
+    });
+
+    const auth = betterAuth({
+      database: kyselyAdapter(db, {
+        type: "sqlite",
+      }),
+    });
+
+    return auth.handler(request);
+  },
+};
+```
+
+## Example: Neon Serverless
+
+Using Neon's serverless Postgres:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { Kysely } from "kysely";
+import { NeonDialect } from "kysely-neon";
+import { neon } from "@neondatabase/serverless";
+
+const sql = neon(process.env.DATABASE_URL!);
+
+const db = new Kysely({
+  dialect: new NeonDialect({
+    connectionString: process.env.DATABASE_URL!,
+  }),
+});
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "postgres",
+  }),
+});
+```
+
+## Type Safety
+
+Kysely provides excellent TypeScript support. Generate types for your database:
+
+```bash
+# For PostgreSQL
+npx kysely-codegen --dialect postgres --url $DATABASE_URL
+
+# For MySQL
+npx kysely-codegen --dialect mysql --url $DATABASE_URL
+
+# For SQLite
+npx kysely-codegen --dialect sqlite --url $DATABASE_URL
+```
+
+This generates a `types.ts` file with your database schema types.
+
+## Complete Example
+
+<CodeGroup>
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { kyselyAdapter } from "better-auth/adapters/kysely";
+import { db } from "./db";
+
+export const auth = betterAuth({
+  database: kyselyAdapter(db, {
+    type: "postgres",
+    transaction: true,
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  experimental: {
+    joins: true,
+  },
+});
+```
+
+```ts title="db/index.ts"
+import { Kysely, PostgresDialect } from "kysely";
+import { Pool } from "pg";
+import type { Database } from "./types"; // Generated types
+
+export const db = new Kysely<Database>({
+  dialect: new PostgresDialect({
+    pool: new Pool({
+      connectionString: process.env.DATABASE_URL,
+      max: 10,
+    }),
+  }),
+});
+```
+
+```env title=".env"
+DATABASE_URL=postgresql://user:password@localhost:5432/mydb
+```
+</CodeGroup>
+
+## Additional Resources
+
+- [Kysely Documentation](https://kysely.dev/)
+- [Kysely API Reference](https://kysely-org.github.io/kysely-apidoc/)
+- [Kysely Dialects](https://kysely.dev/docs/dialects)
+- [Performance Optimization Guide](/guides/optimizing-for-performance)
+- [Better Auth CLI Reference](/concepts/cli)

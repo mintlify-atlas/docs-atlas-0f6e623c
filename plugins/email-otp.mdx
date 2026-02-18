@@ -1,0 +1,377 @@
+---
+title: Email OTP
+description: One-time passwords via email for sign-in, verification, and password reset
+---
+
+The Email OTP plugin allows users to sign in, verify their email, or reset their password using a one-time password (OTP) sent to their email address.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { emailOTP } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        emailOTP({
+          async sendVerificationOTP({ email, otp, type }) {
+            if (type === "sign-in") {
+              // Send OTP for sign in
+              await sendEmail({
+                to: email,
+                subject: "Your sign-in code",
+                body: `Your code is: ${otp}`
+              })
+            } else if (type === "email-verification") {
+              // Send OTP for email verification
+            } else {
+              // Send OTP for password reset
+            }
+          },
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { emailOTPClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        emailOTPClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+### Send OTP
+
+Send an OTP to a user's email:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.emailOtp.sendVerificationOtp({
+  email: "user@example.com",
+  type: "sign-in" // or "email-verification" or "forget-password"
+})
+```
+
+### Check OTP (Optional)
+
+Verify if an OTP is valid without consuming it:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.emailOtp.checkVerificationOtp({
+  email: "user@example.com",
+  type: "sign-in",
+  otp: "123456"
+})
+```
+
+### Sign In with OTP
+
+First, send a sign-in OTP:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.emailOtp.sendVerificationOtp({
+  email: "user@example.com",
+  type: "sign-in"
+})
+```
+
+Then sign in with the OTP:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.signIn.emailOtp({
+  email: "user@example.com",
+  otp: "123456",
+  name: "John Doe", // Optional: for new users
+  image: "https://example.com/avatar.png" // Optional: for new users
+})
+```
+
+<Callout>
+If the user isn't registered, they'll be automatically registered. To prevent this, set `disableSignUp: true` in the plugin options.
+</Callout>
+
+### Verify Email with OTP
+
+Send verification OTP:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.emailOtp.sendVerificationOtp({
+  email: "user@example.com",
+  type: "email-verification"
+})
+```
+
+Verify the email:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.emailOtp.verifyEmail({
+  email: "user@example.com",
+  otp: "123456"
+})
+```
+
+### Reset Password with OTP
+
+Request password reset:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.emailOtp.requestPasswordReset({
+  email: "user@example.com"
+})
+```
+
+Optionally check the OTP:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.emailOtp.checkVerificationOtp({
+  email: "user@example.com",
+  type: "forget-password",
+  otp: "123456"
+})
+```
+
+Reset the password:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.emailOtp.resetPassword({
+  email: "user@example.com",
+  otp: "123456",
+  password: "new-secure-password"
+})
+```
+
+### Override Default Email Verification
+
+Use OTP for all email verification instead of links:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { emailOTP } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    emailOTP({
+      overrideDefaultEmailVerification: true,
+      async sendVerificationOTP({ email, otp, type }) {
+        // Send OTP
+      },
+    }),
+  ],
+})
+```
+
+## Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { emailOTP } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    emailOTP({
+      // Required: function to send OTP
+      async sendVerificationOTP({ email, otp, type }) {
+        // type: "sign-in" | "email-verification" | "forget-password"
+      },
+      
+      // OTP length
+      otpLength: 6, // Default: 6
+      
+      // Expiry time in seconds
+      expiresIn: 300, // Default: 300 (5 minutes)
+      
+      // Send OTP on sign up
+      sendVerificationOnSignUp: false,
+      
+      // Disable automatic sign up
+      disableSignUp: false,
+      
+      // Custom OTP generation
+      generateOTP: () => {
+        return Math.floor(100000 + Math.random() * 900000).toString()
+      },
+      
+      // Maximum verification attempts
+      allowedAttempts: 3, // Default: 3
+      
+      // How to store OTP
+      storeOTP: "plain", // or "encrypted" or "hashed"
+    })
+  ]
+})
+```
+
+### Store OTP Options
+
+**Plain text:**
+```ts
+storeOTP: "plain"
+```
+
+**Encrypted:**
+```ts
+storeOTP: "encrypted"
+```
+
+**Hashed:**
+```ts
+storeOTP: "hashed"
+```
+
+**Custom encryptor:**
+```ts
+storeOTP: {
+  encrypt: async (otp) => {
+    return myCustomEncryptor(otp)
+  },
+  decrypt: async (otp) => {
+    return myCustomDecryptor(otp)
+  },
+}
+```
+
+**Custom hasher:**
+```ts
+storeOTP: {
+  hash: async (otp) => {
+    return myCustomHasher(otp)
+  },
+}
+```
+
+<Callout type="warn">
+It's recommended to not await email sending to avoid timing attacks. On serverless platforms, use `waitUntil` to ensure the email is sent.
+</Callout>
+
+### Maximum Attempts
+
+When the maximum attempts are exceeded, verification methods will return an error with code `TOO_MANY_ATTEMPTS`.
+
+```ts
+const { error } = await authClient.signIn.emailOtp({
+  email: "user@example.com",
+  otp: "wrong-code"
+})
+
+if (error?.code === "TOO_MANY_ATTEMPTS") {
+  // User needs to request a new OTP
+}
+```
+
+## Example: Complete Implementation
+
+```tsx title="app/login-otp/page.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useState } from "react"
+
+export default function LoginOTPPage() {
+  const [email, setEmail] = useState("")
+  const [otp, setOtp] = useState("")
+  const [step, setStep] = useState<"email" | "otp">("email")
+  const [error, setError] = useState("")
+  
+  const sendOTP = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    
+    const { error: sendError } = await authClient.emailOtp.sendVerificationOtp({
+      email,
+      type: "sign-in",
+    })
+    
+    if (sendError) {
+      setError(sendError.message)
+    } else {
+      setStep("otp")
+    }
+  }
+  
+  const verifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    
+    const { data, error: verifyError } = await authClient.signIn.emailOtp({
+      email,
+      otp,
+    })
+    
+    if (verifyError) {
+      setError(verifyError.message)
+      if (verifyError.code === "TOO_MANY_ATTEMPTS") {
+        setStep("email") // Go back to request new OTP
+      }
+    } else {
+      // Redirect to dashboard
+      window.location.href = "/dashboard"
+    }
+  }
+  
+  if (step === "otp") {
+    return (
+      <form onSubmit={verifyOTP}>
+        <h2>Enter verification code</h2>
+        <p>We sent a code to {email}</p>
+        <input
+          type="text"
+          value={otp}
+          onChange={(e) => setOtp(e.target.value)}
+          placeholder="000000"
+          maxLength={6}
+          required
+        />
+        <button type="submit">Verify</button>
+        <button type="button" onClick={() => setStep("email")}>Back</button>
+        {error && <p>{error}</p>}
+      </form>
+    )
+  }
+  
+  return (
+    <form onSubmit={sendOTP}>
+      <h2>Sign in with OTP</h2>
+      <input
+        type="email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        placeholder="Enter your email"
+        required
+      />
+      <button type="submit">Send Code</button>
+      {error && <p>{error}</p>}
+    </form>
+  )
+}
+```

@@ -1,122 +1,174 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "Better Auth",
+  "theme": "palm",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0066FF",
+    "light": "#3399FF",
+    "dark": "#0052CC"
   },
-  "favicon": "/favicon.svg",
+  "favicon": "/favicon.ico",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/better-auth/better-auth"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/better-auth/better-auth",
+      "x": "https://x.com/better_auth"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "installation",
+              "quickstart"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "concepts/database",
+              "concepts/session-management",
+              "concepts/api",
+              "concepts/client",
+              "concepts/plugins",
+              "concepts/hooks",
+              "concepts/typescript"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Authentication Methods",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "authentication/email-password",
+              "authentication/oauth",
+              "authentication/magic-link",
+              "authentication/passkey",
+              "authentication/two-factor",
+              "authentication/social-providers"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Database Adapters",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "adapters/overview",
+              "adapters/prisma",
+              "adapters/drizzle",
+              "adapters/mongodb",
+              "adapters/kysely",
+              "adapters/custom"
+            ]
+          },
+          {
+            "group": "Framework Integrations",
+            "pages": [
+              "integrations/nextjs",
+              "integrations/sveltekit",
+              "integrations/solid-start",
+              "integrations/react",
+              "integrations/vue",
+              "integrations/express",
+              "integrations/other"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/organization",
+              "plugins/two-factor",
+              "plugins/admin",
+              "plugins/jwt",
+              "plugins/bearer",
+              "plugins/magic-link",
+              "plugins/email-otp",
+              "plugins/phone-number",
+              "plugins/username",
+              "plugins/anonymous",
+              "plugins/oauth-proxy",
+              "plugins/multi-session",
+              "plugins/oidc-provider",
+              "plugins/device-authorization",
+              "plugins/custom"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/migration-from-nextauth",
+              "guides/migration-from-clerk",
+              "guides/migration-from-supabase",
+              "guides/creating-custom-adapter",
+              "guides/creating-custom-plugin",
+              "guides/saml-sso",
+              "guides/performance-optimization"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Server API",
             "pages": [
-              "api-reference/introduction"
+              "api-reference/server/betterauth",
+              "api-reference/server/configuration",
+              "api-reference/server/endpoints",
+              "api-reference/server/middleware",
+              "api-reference/server/rate-limiting"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "Client API",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api-reference/client/create-auth-client",
+              "api-reference/client/react",
+              "api-reference/client/vue",
+              "api-reference/client/svelte",
+              "api-reference/client/solid"
+            ]
+          },
+          {
+            "group": "Plugin API",
+            "pages": [
+              "api-reference/plugins/plugin-interface",
+              "api-reference/plugins/hooks",
+              "api-reference/plugins/schema-extension"
+            ]
+          },
+          {
+            "group": "CLI",
+            "pages": [
+              "api-reference/cli/overview",
+              "api-reference/cli/commands"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Resources",
+            "pages": [
+              "resources/examples",
+              "resources/faq",
+              "resources/security",
+              "resources/contributing",
+              "resources/changelog"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

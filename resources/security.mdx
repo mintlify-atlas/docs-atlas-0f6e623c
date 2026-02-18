@@ -1,0 +1,469 @@
+---
+title: Security
+description: Security features, best practices, and vulnerability reporting for Better Auth.
+---
+
+Better Auth is built with security as a top priority. This page covers the security features built into the framework and best practices for keeping your authentication system secure.
+
+## Password Hashing
+
+Better Auth uses the **scrypt** algorithm to hash passwords by default. This algorithm is designed to be memory-hard and CPU-intensive, making it highly resistant to brute-force attacks.
+
+### Custom Password Hashing
+
+You can customize the password hashing function by setting the `password` option:
+
+```typescript title="auth.ts"
+import { betterAuth } from "better-auth";
+import { hash, verify } from "argon2";
+
+export const auth = betterAuth({
+  password: {
+    hash: async (password) => {
+      return await hash(password);
+    },
+    verify: async (password, hash) => {
+      return await verify(hash, password);
+    }
+  }
+});
+```
+
+<Note>
+  When implementing custom hashing, ensure your algorithm is cryptographically secure and suitable for password storage. Popular alternatives include Argon2, bcrypt, and PBKDF2.
+</Note>
+
+## Session Management
+
+### Session Expiration
+
+Sessions are stored securely in your database or secondary storage to prevent unauthorized access.
+
+**Default Configuration:**
+- Sessions expire after **7 days** of inactivity
+- Sessions are automatically extended if used within the `updateAge` threshold (default: **1 day**)
+
+**Custom Configuration:**
+
+```typescript
+export const auth = betterAuth({
+  session: {
+    expiresIn: 60 * 60 * 24 * 14, // 14 days in seconds
+    updateAge: 60 * 60 * 24 * 7   // 7 days in seconds
+  }
+});
+```
+
+### Session Revocation
+
+Better Auth supports session revocation for enhanced security:
+
+- **Admin Revocation:** Revoke any user's session from an admin panel
+- **User Revocation:** Users can revoke their own sessions from different devices
+- **Logout:** Immediately invalidates the current session
+
+See the [session management documentation](/docs/concepts/session-management) for implementation details.
+
+## CSRF Protection
+
+Better Auth includes comprehensive protection against Cross-Site Request Forgery (CSRF) attacks through multiple layers:
+
+### 1. Avoiding Simple Requests
+
+Better Auth only accepts requests with:
+- Non-simple headers (like custom authentication headers)
+- `Content-Type: application/json`
+
+This prevents simple cross-origin requests from executing state-changing operations.
+
+<Note>
+  Learn more about [avoiding simple requests](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF#avoiding_simple_requests) on MDN.
+</Note>
+
+### 2. Origin Validation
+
+Every request's `Origin` header is verified against your trusted origins:
+
+```typescript
+export const auth = betterAuth({
+  trustedOrigins: [
+    "https://example.com",
+    "https://app.example.com",
+    "http://localhost:3000"
+  ]
+});
+```
+
+Requests from untrusted origins are automatically rejected. By default, Better Auth trusts your configured `baseURL`.
+
+### 3. Secure Cookie Settings
+
+Session cookies use secure attributes by default:
+- **`SameSite=Lax`** - Prevents cookies from being sent with cross-site requests
+- **`HttpOnly`** - Prevents client-side JavaScript from accessing cookies
+- **`Secure`** - Cookies only sent over HTTPS (in production)
+
+```typescript
+export const auth = betterAuth({
+  advanced: {
+    defaultCookieAttributes: {
+      sameSite: "lax",
+      httpOnly: true,
+      secure: true
+    }
+  }
+});
+```
+
+### 4. Fetch Metadata Protection
+
+Better Auth uses [Fetch Metadata headers](https://developer.mozilla.org/en-US/docs/Web/Security/Attacks/CSRF#fetch_metadata) to protect against **first-login CSRF** attacks:
+
+- `Sec-Fetch-Site`
+- `Sec-Fetch-Mode`
+- `Sec-Fetch-Dest`
+
+This protection applies to sign-in and sign-up email routes that accept form submissions.
+
+**How it works:**
+- Cross-site navigation requests without cookies are blocked
+- Same-origin/same-site requests pass through after origin validation
+- Older browsers fall back to origin validation only
+
+<Note>
+  Non-browser HTTP clients (mobile apps, server-to-server) should set the `Origin` or `Referer` header appropriately when making requests with cookies.
+</Note>
+
+### 5. No Mutations on GET Requests
+
+`GET` requests are read-only and never modify application state. When mutations are required (e.g., OAuth callbacks), Better Auth validates:
+- `nonce` parameters
+- `state` parameters
+- PKCE code verifiers
+
+### Disabling Security Checks
+
+<Warning>
+  Only disable security checks if you fully understand the implications and have alternative protections in place.
+</Warning>
+
+#### Disable CSRF Protection
+
+```typescript
+{
+  advanced: {
+    disableCSRFCheck: true  // Not recommended
+  }
+}
+```
+
+Disables:
+- Origin header validation when cookies are present
+- Fetch Metadata checks
+- Cross-site navigation blocking
+
+#### Disable Origin Check
+
+```typescript
+{
+  advanced: {
+    disableOriginCheck: true  // Not recommended
+  }
+}
+```
+
+Disables:
+- URL validation against `trustedOrigins`
+- `callbackURL`, `redirectTo`, `errorCallbackURL` validation
+- Also disables CSRF protection (for backward compatibility)
+
+**Summary Table:**
+
+| Option | Disables |
+|--------|----------|
+| `disableCSRFCheck` | CSRF protection only |
+| `disableOriginCheck` | URL validation **and** CSRF protection |
+
+## OAuth State and PKCE
+
+To secure OAuth flows, Better Auth implements:
+
+**OAuth State:**
+- Random state parameter generated for each OAuth request
+- Stored in database and validated on callback
+- Prevents CSRF attacks during OAuth flows
+
+**PKCE (Proof Key for Code Exchange):**
+- Code challenge and verifier generated for each request
+- Protects against authorization code interception
+- Prevents code injection attacks
+
+State and PKCE values are automatically removed from the database after OAuth completion.
+
+## Cookies
+
+### Secure Cookies by Default
+
+Better Auth sets secure cookies automatically when using HTTPS:
+- **Encrypted** - Cookie values are encrypted
+- **Secure flag** - Only sent over HTTPS connections
+- **HttpOnly** - Not accessible via JavaScript
+- **SameSite=Lax** - CSRF protection
+
+### Cross-Subdomain Cookies
+
+Share authentication across subdomains:
+
+```typescript
+export const auth = betterAuth({
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: true,
+      domain: ".example.com"  // All subdomains of example.com
+    }
+  }
+});
+```
+
+### Customizing Cookies
+
+Customize cookie names to minimize fingerprinting risks:
+
+```typescript
+export const auth = betterAuth({
+  advanced: {
+    cookiePrefix: "myapp"  // Results in: myapp.session_token
+  }
+});
+```
+
+See [cookie options documentation](/docs/concepts/cookies) for more configuration options.
+
+## Rate Limiting
+
+Better Auth includes built-in rate limiting to protect against brute-force attacks.
+
+**Default Limits:**
+- General routes: 100 requests per minute
+- Sensitive routes (login, registration): 5 requests per minute
+- Password reset: 3 requests per 15 minutes
+
+**Custom Configuration:**
+
+```typescript
+export const auth = betterAuth({
+  rateLimit: {
+    window: 60,        // Time window in seconds
+    max: 100,          // Max requests per window
+    customRules: [
+      {
+        pathMatcher: (path) => path === "/api/auth/sign-in/email",
+        window: 60,
+        max: 5
+      }
+    ]
+  }
+});
+```
+
+Rate limits are applied per IP address by default.
+
+## IP Address Headers
+
+Better Auth uses client IP addresses for rate limiting and security monitoring.
+
+**Default:** Reads from `X-Forwarded-For` header
+
+**Custom Configuration:**
+
+```typescript
+export const auth = betterAuth({
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ['cf-connecting-ip']  // Cloudflare
+      // Or: ['x-real-ip']  // Nginx
+      // Or: ['x-client-ip']  // Custom proxy
+    }
+  }
+});
+```
+
+<Warning>
+  **Critical Security Note:**
+  
+  Only configure custom IP headers if:
+  - Your proxy/load balancer sets the header
+  - End users cannot set the header directly
+  - You trust the proxy to provide accurate IP addresses
+  
+  Misconfiguration can allow attackers to bypass rate limiting by spoofing IP addresses.
+</Warning>
+
+## Trusted Proxy Headers
+
+If your app runs behind a reverse proxy or load balancer, Better Auth can derive the base URL from forwarded headers.
+
+```typescript
+export const auth = betterAuth({
+  advanced: {
+    trustedProxyHeaders: true
+  }
+});
+```
+
+This allows Better Auth to use `X-Forwarded-Host` and `X-Forwarded-Proto` headers to construct URLs for OAuth callbacks and email links.
+
+**Base URL Resolution Priority:**
+1. Static `baseURL` from configuration (if set)
+2. Environment variables (`BETTER_AUTH_URL`, etc.)
+3. `X-Forwarded-Host` + `X-Forwarded-Proto` (when `trustedProxyHeaders` is true)
+4. Request URL origin (fallback)
+
+<Warning>
+  Only enable `trustedProxyHeaders` if:
+  - You trust the proxy headers reaching your application
+  - Your proxy correctly sets `X-Forwarded-Host` and `X-Forwarded-Proto`
+  - End users cannot forge these headers
+  
+  Otherwise, attackers could manipulate redirects and callback URLs.
+</Warning>
+
+## Trusted Origins
+
+Trusted origins prevent CSRF attacks and open redirect vulnerabilities.
+
+### Basic Usage
+
+```typescript
+export const auth = betterAuth({
+  trustedOrigins: [
+    "https://example.com",
+    "https://app.example.com",
+    "http://localhost:3000"
+  ]
+});
+```
+
+### Wildcard Origins
+
+Trust multiple subdomains:
+
+```typescript
+export const auth = betterAuth({
+  trustedOrigins: [
+    "*.example.com",              // Any protocol, any subdomain
+    "https://*.example.com",      // HTTPS only, any subdomain
+    "http://*.dev.example.com"    // HTTP only, dev subdomains
+  ]
+});
+```
+
+### Custom Schemes
+
+Support mobile apps and browser extensions:
+
+```typescript
+export const auth = betterAuth({
+  trustedOrigins: [
+    "myapp://",                                // Mobile app
+    "chrome-extension://YOUR_EXTENSION_ID",   // Browser extension
+    "exp://**",                               // Expo development
+    "exp://10.0.0.*:*/**"                     // Expo IP range
+  ]
+});
+```
+
+### Dynamic Origins
+
+Fetch trusted origins at runtime:
+
+```typescript
+export const auth = betterAuth({
+  trustedOrigins: async (request) => {
+    const trustedOrigins = await queryTrustedDomains();
+    return trustedOrigins;
+  }
+});
+```
+
+<Warning>
+  This function is invoked per request. Avoid expensive operations like database queries without caching.
+</Warning>
+
+## Best Practices
+
+### Environment Variables
+
+- Never commit secrets to version control
+- Use environment-specific `.env` files
+- Rotate secrets regularly
+- Use strong, random values for `secret` in Better Auth config
+
+### Production Checklist
+
+- [ ] Use HTTPS in production
+- [ ] Set `NODE_ENV=production`
+- [ ] Configure `trustedOrigins` for your domains
+- [ ] Enable rate limiting
+- [ ] Set up proper IP address header detection
+- [ ] Use strong password hashing (default scrypt is good)
+- [ ] Configure session expiration appropriately
+- [ ] Enable two-factor authentication option
+- [ ] Set up email verification
+- [ ] Monitor authentication logs
+- [ ] Keep Better Auth updated
+
+### Database Security
+
+- Use database connection pooling
+- Enable SSL for database connections
+- Use read replicas for session lookups if needed
+- Regularly backup authentication data
+- Implement proper access controls
+
+### Code Security
+
+- Validate and sanitize all user inputs
+- Use TypeScript's strict mode
+- Keep dependencies updated
+- Run security audits (`npm audit`)
+- Use CSP headers in your application
+- Implement proper error handling (don't leak sensitive info)
+
+## Reporting Vulnerabilities
+
+If you discover a security vulnerability in Better Auth:
+
+1. **Do not** disclose the vulnerability publicly
+2. Email: **[security@better-auth.com](mailto:security@better-auth.com)**
+3. Include:
+   - Detailed description of the vulnerability
+   - Steps to reproduce
+   - Potential impact
+   - Suggested fixes (if any)
+
+**Response Timeline:**
+- Initial response: Within 72 hours
+- Fix release: As soon as possible (depends on severity)
+- Public disclosure: After fix is released or 90 days (whichever comes first)
+
+**Recognition:**
+- Confirmed vulnerabilities will be credited to the reporter
+- We maintain a security acknowledgments page
+
+Thank you for helping keep Better Auth secure!
+
+## Security Updates
+
+Stay informed about security updates:
+
+- Watch the [Better Auth repository](https://github.com/better-auth/better-auth)
+- Follow [@better_auth](https://twitter.com/better_auth) on Twitter
+- Join our [Discord community](https://discord.gg/better-auth)
+- Subscribe to security advisories on GitHub
+
+## Additional Resources
+
+- [OWASP Authentication Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html)
+- [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+- [CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)

@@ -1,0 +1,683 @@
+---
+title: API Endpoints
+full: true
+---
+
+Complete reference for Better Auth server-side API endpoints and route handlers.
+
+## Overview
+
+Better Auth provides two ways to interact with authentication:
+
+1. **HTTP Endpoints** - Standard REST API routes handled by `auth.handler`
+2. **Server API** - Direct method calls via `auth.api` (no HTTP overhead)
+
+## Authentication Endpoints
+
+### Sign Up with Email
+
+<ParamField path="/sign-up/email" type="POST">
+  Create a new user account with email and password.
+
+  **Request Body:**
+  ```typescript
+  {
+    email: string;
+    password: string;
+    name: string;
+    callbackURL?: string;
+    rememberMe?: boolean; // default: true
+  }
+  ```
+
+  **Response:**
+  ```typescript
+  {
+    user: User;
+    session: Session;
+    redirect: boolean;
+    url?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  const result = await auth.api.signUpEmail({
+    body: {
+      email: "user@example.com",
+      password: "securePassword123",
+      name: "John Doe"
+    }
+  });
+  ```
+</ParamField>
+
+### Sign In with Email
+
+<ParamField path="/sign-in/email" type="POST">
+  Authenticate user with email and password.
+
+  **Request Body:**
+  ```typescript
+  {
+    email: string;
+    password: string;
+    callbackURL?: string;
+    rememberMe?: boolean; // default: true
+  }
+  ```
+
+  **Response:**
+  ```typescript
+  {
+    user: User;
+    token: string;
+    redirect: boolean;
+    url?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  const result = await auth.api.signInEmail({
+    body: {
+      email: "user@example.com",
+      password: "securePassword123"
+    }
+  });
+  ```
+
+  **Error Codes:**
+  - `INVALID_EMAIL_OR_PASSWORD` - Invalid credentials
+  - `EMAIL_NOT_VERIFIED` - Email verification required
+  - `EMAIL_PASSWORD_DISABLED` - Feature not enabled
+</ParamField>
+
+### Sign In with Social Provider
+
+<ParamField path="/sign-in/social" type="POST">
+  Initiate OAuth flow or sign in with ID token.
+
+  **Request Body:**
+  ```typescript
+  {
+    provider: string; // "github" | "google" | ...
+    callbackURL?: string;
+    newUserCallbackURL?: string;
+    errorCallbackURL?: string;
+    disableRedirect?: boolean;
+    idToken?: {
+      token: string;
+      nonce?: string;
+      accessToken?: string;
+      refreshToken?: string;
+      expiresAt?: number;
+    };
+    scopes?: string[];
+    requestSignUp?: boolean;
+    loginHint?: string;
+  }
+  ```
+
+  **Response:**
+  ```typescript
+  // OAuth flow
+  { redirect: boolean; url: string; }
+  
+  // ID token flow
+  { redirect: false; token: string; user: User; }
+  ```
+
+  **Server API:**
+  ```typescript
+  const result = await auth.api.signInSocial({
+    body: {
+      provider: "github",
+      callbackURL: "/dashboard"
+    }
+  });
+  ```
+</ParamField>
+
+### Sign Out
+
+<ParamField path="/sign-out" type="POST">
+  Sign out user and invalidate session.
+
+  **Server API:**
+  ```typescript
+  await auth.api.signOut({
+    headers: request.headers
+  });
+  ```
+
+  **Response:**
+  ```typescript
+  { success: true }
+  ```
+</ParamField>
+
+## Session Management
+
+### Get Session
+
+<ParamField path="/get-session" type="GET | POST">
+  Retrieve current session information. POST method requires `deferSessionRefresh` enabled.
+
+  **Query Parameters:**
+  ```typescript
+  {
+    disableCookieCache?: boolean;
+    disableRefresh?: boolean;
+  }
+  ```
+
+  **Response:**
+  ```typescript
+  {
+    user: User;
+    session: Session;
+    needsRefresh?: boolean; // when deferSessionRefresh enabled
+  } | null
+  ```
+
+  **Server API:**
+  ```typescript
+  const session = await auth.api.getSession({
+    headers: request.headers,
+    query: { disableRefresh: true }
+  });
+  ```
+
+  The session object includes:
+  ```typescript
+  {
+    session: {
+      id: string;
+      userId: string;
+      token: string;
+      expiresAt: Date;
+      createdAt: Date;
+      updatedAt: Date;
+      ipAddress?: string;
+      userAgent?: string;
+    },
+    user: {
+      id: string;
+      email: string;
+      name: string;
+      image?: string;
+      emailVerified: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    }
+  }
+  ```
+</ParamField>
+
+### List Sessions
+
+<ParamField path="/list-sessions" type="GET">
+  List all active sessions for the authenticated user.
+
+  **Response:**
+  ```typescript
+  Session[]
+  ```
+
+  **Server API:**
+  ```typescript
+  const sessions = await auth.api.listSessions({
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Revoke Session
+
+<ParamField path="/revoke-session" type="POST">
+  Revoke a specific session by token.
+
+  **Request Body:**
+  ```typescript
+  {
+    token: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.revokeSession({
+    body: { token: "session_token" },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Revoke All Sessions
+
+<ParamField path="/revoke-sessions" type="POST">
+  Revoke all sessions for the authenticated user.
+
+  **Server API:**
+  ```typescript
+  await auth.api.revokeSessions({
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Revoke Other Sessions
+
+<ParamField path="/revoke-other-sessions" type="POST">
+  Revoke all sessions except the current one.
+
+  **Server API:**
+  ```typescript
+  await auth.api.revokeOtherSessions({
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+## User Management
+
+### Update User
+
+<ParamField path="/update-user" type="POST">
+  Update user profile information.
+
+  **Request Body:**
+  ```typescript
+  {
+    name?: string;
+    image?: string;
+    // ... additional fields
+  }
+  ```
+
+  **Response:**
+  ```typescript
+  {
+    user: User;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  const updated = await auth.api.updateUser({
+    body: { name: "New Name" },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Delete User
+
+<ParamField path="/delete-user" type="POST">
+  Delete user account. May send verification email if configured.
+
+  **Request Body:**
+  ```typescript
+  {
+    password?: string;
+    callbackURL?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.deleteUser({
+    body: { password: "current_password" },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+## Password Management
+
+### Change Password
+
+<ParamField path="/change-password" type="POST">
+  Change user's password.
+
+  **Request Body:**
+  ```typescript
+  {
+    currentPassword: string;
+    newPassword: string;
+    revokeOtherSessions?: boolean;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.changePassword({
+    body: {
+      currentPassword: "oldPass123",
+      newPassword: "newPass456",
+      revokeOtherSessions: true
+    },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Set Password
+
+<ParamField path="/set-password" type="POST">
+  Set password for accounts created via social login.
+
+  **Request Body:**
+  ```typescript
+  {
+    password: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.setPassword({
+    body: { password: "newPass123" },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Request Password Reset
+
+<ParamField path="/request-password-reset" type="POST">
+  Request password reset email.
+
+  **Request Body:**
+  ```typescript
+  {
+    email: string;
+    callbackURL?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.requestPasswordReset({
+    body: {
+      email: "user@example.com",
+      callbackURL: "/reset-complete"
+    }
+  });
+  ```
+</ParamField>
+
+### Reset Password
+
+<ParamField path="/reset-password" type="POST">
+  Reset password using token from email.
+
+  **Request Body:**
+  ```typescript
+  {
+    token: string;
+    password: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.resetPassword({
+    body: {
+      token: "reset_token",
+      password: "newPassword123"
+    }
+  });
+  ```
+</ParamField>
+
+## Email Verification
+
+### Send Verification Email
+
+<ParamField path="/send-verification-email" type="POST">
+  Send email verification link.
+
+  **Request Body:**
+  ```typescript
+  {
+    email: string;
+    callbackURL?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.sendVerificationEmail({
+    body: {
+      email: "user@example.com",
+      callbackURL: "/verified"
+    }
+  });
+  ```
+</ParamField>
+
+### Verify Email
+
+<ParamField path="/verify-email" type="GET">
+  Verify email using token from link.
+
+  **Query Parameters:**
+  ```typescript
+  {
+    token: string;
+    callbackURL?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.verifyEmail({
+    query: { token: "verification_token" }
+  });
+  ```
+</ParamField>
+
+### Change Email
+
+<ParamField path="/change-email" type="POST">
+  Change user's email address.
+
+  **Request Body:**
+  ```typescript
+  {
+    newEmail: string;
+    callbackURL?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.changeEmail({
+    body: {
+      newEmail: "newemail@example.com"
+    },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+## Account Linking
+
+### Link Social Account
+
+<ParamField path="/link-social" type="POST">
+  Link a social provider to existing account.
+
+  **Request Body:**
+  ```typescript
+  {
+    provider: string;
+    callbackURL?: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  const result = await auth.api.linkSocialAccount({
+    body: { provider: "google" },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### List User Accounts
+
+<ParamField path="/list-accounts" type="GET">
+  List all linked accounts for authenticated user.
+
+  **Response:**
+  ```typescript
+  Account[]
+  ```
+
+  **Server API:**
+  ```typescript
+  const accounts = await auth.api.listUserAccounts({
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+### Unlink Account
+
+<ParamField path="/unlink-account" type="POST">
+  Unlink a social provider account.
+
+  **Request Body:**
+  ```typescript
+  {
+    providerId: string;
+  }
+  ```
+
+  **Server API:**
+  ```typescript
+  await auth.api.unlinkAccount({
+    body: { providerId: "google" },
+    headers: request.headers
+  });
+  ```
+</ParamField>
+
+## OAuth Callback
+
+<ParamField path="/callback/:provider" type="GET">
+  OAuth callback handler for social providers. Better Auth handles this automatically.
+
+  **Query Parameters:**
+  ```typescript
+  {
+    code: string;
+    state: string;
+    error?: string;
+  }
+  ```
+</ParamField>
+
+## Utility Endpoints
+
+### Get Access Token
+
+<ParamField path="/get-access-token" type="POST">
+  Get OAuth access token for a linked provider.
+
+  **Request Body:**
+  ```typescript
+  {
+    providerId: string;
+  }
+  ```
+
+  **Response:**
+  ```typescript
+  {
+    accessToken: string;
+    refreshToken?: string;
+    expiresAt?: Date;
+  }
+  ```
+</ParamField>
+
+### Refresh Token
+
+<ParamField path="/refresh-token" type="POST">
+  Refresh OAuth access token.
+
+  **Request Body:**
+  ```typescript
+  {
+    providerId: string;
+  }
+  ```
+</ParamField>
+
+## Using Server API
+
+The `auth.api` object provides direct access to all endpoints without HTTP overhead:
+
+```typescript
+import { auth } from "./auth";
+
+// In server components, API routes, etc.
+export async function getUserSession(request: Request) {
+  const session = await auth.api.getSession({
+    headers: request.headers
+  });
+
+  if (!session) {
+    return null;
+  }
+
+  return {
+    user: session.user,
+    session: session.session
+  };
+}
+
+// Server action example
+export async function updateProfile(formData: FormData) {
+  "use server";
+  
+  const name = formData.get("name") as string;
+  
+  const result = await auth.api.updateUser({
+    body: { name },
+    headers: await headers() // Next.js
+  });
+
+  return result;
+}
+```
+
+## Error Handling
+
+All endpoints can throw `APIError` with the following structure:
+
+```typescript
+{
+  status: string; // "UNAUTHORIZED", "BAD_REQUEST", etc.
+  message: string;
+  code?: string; // Specific error code
+}
+```
+
+Common error codes:
+- `INVALID_EMAIL_OR_PASSWORD`
+- `EMAIL_NOT_VERIFIED`
+- `UNAUTHORIZED`
+- `SESSION_NOT_FRESH`
+- `INVALID_TOKEN`
+- `USER_NOT_FOUND`
+
+## Related
+
+- [betterAuth()](/api-reference/server/betterauth)
+- [Middleware](/api-reference/server/middleware)
+- [Configuration](/api-reference/server/configuration)

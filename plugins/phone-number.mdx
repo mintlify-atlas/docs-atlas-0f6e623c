@@ -1,0 +1,390 @@
+---
+title: Phone Number
+description: SMS-based authentication with OTP verification
+---
+
+The phone number plugin allows users to sign in and sign up using their phone number with OTP (One-Time Password) verification via SMS.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to the server
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { phoneNumber } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        phoneNumber({
+          sendOTP: ({ phoneNumber, code }, ctx) => {
+            // Implement sending OTP code via SMS
+            await sendSMS({
+              to: phoneNumber,
+              message: `Your verification code is: ${code}`
+            })
+          }
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Migrate the database
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+      ```bash
+      npx auth migrate
+      ```
+      </Tab>
+      <Tab value="generate">
+      ```bash
+      npx auth generate
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { phoneNumberClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        phoneNumberClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+<Callout>
+We highly recommend not awaiting the `sendOTP` function to avoid timing attacks. For serverless platforms, use `waitUntil` to ensure the OTP is sent.
+</Callout>
+
+## Usage
+
+### Send OTP
+
+Send an OTP to a phone number:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.phoneNumber.sendOtp({
+  phoneNumber: "+1234567890"
+})
+```
+
+### Verify Phone Number
+
+Verify the phone number with the OTP code:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.phoneNumber.verify({
+  phoneNumber: "+1234567890",
+  code: "123456"
+})
+```
+
+### Sign Up with Phone Number
+
+To allow users to sign up using phone numbers:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { phoneNumber } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    phoneNumber({
+      sendOTP: ({ phoneNumber, code }, ctx) => {
+        // Send SMS
+      },
+      signUpOnVerification: {
+        getTempEmail: (phoneNumber) => {
+          return `${phoneNumber}@my-site.com`
+        },
+        getTempName: (phoneNumber) => {
+          return phoneNumber // Optional
+        }
+      }
+    })
+  ]
+})
+```
+
+If you have additional required fields:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.phoneNumber.verify({
+  phoneNumber: "+1234567890",
+  code: "123456",
+  customField: "custom-value" // Additional field
+})
+```
+
+### Sign In with Phone Number and Password
+
+Use phone number as an identifier with password:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.signIn.phoneNumber({
+  phoneNumber: "+1234567890",
+  password: "secure-password",
+  rememberMe: true
+})
+```
+
+### Update Phone Number
+
+Allow logged-in users to change their phone number:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+// Send OTP to new number
+await authClient.phoneNumber.sendOtp({
+  phoneNumber: "+0987654321" // New phone number
+})
+
+// Verify new number
+const { data } = await authClient.phoneNumber.verify({
+  phoneNumber: "+0987654321",
+  code: "123456",
+  updatePhoneNumber: true
+})
+```
+
+### Disable Session Creation
+
+Prevent automatic session creation after verification:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const isVerified = await authClient.phoneNumber.verify({
+  phoneNumber: "+1234567890",
+  code: "123456",
+  disableSession: true
+})
+```
+
+### Request Password Reset
+
+Reset password using phone number:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+// Request password reset OTP
+await authClient.phoneNumber.requestPasswordReset({
+  phoneNumber: "+1234567890"
+})
+
+// Reset password with OTP
+const { data } = await authClient.phoneNumber.resetPassword({
+  otp: "123456",
+  phoneNumber: "+1234567890",
+  newPassword: "new-secure-password"
+})
+```
+
+## Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { phoneNumber } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    phoneNumber({
+      // Required: function to send OTP
+      sendOTP: ({ phoneNumber, code }, ctx) => {
+        // Send SMS implementation
+      },
+      
+      // OTP length
+      otpLength: 6, // Default: 6
+      
+      // Expiration time in seconds
+      expiresIn: 300, // Default: 300 (5 minutes)
+      
+      // Callback after verification
+      callbackOnVerification: async ({ phoneNumber, user }, ctx) => {
+        // Custom logic after verification
+      },
+      
+      // Function to send password reset OTP
+      sendPasswordResetOTP: ({ phoneNumber, code }, ctx) => {
+        // Send SMS for password reset
+      },
+      
+      // Custom phone number validator
+      phoneNumberValidator: (phoneNumber) => {
+        // Return true if valid
+        return /^\+[1-9]\d{1,14}$/.test(phoneNumber)
+      },
+      
+      // Custom OTP verification
+      verifyOTP: async ({ phoneNumber, code }, ctx) => {
+        // Custom verification logic (e.g., Twilio Verify)
+        const isValid = await twilioClient.verify
+          .services('SERVICE_SID')
+          .verificationChecks
+          .create({ to: phoneNumber, code })
+        return isValid.status === 'approved'
+      },
+      
+      // Sign up configuration
+      signUpOnVerification: {
+        getTempEmail: (phoneNumber) => `${phoneNumber}@example.com`,
+        getTempName: (phoneNumber) => phoneNumber
+      },
+      
+      // Require verification before sign in
+      requireVerification: false,
+      
+      // Maximum verification attempts
+      allowedAttempts: 3, // Default: 3
+    })
+  ]
+})
+```
+
+<Callout type="warn">
+When using `verifyOTP`, ensure proper validation is implemented as it overrides internal verification logic.
+</Callout>
+
+## Schema
+
+The plugin adds these fields to the user table:
+
+- `phoneNumber` (string, unique, optional): User's phone number
+- `phoneNumberVerified` (boolean, optional): Whether phone number is verified
+
+## OTP Verification Attempts
+
+The plugin includes brute force protection by limiting verification attempts:
+
+```ts
+phoneNumber({
+  allowedAttempts: 3, // Default: 3
+})
+```
+
+When attempts are exceeded:
+- The OTP code is automatically deleted
+- Further attempts return 403 (Forbidden) status
+- User must request a new OTP code
+
+Example error response:
+```json
+{
+  "error": {
+    "status": 403,
+    "message": "Too many attempts"
+  }
+}
+```
+
+<Callout type="warning">
+When receiving a 403 status, prompt the user to request a new OTP code.
+</Callout>
+
+## Example: Complete Implementation
+
+```tsx title="app/phone-login/page.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useState } from "react"
+
+export default function PhoneLoginPage() {
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [code, setCode] = useState("")
+  const [step, setStep] = useState<"phone" | "code">("phone")
+  const [error, setError] = useState("")
+  
+  const sendOTP = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    
+    const { error: sendError } = await authClient.phoneNumber.sendOtp({
+      phoneNumber,
+    })
+    
+    if (sendError) {
+      setError(sendError.message)
+    } else {
+      setStep("code")
+    }
+  }
+  
+  const verifyCode = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    
+    const { data, error: verifyError } = await authClient.phoneNumber.verify({
+      phoneNumber,
+      code,
+    })
+    
+    if (verifyError) {
+      setError(verifyError.message)
+      if (verifyError.status === 403) {
+        // Too many attempts, go back to request new code
+        setStep("phone")
+      }
+    } else {
+      // Redirect to dashboard
+      window.location.href = "/dashboard"
+    }
+  }
+  
+  if (step === "code") {
+    return (
+      <form onSubmit={verifyCode}>
+        <h2>Enter verification code</h2>
+        <p>We sent a code to {phoneNumber}</p>
+        <input
+          type="text"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="000000"
+          maxLength={6}
+          required
+        />
+        <button type="submit">Verify</button>
+        <button type="button" onClick={() => setStep("phone")}>Back</button>
+        {error && <p>{error}</p>}
+      </form>
+    )
+  }
+  
+  return (
+    <form onSubmit={sendOTP}>
+      <h2>Sign in with phone number</h2>
+      <input
+        type="tel"
+        value={phoneNumber}
+        onChange={(e) => setPhoneNumber(e.target.value)}
+        placeholder="+1234567890"
+        required
+      />
+      <button type="submit">Send Code</button>
+      {error && <p>{error}</p>}
+    </form>
+  )
+}
+```

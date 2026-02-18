@@ -1,0 +1,448 @@
+---
+title: Social Providers
+description: Complete guide to OAuth social authentication providers in Better Auth
+---
+
+Better Auth provides built-in support for 30+ social authentication providers through OAuth 2.0 and OpenID Connect protocols.
+
+## Overview
+
+Social authentication allows users to sign in using their existing accounts from popular platforms like Google, GitHub, Discord, and more. Better Auth handles the complete OAuth flow, token management, and user account linking.
+
+## Quick Start
+
+To enable a social provider, add it to your Better Auth configuration:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+
+export const auth = betterAuth({
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    },
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+    },
+  },
+});
+```
+
+## Client Usage
+
+### Sign In with Social Provider
+
+<Tabs>
+  <Tab title="React">
+    ```tsx
+    import { authClient } from "./lib/auth-client";
+
+    function LoginButton() {
+      return (
+        <button
+          onClick={async () => {
+            await authClient.signIn.social({
+              provider: "google",
+              callbackURL: "/dashboard",
+            });
+          }}
+        >
+          Sign in with Google
+        </button>
+      );
+    }
+    ```
+  </Tab>
+  <Tab title="Vue">
+    ```vue
+    <script setup>
+    import { authClient } from './lib/auth-client'
+
+    const signInWithGoogle = async () => {
+      await authClient.signIn.social({
+        provider: 'google',
+        callbackURL: '/dashboard'
+      })
+    }
+    </script>
+
+    <template>
+      <button @click="signInWithGoogle">
+        Sign in with Google
+      </button>
+    </template>
+    ```
+  </Tab>
+  <Tab title="Svelte">
+    ```svelte
+    <script lang="ts">
+      import { authClient } from './lib/auth-client'
+
+      async function signInWithGoogle() {
+        await authClient.signIn.social({
+          provider: 'google',
+          callbackURL: '/dashboard'
+        })
+      }
+    </script>
+
+    <button on:click={signInWithGoogle}>
+      Sign in with Google
+    </button>
+    ```
+  </Tab>
+</Tabs>
+
+### Link Social Account
+
+Link an additional social account to an existing user:
+
+```ts
+await authClient.linkSocial({
+  provider: "github",
+});
+```
+
+### Get Access Token
+
+Retrieve the access token for a linked social provider (automatically refreshes if expired):
+
+```ts
+const { accessToken, refreshToken } = await authClient.getAccessToken({
+  providerId: "google",
+});
+```
+
+## Supported Providers
+
+Better Auth supports 30+ social authentication providers out of the box:
+
+<CardGroup cols={3}>
+  <Card title="Google" icon="google" href="/authentication/google">
+    Sign in with Google accounts
+  </Card>
+  <Card title="GitHub" icon="github" href="/authentication/github">
+    Sign in with GitHub
+  </Card>
+  <Card title="Discord" icon="discord" href="/authentication/discord">
+    Sign in with Discord
+  </Card>
+  <Card title="Microsoft" icon="microsoft" href="/authentication/microsoft">
+    Azure AD and Microsoft accounts
+  </Card>
+  <Card title="Apple" icon="apple" href="/authentication/apple">
+    Sign in with Apple
+  </Card>
+  <Card title="Facebook" icon="facebook" href="/authentication/facebook">
+    Facebook Login
+  </Card>
+  <Card title="LinkedIn" icon="linkedin" href="/authentication/linkedin">
+    LinkedIn OAuth
+  </Card>
+  <Card title="Twitter/X" icon="x-twitter" href="/authentication/twitter">
+    X (Twitter) OAuth
+  </Card>
+  <Card title="GitLab" icon="gitlab" href="/authentication/gitlab">
+    GitLab authentication
+  </Card>
+</CardGroup>
+
+### All Available Providers
+
+Better Auth includes support for these additional providers:
+
+- **Development Tools**: GitHub, GitLab, Atlassian
+- **Social Media**: Discord, Twitter/X, Facebook, LinkedIn, Reddit, Twitch, Kick
+- **Productivity**: Microsoft, Google, Notion, Linear, Figma, Slack, Zoom
+- **Gaming**: Steam, Roblox, Epic Games
+- **Regional**: Kakao (Korea), Line (Japan), Naver (Korea)
+- **Finance**: PayPal, Stripe, Polar
+- **Cloud**: Railway, Dropbox
+- **AI/ML**: Hugging Face
+- **Identity**: Cognito, Auth0 (via generic OAuth)
+- **Others**: Spotify, PayBin
+
+<Note>
+For providers not listed above, use the [Generic OAuth Plugin](/plugins/generic-oauth) to add any OAuth 2.0 or OIDC provider.
+</Note>
+
+## Configuration Options
+
+### Basic Configuration
+
+Each provider requires at minimum a `clientId` and `clientSecret`:
+
+```ts
+export const auth = betterAuth({
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    },
+  },
+});
+```
+
+### Advanced Configuration
+
+```ts
+export const auth = betterAuth({
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      // Request additional OAuth scopes
+      scope: ["email", "profile", "https://www.googleapis.com/auth/calendar.readonly"],
+      // Custom redirect URI
+      redirectURI: "https://yourdomain.com/api/auth/callback/google",
+      // Enable PKCE for enhanced security
+      pkce: true,
+      // Custom authorization parameters
+      authorizationParams: {
+        prompt: "consent",
+        access_type: "offline",
+      },
+    },
+  },
+});
+```
+
+## Getting Provider Credentials
+
+### Google
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable Google+ API
+4. Go to Credentials → Create Credentials → OAuth 2.0 Client ID
+5. Set authorized redirect URI: `https://yourdomain.com/api/auth/callback/google`
+
+### GitHub
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Click "New OAuth App"
+3. Set callback URL: `https://yourdomain.com/api/auth/callback/github`
+4. Copy Client ID and generate Client Secret
+
+### Discord
+
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application
+3. Go to OAuth2 section
+4. Add redirect: `https://yourdomain.com/api/auth/callback/discord`
+5. Copy Client ID and Client Secret
+
+<Info>
+Each provider has specific setup instructions. Click on the provider cards above for detailed guides.
+</Info>
+
+## Callback URLs
+
+Better Auth uses a consistent callback URL pattern for all providers:
+
+```
+https://yourdomain.com/api/auth/callback/{providerId}
+```
+
+For development:
+
+```
+http://localhost:3000/api/auth/callback/{providerId}
+```
+
+<Warning>
+Make sure to register both development and production callback URLs in your OAuth provider settings.
+</Warning>
+
+## Account Linking
+
+Users can link multiple social accounts to a single Better Auth account:
+
+```ts
+// Check if account is already linked
+const session = await authClient.getSession();
+const linkedAccounts = session?.user?.accounts || [];
+
+if (!linkedAccounts.some(acc => acc.providerId === "github")) {
+  // Link GitHub account
+  await authClient.linkSocial({ provider: "github" });
+}
+```
+
+## Token Management
+
+Better Auth automatically manages OAuth tokens:
+
+### Access Token Refresh
+
+Tokens are automatically refreshed when expired:
+
+```ts
+// This will automatically refresh if needed
+const { accessToken } = await authClient.getAccessToken({
+  providerId: "google",
+});
+```
+
+### Manual Refresh
+
+Force refresh a token:
+
+```ts
+const { accessToken, refreshToken } = await authClient.getAccessToken({
+  providerId: "google",
+  forceRefresh: true,
+});
+```
+
+## Security Best Practices
+
+<Steps>
+  <Step title="Use Environment Variables">
+    Never commit OAuth credentials to version control. Use environment variables:
+    
+    ```bash title=".env"
+    GOOGLE_CLIENT_ID=your-client-id
+    GOOGLE_CLIENT_SECRET=your-client-secret
+    ```
+  </Step>
+
+  <Step title="Enable PKCE">
+    Enable PKCE (Proof Key for Code Exchange) for enhanced security:
+    
+    ```ts
+    socialProviders: {
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        pkce: true, // Enable PKCE
+      },
+    }
+    ```
+  </Step>
+
+  <Step title="Restrict Redirect URIs">
+    Only allow specific redirect URIs in your OAuth provider settings. Never use wildcards in production.
+  </Step>
+
+  <Step title="Request Minimum Scopes">
+    Only request the OAuth scopes you actually need:
+    
+    ```ts
+    socialProviders: {
+      google: {
+        clientId: process.env.GOOGLE_CLIENT_ID!,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+        // Only request email and profile
+        scope: ["email", "profile"],
+      },
+    }
+    ```
+  </Step>
+</Steps>
+
+## Custom OAuth Provider
+
+For providers not built into Better Auth, use the Generic OAuth plugin:
+
+```ts
+import { betterAuth } from "better-auth";
+import { genericOAuth } from "better-auth/plugins/generic-oauth";
+
+export const auth = betterAuth({
+  plugins: [
+    genericOAuth({
+      config: [
+        {
+          providerId: "custom-provider",
+          clientId: process.env.CUSTOM_CLIENT_ID!,
+          clientSecret: process.env.CUSTOM_CLIENT_SECRET!,
+          authorizationUrl: "https://provider.com/oauth/authorize",
+          tokenUrl: "https://provider.com/oauth/token",
+          userInfoUrl: "https://provider.com/api/user",
+          scopes: ["openid", "profile", "email"],
+        },
+      ],
+    }),
+  ],
+});
+```
+
+See the [Generic OAuth Plugin](/plugins/generic-oauth) documentation for complete details.
+
+## Troubleshooting
+
+<Accordion title="Redirect URI mismatch error">
+  Ensure the redirect URI in your OAuth provider settings exactly matches the callback URL used by Better Auth:
+  
+  ```
+  https://yourdomain.com/api/auth/callback/{providerId}
+  ```
+  
+  Check for:
+  - HTTP vs HTTPS
+  - Trailing slashes
+  - Correct provider ID
+</Accordion>
+
+<Accordion title="Invalid client error">
+  This usually means:
+  - Client ID or secret is incorrect
+  - Environment variables are not loaded
+  - Provider credentials are for wrong environment (dev vs prod)
+  
+  Verify your credentials and ensure environment variables are properly loaded.
+</Accordion>
+
+<Accordion title="Token refresh fails">
+  Some providers require specific scopes to issue refresh tokens:
+  
+  - **Google**: Include `access_type: "offline"` in authorization params
+  - **Microsoft**: Include `offline_access` scope
+  
+  ```ts
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorizationParams: {
+        access_type: "offline",
+        prompt: "consent",
+      },
+    },
+  }
+  ```
+</Accordion>
+
+<Accordion title="User profile data missing">
+  Request additional scopes to access more user data:
+  
+  ```ts
+  socialProviders: {
+    github: {
+      clientId: process.env.GITHUB_CLIENT_ID!,
+      clientSecret: process.env.GITHUB_CLIENT_SECRET!,
+      scope: ["user:email", "read:user"], // Request email access
+    },
+  }
+  ```
+</Accordion>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="OAuth Concepts" icon="book" href="/concepts/oauth">
+    Learn how OAuth works in Better Auth
+  </Card>
+  <Card title="Generic OAuth Plugin" icon="plug" href="/plugins/generic-oauth">
+    Add custom OAuth providers
+  </Card>
+  <Card title="Account Linking" icon="link" href="/guides/account-linking">
+    Link multiple accounts
+  </Card>
+  <Card title="Token Management" icon="key" href="/guides/token-management">
+    Working with OAuth tokens
+  </Card>
+</CardGroup>

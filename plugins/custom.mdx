@@ -1,0 +1,419 @@
+---
+title: Custom Plugins
+description: Create your own plugins to extend Better Auth
+---
+
+Better Auth provides a powerful plugin system that allows you to extend authentication functionality with custom features. You can create plugins to add new endpoints, database tables, middleware, and client-side functionality.
+
+## Plugin Structure
+
+A Better Auth plugin is an object with specific properties that define its behavior:
+
+```ts
+import type { BetterAuthPlugin } from "better-auth"
+
+export const myPlugin = (): BetterAuthPlugin => {
+  return {
+    id: "my-plugin",
+    
+    // Server-side functionality
+    endpoints: {
+      // Define custom endpoints
+    },
+    
+    schema: {
+      // Define database tables and fields
+    },
+    
+    hooks: {
+      // Add hooks to modify behavior
+    },
+    
+    // Client-side functionality
+    $InferServerPlugin: {} as {
+      // Type definitions for client
+    },
+  }
+}
+```
+
+## Basic Example
+
+Let's create a simple plugin that tracks user login streaks:
+
+```ts title="plugins/login-streak.ts"
+import type { BetterAuthPlugin } from "better-auth"
+
+export const loginStreak = (): BetterAuthPlugin => {
+  return {
+    id: "login-streak",
+    
+    // Add a field to the user table
+    schema: {
+      user: {
+        fields: {
+          loginStreak: {
+            type: "number",
+            defaultValue: 0,
+          },
+          lastLoginDate: {
+            type: "date",
+            required: false,
+          },
+        },
+      },
+    },
+    
+    // Add a hook to update streak on sign in
+    hooks: {
+      after: [
+        {
+          matcher: (context) => context.path === "/sign-in/email",
+          handler: async (ctx) => {
+            const { user } = ctx.context
+            if (!user) return
+            
+            const today = new Date().toDateString()
+            const lastLogin = user.lastLoginDate?.toDateString()
+            
+            let newStreak = 1
+            if (lastLogin) {
+              const yesterday = new Date()
+              yesterday.setDate(yesterday.getDate() - 1)
+              
+              if (lastLogin === yesterday.toDateString()) {
+                newStreak = (user.loginStreak || 0) + 1
+              } else if (lastLogin === today) {
+                newStreak = user.loginStreak || 1
+              }
+            }
+            
+            await ctx.context.adapter.update({
+              model: "user",
+              where: [{ field: "id", value: user.id }],
+              update: {
+                loginStreak: newStreak,
+                lastLoginDate: new Date(),
+              },
+            })
+          },
+        },
+      ],
+    },
+    
+    // Add endpoint to get streak
+    endpoints: {
+      getLoginStreak: {
+        path: "/get-login-streak",
+        method: "GET",
+        requireAuth: true,
+        handler: async (ctx) => {
+          const session = await ctx.getSession()
+          if (!session) {
+            throw new Error("Unauthorized")
+          }
+          
+          const user = await ctx.context.adapter.findOne({
+            model: "user",
+            where: [{ field: "id", value: session.user.id }],
+          })
+          
+          return {
+            streak: user?.loginStreak || 0,
+            lastLoginDate: user?.lastLoginDate,
+          }
+        },
+      },
+    },
+    
+    // Type definitions for client
+    $InferServerPlugin: {} as {
+      getLoginStreak: {
+        method: "GET"
+        path: "/get-login-streak"
+        output: {
+          streak: number
+          lastLoginDate: Date | null
+        }
+      }
+    },
+  }
+}
+```
+
+Use the plugin:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { loginStreak } from "./plugins/login-streak"
+
+export const auth = betterAuth({
+  plugins: [
+    loginStreak()
+  ]
+})
+```
+
+Client usage:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.getLoginStreak()
+console.log(`Your login streak: ${data?.streak}`)
+```
+
+## Plugin Components
+
+### Schema
+
+Define database tables and fields:
+
+```ts
+schema: {
+  // Add fields to existing tables
+  user: {
+    fields: {
+      customField: {
+        type: "string",
+        required: false,
+      },
+    },
+  },
+  
+  // Create new tables
+  customTable: {
+    tableName: "custom_table",
+    fields: {
+      id: {
+        type: "string",
+        primaryKey: true,
+      },
+      userId: {
+        type: "string",
+        references: {
+          model: "user",
+          field: "id",
+        },
+      },
+      data: {
+        type: "string",
+      },
+    },
+  },
+}
+```
+
+### Endpoints
+
+Add custom API endpoints:
+
+```ts
+endpoints: {
+  myEndpoint: {
+    path: "/my-endpoint",
+    method: "POST",
+    requireAuth: true,
+    handler: async (ctx) => {
+      // Access request body
+      const body = await ctx.getBody()
+      
+      // Get current session
+      const session = await ctx.getSession()
+      
+      // Access database
+      const data = await ctx.context.adapter.findOne({
+        model: "user",
+        where: [{ field: "id", value: session.user.id }],
+      })
+      
+      // Return response
+      return {
+        success: true,
+        data,
+      }
+    },
+  },
+}
+```
+
+### Hooks
+
+Modify behavior with hooks:
+
+```ts
+hooks: {
+  before: [
+    {
+      matcher: (context) => context.path === "/sign-up/email",
+      handler: async (ctx) => {
+        // Modify request before sign up
+        const body = await ctx.getBody()
+        
+        // Validate custom fields
+        if (!body.customField) {
+          throw new Error("Custom field is required")
+        }
+      },
+    },
+  ],
+  after: [
+    {
+      matcher: (context) => context.path === "/sign-in/email",
+      handler: async (ctx) => {
+        // Run logic after sign in
+        console.log("User signed in:", ctx.context.user)
+      },
+    },
+  ],
+}
+```
+
+### Client Plugin
+
+Create a client plugin for type-safe client usage:
+
+```ts
+import { BetterAuthClientPlugin } from "better-auth/client"
+
+export const myPluginClient = (): BetterAuthClientPlugin => {
+  return {
+    id: "my-plugin",
+    $InferServerPlugin: {} as ReturnType<typeof myPlugin>,
+    
+    // Add custom client methods
+    getAtoms: (fetch) => ({
+      myCustomMethod: async () => {
+        const { data } = await fetch("/my-endpoint", {
+          method: "POST",
+          body: JSON.stringify({ foo: "bar" }),
+        })
+        return data
+      },
+    }),
+  }
+}
+```
+
+## Advanced Example: Rate Limiting
+
+```ts title="plugins/rate-limit.ts"
+import type { BetterAuthPlugin } from "better-auth"
+
+interface RateLimitOptions {
+  maxAttempts?: number
+  windowMs?: number
+}
+
+export const rateLimit = (options?: RateLimitOptions): BetterAuthPlugin => {
+  const { maxAttempts = 5, windowMs = 15 * 60 * 1000 } = options || {}
+  
+  // In-memory store (use Redis in production)
+  const attempts = new Map<string, { count: number; resetAt: number }>()
+  
+  return {
+    id: "rate-limit",
+    
+    hooks: {
+      before: [
+        {
+          matcher: (context) => 
+            context.path === "/sign-in/email" || 
+            context.path === "/sign-up/email",
+          handler: async (ctx) => {
+            const body = await ctx.getBody<{ email: string }>()
+            const key = `${ctx.request.method}:${ctx.path}:${body.email}`
+            
+            const now = Date.now()
+            const record = attempts.get(key)
+            
+            if (record) {
+              if (now < record.resetAt) {
+                if (record.count >= maxAttempts) {
+                  throw new Error("Too many attempts. Please try again later.")
+                }
+                record.count++
+              } else {
+                // Window expired, reset
+                attempts.set(key, { count: 1, resetAt: now + windowMs })
+              }
+            } else {
+              attempts.set(key, { count: 1, resetAt: now + windowMs })
+            }
+          },
+        },
+      ],
+      after: [
+        {
+          matcher: (context) => context.path === "/sign-in/email",
+          handler: async (ctx) => {
+            // Clear attempts on successful sign in
+            const body = await ctx.getBody<{ email: string }>()
+            const key = `${ctx.request.method}:${ctx.path}:${body.email}`
+            attempts.delete(key)
+          },
+        },
+      ],
+    },
+  }
+}
+```
+
+## Best Practices
+
+1. **Unique Plugin IDs**: Use unique, descriptive IDs for your plugins
+2. **Type Safety**: Define proper TypeScript types for client inference
+3. **Error Handling**: Handle errors gracefully in endpoints and hooks
+4. **Database Migrations**: Run migrations after adding schema changes
+5. **Documentation**: Document your plugin's options and usage
+6. **Testing**: Test plugins thoroughly with different scenarios
+7. **Security**: Validate inputs and check permissions in endpoints
+
+## Plugin Options Pattern
+
+Follow this pattern for configurable plugins:
+
+```ts
+interface MyPluginOptions {
+  enabled?: boolean
+  customValue?: string
+}
+
+export const myPlugin = (options?: MyPluginOptions): BetterAuthPlugin => {
+  const { enabled = true, customValue = "default" } = options || {}
+  
+  return {
+    id: "my-plugin",
+    // Plugin implementation
+  }
+}
+```
+
+## Publishing Plugins
+
+To share your plugin with the community:
+
+1. Create a npm package
+2. Export the plugin and client plugin
+3. Include TypeScript types
+4. Add comprehensive documentation
+5. Provide usage examples
+6. Test with different Better Auth versions
+
+```json
+{
+  "name": "better-auth-my-plugin",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "peerDependencies": {
+    "better-auth": ">=0.1.0"
+  }
+}
+```
+
+## Resources
+
+- [Better Auth Plugin Examples](https://github.com/better-auth/better-auth/tree/main/packages/better-auth/src/plugins)
+- [Plugin API Reference](/api-reference/plugins)
+- [Contributing Guide](https://github.com/better-auth/better-auth/blob/main/CONTRIBUTING.md)

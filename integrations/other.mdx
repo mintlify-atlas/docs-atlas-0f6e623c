@@ -1,0 +1,439 @@
+---
+title: Other Frameworks
+description: Integrate Better Auth with any JavaScript framework or environment.
+---
+
+Better Auth is framework-agnostic and can be integrated with any JavaScript framework or runtime. This guide covers vanilla JavaScript usage and provides patterns for integrating with other frameworks.
+
+## Vanilla JavaScript Client
+
+For vanilla JavaScript or frameworks without specific integrations, use the base client:
+
+```js title="auth-client.js"
+import { createAuthClient } from "better-auth/client";
+
+export const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+});
+```
+
+The vanilla client returns [nanostores](https://github.com/nanostores/nanostores) atoms for reactive state:
+
+```js
+import { authClient } from "./auth-client";
+
+// Subscribe to session changes
+const $session = authClient.useSession;
+
+$session.subscribe((session) => {
+  if (session.data) {
+    console.log("User:", session.data.user);
+  } else if (session.isPending) {
+    console.log("Loading...");
+  } else {
+    console.log("Not authenticated");
+  }
+});
+
+// Sign in
+await authClient.signIn.email(
+  {
+    email: "user@example.com",
+    password: "password",
+  },
+  {
+    onSuccess: (ctx) => {
+      console.log("Signed in:", ctx.data);
+    },
+    onError: (ctx) => {
+      console.error("Error:", ctx.error);
+    },
+  }
+);
+
+// Sign out
+await authClient.signOut();
+```
+
+## Server-Side Integration
+
+Better Auth works with any Node.js framework. Use the base handler:
+
+```ts
+import { auth } from "./auth";
+
+// Handle request
+const response = await auth.handler(request);
+```
+
+The handler accepts a standard `Request` object and returns a `Response` object, following the [Web API standards](https://developer.mozilla.org/en-US/docs/Web/API/Request).
+
+## Framework Examples
+
+### Hono
+
+[Hono](https://hono.dev) is a lightweight web framework:
+
+```ts title="server.ts"
+import { Hono } from "hono";
+import { auth } from "./auth";
+
+const app = new Hono();
+
+// Mount Better Auth
+app.all("/api/auth/*", async (c) => {
+  return auth.handler(c.req.raw);
+});
+
+// Get session
+app.get("/api/me", async (c) => {
+  const session = await auth.api.getSession({
+    headers: c.req.raw.headers,
+  });
+
+  if (!session) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  return c.json(session.user);
+});
+
+export default app;
+```
+
+### Fastify
+
+[Fastify](https://fastify.dev) integration:
+
+```ts title="server.ts"
+import Fastify from "fastify";
+import { auth } from "./auth";
+
+const fastify = Fastify();
+
+// Mount Better Auth
+fastify.all("/api/auth/*", async (request, reply) => {
+  const response = await auth.handler(
+    new Request(request.url, {
+      method: request.method,
+      headers: request.headers as HeadersInit,
+      body: request.body ? JSON.stringify(request.body) : undefined,
+    })
+  );
+
+  reply.status(response.status);
+  response.headers.forEach((value, key) => {
+    reply.header(key, value);
+  });
+
+  return response.body;
+});
+
+// Get session
+fastify.get("/api/me", async (request, reply) => {
+  const session = await auth.api.getSession({
+    headers: request.headers as HeadersInit,
+  });
+
+  if (!session) {
+    return reply.status(401).send({ error: "Unauthorized" });
+  }
+
+  return session.user;
+});
+
+fastify.listen({ port: 3000 });
+```
+
+### Nitro
+
+[Nitro](https://nitro.unjs.io) is used by Nuxt:
+
+```ts title="routes/api/auth/[...].ts"
+import { auth } from "~/lib/auth";
+
+export default defineEventHandler((event) => {
+  return auth.handler(toWebRequest(event));
+});
+```
+
+### Astro
+
+[Astro](https://astro.build) server endpoints:
+
+```ts title="pages/api/auth/[...all].ts"
+import { auth } from "~/lib/auth";
+import type { APIRoute } from "astro";
+
+export const ALL: APIRoute = async ({ request }) => {
+  return auth.handler(request);
+};
+```
+
+Use in Astro components:
+
+```astro title="pages/dashboard.astro"
+---
+import { auth } from "~/lib/auth";
+
+const session = await auth.api.getSession({
+  headers: Astro.request.headers,
+});
+
+if (!session) {
+  return Astro.redirect("/sign-in");
+}
+---
+
+<h1>Welcome {session.user.name}!</h1>
+```
+
+### Bun
+
+[Bun](https://bun.sh) native server:
+
+```ts title="server.ts"
+import { auth } from "./auth";
+
+Bun.serve({
+  port: 3000,
+  async fetch(request) {
+    const url = new URL(request.url);
+
+    // Handle auth routes
+    if (url.pathname.startsWith("/api/auth/")) {
+      return auth.handler(request);
+    }
+
+    // Get session
+    if (url.pathname === "/api/me") {
+      const session = await auth.api.getSession({
+        headers: request.headers,
+      });
+
+      if (!session) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+        });
+      }
+
+      return new Response(JSON.stringify(session.user));
+    }
+
+    return new Response("Not found", { status: 404 });
+  },
+});
+```
+
+### Deno
+
+[Deno](https://deno.land) server:
+
+```ts title="server.ts"
+import { auth } from "./auth.ts";
+
+Deno.serve({ port: 3000 }, async (request) => {
+  const url = new URL(request.url);
+
+  // Handle auth routes
+  if (url.pathname.startsWith("/api/auth/")) {
+    return auth.handler(request);
+  }
+
+  // Get session
+  if (url.pathname === "/api/me") {
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
+
+    if (!session) {
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify(session.user), {
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  return new Response("Not found", { status: 404 });
+});
+```
+
+## Client-Side Framework Integration
+
+### Preact
+
+Preact works similarly to React:
+
+```tsx
+import { createAuthClient } from "better-auth/react";
+import { useEffect, useState } from "preact/hooks";
+
+const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+});
+
+export function App() {
+  const session = authClient.useSession();
+
+  if (session.isPending) {
+    return <div>Loading...</div>;
+  }
+
+  return (
+    <div>
+      {session.data ? (
+        <div>
+          <h1>Welcome {session.data.user.name}!</h1>
+          <button onClick={() => authClient.signOut()}>Sign Out</button>
+        </div>
+      ) : (
+        <button onClick={() => authClient.signIn.social({ provider: "github" })}>
+          Sign In
+        </button>
+      )}
+    </div>
+  );
+}
+```
+
+### Alpine.js
+
+Use nanostores with Alpine.js:
+
+```html
+<script type="module">
+  import { createAuthClient } from "better-auth/client";
+  import Alpine from "alpinejs";
+
+  const authClient = createAuthClient({
+    baseURL: "http://localhost:3000",
+  });
+
+  Alpine.data("auth", () => ({
+    session: null,
+    loading: true,
+
+    init() {
+      authClient.useSession.subscribe((session) => {
+        this.session = session.data;
+        this.loading = session.isPending;
+      });
+    },
+
+    async signIn(email, password) {
+      await authClient.signIn.email({ email, password });
+    },
+
+    async signOut() {
+      await authClient.signOut();
+    },
+  }));
+
+  Alpine.start();
+</script>
+
+<div x-data="auth">
+  <template x-if="loading">
+    <p>Loading...</p>
+  </template>
+
+  <template x-if="!loading && session">
+    <div>
+      <h1>Welcome <span x-text="session.user.name"></span>!</h1>
+      <button @click="signOut()">Sign Out</button>
+    </div>
+  </template>
+
+  <template x-if="!loading && !session">
+    <button>Sign In</button>
+  </template>
+</div>
+```
+
+### Lit
+
+[Lit](https://lit.dev) web components:
+
+```ts
+import { LitElement, html } from "lit";
+import { customElement, state } from "lit/decorators.js";
+import { createAuthClient } from "better-auth/client";
+
+const authClient = createAuthClient({
+  baseURL: "http://localhost:3000",
+});
+
+@customElement("user-profile")
+export class UserProfile extends LitElement {
+  @state()
+  private session: any = null;
+
+  @state()
+  private loading = true;
+
+  connectedCallback() {
+    super.connectedCallback();
+    authClient.useSession.subscribe((session) => {
+      this.session = session.data;
+      this.loading = session.isPending;
+    });
+  }
+
+  async signOut() {
+    await authClient.signOut();
+  }
+
+  render() {
+    if (this.loading) {
+      return html`<p>Loading...</p>`;
+    }
+
+    if (!this.session) {
+      return html`<p>Not authenticated</p>`;
+    }
+
+    return html`
+      <div>
+        <h1>Welcome ${this.session.user.name}!</h1>
+        <button @click=${this.signOut}>Sign Out</button>
+      </div>
+    `;
+  }
+}
+```
+
+## Custom Adapter Pattern
+
+If you need to create a custom adapter for a framework:
+
+```ts title="custom-adapter.ts"
+import type { Auth } from "better-auth";
+
+export function toCustomFrameworkHandler(auth: Auth) {
+  return async (frameworkRequest: any) => {
+    // Convert framework request to Web API Request
+    const request = new Request(frameworkRequest.url, {
+      method: frameworkRequest.method,
+      headers: frameworkRequest.headers,
+      body: frameworkRequest.body,
+    });
+
+    // Call Better Auth handler
+    const response = await auth.handler(request);
+
+    // Convert Web API Response to framework response
+    // Return in your framework's expected format
+    return response;
+  };
+}
+```
+
+## Resources
+
+- [Better Auth Core Concepts](/docs/concepts/overview)
+- [Framework Examples Repository](https://github.com/better-auth/examples)
+- [Community Integrations](https://github.com/better-auth/better-auth/discussions)

@@ -1,0 +1,175 @@
+---
+title: Plugins Overview
+description: Extend Better Auth with powerful plugins for authentication, authorization, and more
+---
+
+Better Auth provides a comprehensive plugin system that allows you to extend your authentication setup with additional features. Plugins can add new endpoints, database tables, middleware, and client-side functionality.
+
+## Core Plugins
+
+Better Auth includes several official plugins that cover common authentication scenarios:
+
+<CardGroup cols={2}>
+  <Card title="Organization" icon="building" href="/plugins/organization">
+    Multi-tenant organizations with role-based access control, teams, and invitations
+  </Card>
+  
+  <Card title="Two-Factor Auth" icon="shield" href="/plugins/two-factor">
+    Add an extra layer of security with TOTP, OTP, backup codes, and trusted devices
+  </Card>
+  
+  <Card title="Admin" icon="user-shield" href="/plugins/admin">
+    Powerful admin tools for user management, banning, impersonation, and more
+  </Card>
+  
+  <Card title="JWT" icon="key" href="/plugins/jwt">
+    Generate and verify JWT tokens with JWKS support for external services
+  </Card>
+  
+  <Card title="Bearer" icon="lock" href="/plugins/bearer">
+    Authenticate API requests using Bearer tokens instead of cookies
+  </Card>
+  
+  <Card title="Magic Link" icon="envelope" href="/plugins/magic-link">
+    Passwordless authentication via email links
+  </Card>
+  
+  <Card title="Email OTP" icon="at" href="/plugins/email-otp">
+    One-time passwords sent via email for sign-in and verification
+  </Card>
+  
+  <Card title="Phone Number" icon="phone" href="/plugins/phone-number">
+    SMS-based authentication with OTP verification
+  </Card>
+  
+  <Card title="Username" icon="user" href="/plugins/username">
+    Allow users to sign in with usernames instead of email
+  </Card>
+  
+  <Card title="Anonymous" icon="user-secret" href="/plugins/anonymous">
+    Enable guest users without requiring authentication
+  </Card>
+  
+  <Card title="OAuth Proxy" icon="arrow-right-arrow-left" href="/plugins/oauth-proxy">
+    Proxy OAuth requests for development and preview deployments
+  </Card>
+  
+  <Card title="Multi-Session" icon="users" href="/plugins/multi-session">
+    Maintain multiple active sessions across different accounts
+  </Card>
+  
+  <Card title="OIDC Provider" icon="id-card" href="/plugins/oidc-provider">
+    Turn your app into an OpenID Connect provider
+  </Card>
+  
+  <Card title="Device Authorization" icon="tv" href="/plugins/device-authorization">
+    OAuth 2.0 device flow for TVs, CLIs, and IoT devices
+  </Card>
+</CardGroup>
+
+## Installation
+
+Most plugins follow a similar installation pattern:
+
+<Steps>
+  <Step>
+    ### Add the server plugin
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { pluginName } from "better-auth/plugins"
+    
+    export const auth = betterAuth({
+      plugins: [
+        pluginName({
+          // plugin options
+        })
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Migrate the database
+    
+    Most plugins require database changes:
+    
+    ```bash
+    npx auth migrate
+    ```
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+    
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { pluginNameClient } from "better-auth/client/plugins"
+    
+    export const authClient = createAuthClient({
+      plugins: [
+        pluginNameClient({
+          // plugin options
+        })
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Plugin Categories
+
+### Authentication Methods
+
+Plugins that add new ways for users to authenticate:
+
+- **Magic Link** - Passwordless email authentication
+- **Email OTP** - One-time password via email
+- **Phone Number** - SMS-based authentication
+- **Username** - Sign in with username
+- **Anonymous** - Guest access without credentials
+
+### Security Enhancements
+
+Plugins that improve security:
+
+- **Two-Factor Auth** - TOTP, OTP, and backup codes
+- **JWT** - Token-based authentication for APIs
+- **Bearer** - Bearer token authentication
+
+### User Management
+
+Plugins for managing users and organizations:
+
+- **Admin** - Administrative user management tools
+- **Organization** - Multi-tenant organizations and teams
+- **Multi-Session** - Multiple concurrent sessions
+
+### OAuth & Standards
+
+Plugins implementing OAuth and OpenID Connect:
+
+- **OIDC Provider** - Become an OpenID Connect provider
+- **Device Authorization** - OAuth 2.0 device flow
+- **OAuth Proxy** - Proxy OAuth for development
+
+## Creating Custom Plugins
+
+You can create your own plugins to extend Better Auth. Check out the [Custom Plugins](/plugins/custom) documentation for more information.
+
+## Plugin Best Practices
+
+1. **Install only what you need** - Each plugin adds overhead, so only install plugins you'll actually use
+2. **Run migrations** - Most plugins require database changes, so always run migrations after adding plugins
+3. **Configure carefully** - Review each plugin's options to ensure proper configuration
+4. **Test thoroughly** - Test your authentication flows after adding new plugins
+5. **Keep updated** - Update plugins regularly to get the latest features and security fixes
+
+## Need Help?
+
+If you're having trouble with a plugin:
+
+- Check the specific plugin documentation
+- Review the plugin's options and configuration
+- Look at example implementations in the Better Auth demo
+- Ask for help in the Better Auth community

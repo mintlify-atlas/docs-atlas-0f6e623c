@@ -1,0 +1,205 @@
+---
+title: Multi-Session
+description: Maintain multiple active sessions across different accounts
+---
+
+The multi-session plugin allows users to maintain multiple active sessions across different accounts in the same browser, enabling seamless account switching without logging out.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+    
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { multiSession } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        multiSession()
+      ]
+    })
+    ```
+  </Step>
+  
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { multiSessionClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        multiSessionClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+Whenever a user logs in, the plugin adds an additional cookie to maintain multiple sessions across different accounts.
+
+### List Device Sessions
+
+Get all active sessions on the current device:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data: sessions } = await authClient.multiSession.listDeviceSessions()
+
+if (sessions) {
+  sessions.forEach(session => {
+    console.log(session.user.name, session.user.email)
+  })
+}
+```
+
+### Set Active Session
+
+Switch between different user sessions:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.multiSession.setActive({
+  sessionToken: "session-token-here"
+})
+```
+
+### Revoke Session
+
+Revoke a specific session:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.multiSession.revoke({
+  sessionToken: "session-token-here"
+})
+```
+
+### Sign Out
+
+When a user signs out, all device sessions are automatically revoked:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.signOut()
+// All sessions for this user are revoked
+```
+
+## Options
+
+### Maximum Sessions
+
+Limit the number of concurrent sessions per device:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { multiSession } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    multiSession({
+      maximumSessions: 3 // Default: 5
+    })
+  ]
+})
+```
+
+## Example: Account Switcher
+
+```tsx title="components/account-switcher.tsx"
+import { authClient } from "@/lib/auth-client"
+import { useState, useEffect } from "react"
+
+export function AccountSwitcher() {
+  const [sessions, setSessions] = useState([])
+  const [activeSession, setActiveSession] = useState(null)
+  
+  useEffect(() => {
+    loadSessions()
+  }, [])
+  
+  const loadSessions = async () => {
+    const { data } = await authClient.multiSession.listDeviceSessions()
+    if (data) {
+      setSessions(data)
+      const active = data.find(s => s.isActive)
+      setActiveSession(active)
+    }
+  }
+  
+  const switchAccount = async (sessionToken: string) => {
+    await authClient.multiSession.setActive({ sessionToken })
+    await loadSessions()
+    window.location.reload() // Refresh to update UI
+  }
+  
+  const revokeSession = async (sessionToken: string) => {
+    await authClient.multiSession.revoke({ sessionToken })
+    await loadSessions()
+  }
+  
+  return (
+    <div className="account-switcher">
+      <h3>Active Account</h3>
+      {activeSession && (
+        <div className="active-account">
+          <img src={activeSession.user.image} alt={activeSession.user.name} />
+          <div>
+            <p>{activeSession.user.name}</p>
+            <p>{activeSession.user.email}</p>
+          </div>
+        </div>
+      )}
+      
+      <h3>Other Accounts</h3>
+      <div className="sessions">
+        {sessions
+          .filter(s => !s.isActive)
+          .map(session => (
+            <div key={session.sessionToken} className="session-item">
+              <button onClick={() => switchAccount(session.sessionToken)}>
+                <img src={session.user.image} alt={session.user.name} />
+                <div>
+                  <p>{session.user.name}</p>
+                  <p>{session.user.email}</p>
+                </div>
+              </button>
+              <button onClick={() => revokeSession(session.sessionToken)}>
+                Remove
+              </button>
+            </div>
+          ))}
+      </div>
+      
+      <button onClick={() => window.location.href = "/login"}>
+        Add Another Account
+      </button>
+    </div>
+  )
+}
+```
+
+## Use Cases
+
+1. **Personal & Work Accounts**: Users can maintain separate personal and work accounts
+2. **Multiple Workspaces**: Switch between different workspace accounts
+3. **Testing**: Developers can test with multiple accounts simultaneously
+4. **Family Sharing**: Family members can have separate accounts on shared devices
+5. **Admin Tools**: Admins can switch between user accounts for support
+
+## Best Practices
+
+1. **Visual Indicators**: Show which account is active
+2. **Easy Switching**: Provide quick access to account switcher
+3. **Session Limits**: Set reasonable `maximumSessions` to prevent abuse
+4. **Clear Labels**: Display user names and emails clearly
+5. **Revoke Options**: Allow users to remove sessions they don't recognize

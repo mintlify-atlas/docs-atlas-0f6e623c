@@ -1,0 +1,370 @@
+---
+title: Admin Plugin
+description: Powerful administrative tools for user management
+---
+
+The Admin plugin provides comprehensive administrative functions for user management in your application. It allows administrators to perform operations such as creating users, managing roles, banning/unbanning users, impersonating users, and more.
+
+## Installation
+
+<Steps>
+  <Step>
+    ### Add the plugin to your auth config
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { admin } from "better-auth/plugins"
+
+    export const auth = betterAuth({
+      plugins: [
+        admin()
+      ]
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Migrate the database
+
+    <Tabs items={["migrate", "generate"]}>
+      <Tab value="migrate">
+      ```bash
+      npx auth migrate
+      ```
+      </Tab>
+      <Tab value="generate">
+      ```bash
+      npx auth generate
+      ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step>
+    ### Add the client plugin
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { adminClient } from "better-auth/client/plugins"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        adminClient()
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+## Usage
+
+Before performing any admin operations, the user must be authenticated with an admin account. An admin is any user assigned the `admin` role or any user whose ID is included in the `adminUserIds` option.
+
+### Create User
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.admin.createUser({
+  email: "user@example.com",
+  password: "secure-password",
+  name: "James Smith",
+  role: "user",
+  data: {
+    customField: "customValue"
+  }
+})
+```
+
+### List Users
+
+List all users with advanced filtering and pagination:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.admin.listUsers({
+  query: {
+    searchValue: "john",
+    searchField: "name",
+    searchOperator: "contains",
+    limit: 50,
+    offset: 0,
+    sortBy: "createdAt",
+    sortDirection: "desc"
+  }
+})
+
+// Pagination info
+const totalPages = Math.ceil(data.total / data.limit)
+const currentPage = (data.offset / data.limit) + 1
+```
+
+### Set User Role
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.setRole({
+  userId: "user-id",
+  role: "admin" // or ["admin", "moderator"]
+})
+```
+
+### Update User
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.updateUser({
+  userId: "user-id",
+  data: {
+    name: "New Name",
+    email: "newemail@example.com"
+  }
+})
+```
+
+### Ban/Unban User
+
+Ban a user (prevents sign-in and revokes all sessions):
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.banUser({
+  userId: "user-id",
+  banReason: "Spamming",
+  banExpiresIn: 60 * 60 * 24 * 7 // 7 days in seconds
+})
+```
+
+Unban a user:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.unbanUser({
+  userId: "user-id"
+})
+```
+
+### Impersonate User
+
+Create a session as another user:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.admin.impersonateUser({
+  userId: "user-id"
+})
+
+// Session will remain active until browser session ends or 1 hour
+```
+
+Stop impersonating:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.stopImpersonating()
+```
+
+### Manage Sessions
+
+List user sessions:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.admin.listUserSessions({
+  userId: "user-id"
+})
+```
+
+Revoke a specific session:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.revokeUserSession({
+  sessionToken: "session-token"
+})
+```
+
+Revoke all user sessions:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+await authClient.admin.revokeUserSessions({
+  userId: "user-id"
+})
+```
+
+### Remove User
+
+Permanently delete a user:
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+const { data } = await authClient.admin.removeUser({
+  userId: "user-id"
+})
+```
+
+## Access Control
+
+The admin plugin offers flexible access control based on roles and permissions.
+
+### Default Roles
+
+- **admin**: Full control over all user management operations
+- **user**: No administrative permissions
+
+### Default Permissions
+
+**user resource:**
+- `create`, `list`, `set-role`, `ban`, `impersonate`, `delete`, `set-password`
+
+**session resource:**
+- `list`, `revoke`, `delete`
+
+### Custom Permissions
+
+<Steps>
+  <Step>
+    ### Create Access Control
+
+    ```ts title="permissions.ts"
+    import { createAccessControl } from "better-auth/plugins/access"
+
+    const statement = {
+      project: ["create", "update", "delete"],
+    } as const
+
+    export const ac = createAccessControl(statement)
+    ```
+  </Step>
+
+  <Step>
+    ### Create Roles
+
+    ```ts title="permissions.ts"
+    export const user = ac.newRole({
+      project: ["create"],
+    })
+
+    export const admin = ac.newRole({
+      project: ["create", "update", "delete"],
+    })
+    ```
+  </Step>
+
+  <Step>
+    ### Pass Roles to Plugin
+
+    ```ts title="auth.ts"
+    import { betterAuth } from "better-auth"
+    import { admin as adminPlugin } from "better-auth/plugins"
+    import { ac, admin, user } from "@/auth/permissions"
+
+    export const auth = betterAuth({
+      plugins: [
+        adminPlugin({
+          ac,
+          roles: { admin, user }
+        })
+      ]
+    })
+    ```
+
+    ```ts title="auth-client.ts"
+    import { createAuthClient } from "better-auth/client"
+    import { adminClient } from "better-auth/client/plugins"
+    import { ac, admin, user } from "@/auth/permissions"
+
+    export const authClient = createAuthClient({
+      plugins: [
+        adminClient({
+          ac,
+          roles: { admin, user }
+        })
+      ]
+    })
+    ```
+  </Step>
+</Steps>
+
+### Check Permissions
+
+```ts
+import { authClient } from "@/lib/auth-client"
+
+// Check current user's permission
+const canCreate = await authClient.admin.hasPermission({
+  permissions: {
+    project: ["create"],
+  },
+})
+
+// Check role permission (client-side only)
+const canDelete = authClient.admin.checkRolePermission({
+  permissions: {
+    user: ["delete"],
+  },
+  role: "admin",
+})
+```
+
+## Options
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
+
+export const auth = betterAuth({
+  plugins: [
+    admin({
+      // Default role for new users
+      defaultRole: "user",
+      
+      // Admin role names (when not using custom AC)
+      adminRoles: ["admin", "superadmin"],
+      
+      // Specific user IDs that are always admin
+      adminUserIds: ["user_id_1", "user_id_2"],
+      
+      // Impersonation session duration (seconds)
+      impersonationSessionDuration: 60 * 60, // 1 hour
+      
+      // Default ban settings
+      defaultBanReason: "No reason",
+      defaultBanExpiresIn: undefined, // never expires
+      
+      // Custom banned user message
+      bannedUserMessage: "You have been banned.",
+      
+      // Allow impersonating other admins
+      allowImpersonatingAdmins: false,
+    })
+  ]
+})
+```
+
+## Schema
+
+The plugin adds the following fields:
+
+### User Table
+
+- `role` (string): User's role (defaults to "user")
+- `banned` (boolean): Whether user is banned
+- `banReason` (string): Reason for ban
+- `banExpires` (date): When ban expires
+
+### Session Table
+
+- `impersonatedBy` (string): ID of admin impersonating this session

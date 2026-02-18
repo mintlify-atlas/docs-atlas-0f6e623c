@@ -1,0 +1,493 @@
+---
+title: Rate Limiting
+full: true
+---
+
+Built-in rate limiting to protect your authentication endpoints from abuse and brute-force attacks.
+
+## Overview
+
+Better Auth includes automatic rate limiting based on IP address. By default, it's enabled in production with sensible defaults and special rules for sensitive endpoints.
+
+## Configuration
+
+<ParamField path="rateLimit" type="BetterAuthRateLimitOptions">
+  Rate limiting configuration object.
+
+  ```typescript
+  import { betterAuth } from "better-auth";
+
+  export const auth = betterAuth({
+    rateLimit: {
+      enabled: true,
+      window: 60,  // 60 seconds
+      max: 100,    // 100 requests
+      storage: "memory", // or "database" or "secondary-storage"
+      customRules: {
+        "/sign-in/email": { window: 10, max: 3 }
+      }
+    }
+  });
+  ```
+</ParamField>
+
+## Basic Options
+
+<ParamField path="enabled" type="boolean" default={true}>
+  Enable rate limiting. By default, only enabled in production (`NODE_ENV === 'production'`).
+
+  ```typescript
+  rateLimit: {
+    enabled: process.env.NODE_ENV === "production"
+  }
+  ```
+</ParamField>
+
+<ParamField path="window" type="number" default={10}>
+  Time window in **seconds** for rate limit calculations.
+
+  ```typescript
+  rateLimit: {
+    window: 60 // Check requests in 60-second windows
+  }
+  ```
+</ParamField>
+
+<ParamField path="max" type="number" default={100}>
+  Maximum number of requests allowed within the window.
+
+  ```typescript
+  rateLimit: {
+    window: 60,
+    max: 100 // Allow 100 requests per 60 seconds
+  }
+  ```
+</ParamField>
+
+<ParamField path="storage" type="'memory' | 'database' | 'secondary-storage'" default="memory">
+  Where to store rate limit data.
+
+  <Expandable title="Storage Options">
+    **memory** (default)
+    - In-memory storage
+    - Fast but not shared across instances
+    - Lost on restart
+    - Good for single-server setups
+
+    ```typescript
+    rateLimit: {
+      storage: "memory"
+    }
+    ```
+
+    **database**
+    - Stored in database `rateLimit` table
+    - Shared across instances
+    - Persistent
+    - Adds database load
+
+    ```typescript
+    rateLimit: {
+      storage: "database"
+    }
+    ```
+
+    **secondary-storage**
+    - Uses configured secondary storage (Redis, etc.)
+    - Fast and shared across instances
+    - Recommended for production
+
+    ```typescript
+    rateLimit: {
+      storage: "secondary-storage"
+    },
+    secondaryStorage: {
+      get: async (key) => await redis.get(key),
+      set: async (key, value, ttl) => 
+        await redis.setex(key, ttl, value),
+      delete: async (key) => await redis.del(key)
+    }
+    ```
+  </Expandable>
+</ParamField>
+
+## Default Rules
+
+Better Auth applies stricter limits to sensitive endpoints:
+
+<ParamField path="Sign-In/Sign-Up Endpoints" type="Built-in Rule">
+  **Paths:** `/sign-in/*`, `/sign-up/*`, `/change-password`, `/change-email`
+  
+  **Default:** 3 requests per 10 seconds
+
+  Protects against:
+  - Brute force password attacks
+  - Credential stuffing
+  - Account enumeration
+</ParamField>
+
+<ParamField path="Email/OTP Endpoints" type="Built-in Rule">
+  **Paths:**
+  - `/request-password-reset`
+  - `/send-verification-email`
+  - `/forget-password`
+  - `/email-otp/send-verification-otp`
+  - `/email-otp/request-password-reset`
+
+  **Default:** 3 requests per 60 seconds
+
+  Protects against:
+  - Email spam
+  - SMS/OTP abuse
+  - Service cost attacks
+</ParamField>
+
+## Custom Rules
+
+<ParamField path="customRules" type="object">
+  Override rate limits for specific paths. Supports wildcards.
+
+  ```typescript
+  rateLimit: {
+    window: 60,
+    max: 100,
+    customRules: {
+      // Exact path
+      "/sign-in/email": {
+        window: 10,
+        max: 3
+      },
+      
+      // Wildcard path
+      "/admin/*": {
+        window: 60,
+        max: 10
+      },
+      
+      // Disable rate limit for path
+      "/webhook": false,
+      
+      // Dynamic rules
+      "/api/*": async (request, currentRule) => {
+        const apiKey = request.headers.get("x-api-key");
+        
+        if (apiKey === "premium_key") {
+          return { window: 60, max: 1000 };
+        }
+        
+        return currentRule; // Use default rule
+      }
+    }
+  }
+  ```
+</ParamField>
+
+## Custom Storage
+
+<ParamField path="customStorage" type="BetterAuthRateLimitStorage">
+  Provide a custom storage implementation.
+
+  ```typescript
+  import { betterAuth } from "better-auth";
+  import type { BetterAuthRateLimitStorage } from "better-auth";
+
+  const customStorage: BetterAuthRateLimitStorage = {
+    get: async (key) => {
+      const data = await myKVStore.get(key);
+      return data ? JSON.parse(data) : null;
+    },
+    set: async (key, value, update) => {
+      await myKVStore.set(key, JSON.stringify(value));
+    }
+  };
+
+  export const auth = betterAuth({
+    rateLimit: {
+      customStorage
+    }
+  });
+  ```
+
+  **Interface:**
+  ```typescript
+  interface BetterAuthRateLimitStorage {
+    get: (key: string) => Promise<RateLimit | null | undefined>;
+    set: (
+      key: string,
+      value: RateLimit,
+      update?: boolean
+    ) => Promise<void>;
+  }
+
+  interface RateLimit {
+    key: string;
+    count: number;
+    lastRequest: number; // timestamp in milliseconds
+  }
+  ```
+</ParamField>
+
+## IP Address Configuration
+
+Rate limiting is based on client IP addresses. Configure IP detection:
+
+```typescript
+betterAuth({
+  advanced: {
+    ipAddress: {
+      // Headers to check for IP (in order)
+      ipAddressHeaders: [
+        "x-forwarded-for",
+        "x-real-ip",
+        "cf-connecting-ip", // Cloudflare
+        "x-client-ip"
+      ],
+      
+      // IPv6 subnet for grouping
+      ipv6Subnet: 64, // 128 | 64 | 48 | 32
+      
+      // Disable IP tracking (⚠️ disables rate limiting)
+      disableIpTracking: false
+    },
+    
+    // Trust proxy headers (⚠️ security risk if misconfigured)
+    trustedProxyHeaders: true
+  }
+});
+```
+
+## Plugin Rate Limits
+
+Plugins can define their own rate limits:
+
+```typescript
+import type { BetterAuthPlugin } from "better-auth";
+
+export const myPlugin = (): BetterAuthPlugin => {
+  return {
+    id: "my-plugin",
+    rateLimit: [
+      {
+        pathMatcher: (path) => path === "/custom-endpoint",
+        window: 10,
+        max: 5
+      }
+    ]
+  };
+};
+```
+
+## Response Headers
+
+When rate limited, Better Auth returns:
+
+```http
+HTTP/1.1 429 Too Many Requests
+X-Retry-After: 45
+Content-Type: application/json
+
+{
+  "message": "Too many requests. Please try again later."
+}
+```
+
+<ResponseField name="Status Code" type="429">
+  Too Many Requests
+</ResponseField>
+
+<ResponseField name="X-Retry-After" type="string">
+  Seconds until the rate limit window resets
+</ResponseField>
+
+## Examples
+
+### Redis Storage
+
+```typescript
+import { betterAuth } from "better-auth";
+import Redis from "ioredis";
+
+const redis = new Redis(process.env.REDIS_URL);
+
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    storage: "secondary-storage",
+    window: 60,
+    max: 100
+  },
+  secondaryStorage: {
+    get: async (key) => {
+      const data = await redis.get(key);
+      return data || null;
+    },
+    set: async (key, value, ttl) => {
+      await redis.setex(key, ttl, value);
+    },
+    delete: async (key) => {
+      await redis.del(key);
+    }
+  }
+});
+```
+
+### Cloudflare KV
+
+```typescript
+// For Cloudflare Workers
+export const auth = betterAuth({
+  rateLimit: {
+    enabled: true,
+    storage: "secondary-storage"
+  },
+  secondaryStorage: {
+    get: async (key) => {
+      return await env.KV.get(key);
+    },
+    set: async (key, value, ttl) => {
+      await env.KV.put(key, value, {
+        expirationTtl: ttl
+      });
+    },
+    delete: async (key) => {
+      await env.KV.delete(key);
+    }
+  }
+});
+```
+
+### Per-User Rate Limits
+
+```typescript
+betterAuth({
+  rateLimit: {
+    customRules: {
+      "/api/*": async (request, currentRule) => {
+        const authHeader = request.headers.get("authorization");
+        
+        if (!authHeader) {
+          // Stricter limits for unauthenticated
+          return { window: 60, max: 10 };
+        }
+        
+        // More lenient for authenticated users
+        return { window: 60, max: 1000 };
+      }
+    }
+  }
+});
+```
+
+### Disable for Webhooks
+
+```typescript
+betterAuth({
+  rateLimit: {
+    enabled: true,
+    customRules: {
+      // No rate limit for webhook endpoints
+      "/webhook/*": false,
+      "/api/webhook": false
+    }
+  }
+});
+```
+
+## Database Schema
+
+When using `storage: "database"`, Better Auth creates a `rateLimit` table:
+
+```sql
+CREATE TABLE rate_limit (
+  id TEXT PRIMARY KEY,
+  key TEXT NOT NULL UNIQUE,
+  count INTEGER NOT NULL,
+  last_request BIGINT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+Customize the table name:
+
+```typescript
+betterAuth({
+  rateLimit: {
+    storage: "database",
+    modelName: "custom_rate_limit"
+  }
+});
+```
+
+## Best Practices
+
+1. **Use secondary storage in production**
+   ```typescript
+   storage: "secondary-storage" // Redis, etc.
+   ```
+
+2. **Configure strict limits for sensitive endpoints**
+   ```typescript
+   customRules: {
+     "/sign-in/email": { window: 10, max: 3 },
+     "/request-password-reset": { window: 60, max: 3 }
+   }
+   ```
+
+3. **Set up proper IP detection behind proxies**
+   ```typescript
+   advanced: {
+     ipAddress: {
+       ipAddressHeaders: ["cf-connecting-ip", "x-forwarded-for"]
+     },
+     trustedProxyHeaders: true
+   }
+   ```
+
+4. **Monitor rate limit hits**
+   ```typescript
+   logger: {
+     level: "warn" // Log rate limit violations
+   }
+   ```
+
+5. **Consider per-user limits for APIs**
+   ```typescript
+   customRules: {
+     "/api/*": async (request) => {
+       const user = await getUser(request);
+       return user.isPremium 
+         ? { window: 60, max: 10000 }
+         : { window: 60, max: 100 };
+     }
+   }
+   ```
+
+## Debugging
+
+If rate limiting isn't working:
+
+1. **Check IP detection**
+   ```typescript
+   import { getIp } from "better-auth";
+   
+   const ip = getIp(request, auth.options);
+   console.log("Detected IP:", ip);
+   ```
+
+2. **Verify enabled status**
+   ```typescript
+   console.log("Rate limit enabled:", auth.$context.rateLimit.enabled);
+   ```
+
+3. **Check storage**
+   ```typescript
+   const data = await storage.get("rate_limit_key");
+   console.log("Rate limit data:", data);
+   ```
+
+## Related
+
+- [Configuration](/api-reference/server/configuration)
+- [Middleware](/api-reference/server/middleware)
+- [Security Best Practices](/docs/security)

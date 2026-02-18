@@ -1,0 +1,405 @@
+---
+title: Prisma Adapter
+description: Integrate Better Auth with Prisma ORM for type-safe database access.
+---
+
+# Prisma Adapter
+
+Prisma ORM is an open-source database toolkit that simplifies database access and management in applications by providing a type-safe query builder and an intuitive data modeling interface.
+
+Before getting started, make sure you have Prisma installed and configured. For more information, see [Prisma Documentation](https://www.prisma.io/docs/).
+
+## Installation
+
+<Steps>
+### Install Prisma
+
+If you haven't already, install Prisma in your project:
+
+```bash
+npm install @prisma/client
+npm install -D prisma
+```
+
+### Initialize Prisma
+
+Initialize Prisma if you haven't already:
+
+```bash
+npx prisma init
+```
+
+### Configure Database
+
+Update your `.env` file with your database connection string:
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/mydb"
+```
+</Steps>
+
+## Basic Usage
+
+Connect Prisma to Better Auth:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "postgresql", // or "mysql", "sqlite", "sqlserver", "mongodb", "cockroachdb"
+  }),
+});
+```
+
+<Note type="warn">
+Starting from Prisma 7, the `output` path field is required. If you have configured a custom output path in your `schema.prisma` file (e.g., `output = "../src/generated/prisma"`), make sure to import the Prisma client from that location instead of `@prisma/client`. For more information, see [Prisma Client generation docs](https://www.prisma.io/docs/orm/prisma-client/setup-and-configuration/generating-prisma-client#the-location-of-prisma-client).
+</Note>
+
+## Schema Generation
+
+The Better Auth CLI can generate the required Prisma schema for you.
+
+### Generate Prisma Schema
+
+Generate the schema based on your Better Auth configuration:
+
+```bash
+npx auth@latest generate
+```
+
+This will create or update your `schema.prisma` file with the necessary models:
+
+```prisma title="prisma/schema.prisma"
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  sessions      Session[]
+  accounts      Account[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id           String  @id @default(cuid())
+  accountId    String
+  providerId   String
+  userId       String
+  accessToken  String?
+  refreshToken String?
+  idToken      String?
+  expiresAt    DateTime?
+  password     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  
+  @@unique([identifier, value])
+}
+```
+
+### Apply Migrations
+
+After generating the schema, create and apply migrations:
+
+<CodeGroup>
+```bash title="Development"
+npx prisma migrate dev --name init
+```
+
+```bash title="Production"
+npx prisma migrate deploy
+```
+</CodeGroup>
+
+### Generate Prisma Client
+
+Generate the Prisma Client to access your database:
+
+```bash
+npx prisma generate
+```
+
+<Note>
+Better Auth CLI only supports **schema generation** for Prisma, not automatic migrations. You must use Prisma's own migration tools (`prisma migrate`) to apply schema changes to your database.
+</Note>
+
+## Configuration Options
+
+### Provider
+
+Specify your database provider:
+
+```ts
+prismaAdapter(prisma, {
+  provider: "postgresql", // Required
+})
+```
+
+Supported providers:
+- `postgresql`
+- `mysql`
+- `sqlite`
+- `sqlserver`
+- `mongodb`
+- `cockroachdb`
+
+### Plural Table Names
+
+Use plural table names (e.g., `users` instead of `user`):
+
+```ts
+prismaAdapter(prisma, {
+  provider: "postgresql",
+  usePlural: true,
+})
+```
+
+### Transactions
+
+Enable database transactions for atomic operations:
+
+```ts
+prismaAdapter(prisma, {
+  provider: "postgresql",
+  transaction: true,
+})
+```
+
+### Debug Logs
+
+Enable detailed logging for debugging:
+
+```ts
+prismaAdapter(prisma, {
+  provider: "postgresql",
+  debugLogs: true, // or "verbose"
+})
+```
+
+## Experimental Joins
+
+Database joins can significantly improve performance when Better Auth needs to fetch related data from multiple tables. Endpoints like `/get-session` and `/get-full-organization` can see 2-3x performance improvements.
+
+The Prisma adapter supports joins out of the box since version 1.4.0.
+
+<Steps>
+### Enable Joins
+
+Set the experimental joins option in your auth configuration:
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "postgresql",
+  }),
+  experimental: { joins: true },
+});
+```
+
+### Define Relations
+
+Make sure your Prisma schema has the necessary relations defined:
+
+```prisma title="prisma/schema.prisma"
+model User {
+  id       String    @id @default(cuid())
+  email    String    @unique
+  // ... other fields
+  
+  sessions Session[]
+  accounts Account[]
+}
+
+model Session {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+```
+
+### Regenerate Schema (if needed)
+
+If you don't see relations in your Prisma schema, regenerate:
+
+```bash
+npx auth@latest generate
+```
+</Steps>
+
+<Note type="warn">
+Please make sure that your Prisma schema has the necessary relations defined. If you do not see any relations in your Prisma schema, you can manually add them using the `@relation` directive or run `npx auth@latest generate` to generate a new Prisma schema with the relations.
+</Note>
+
+## Custom Models and Fields
+
+You can customize model and field names in your Prisma schema and map them in Better Auth.
+
+### Custom Model Names
+
+If your Prisma model uses a different name:
+
+```prisma title="prisma/schema.prisma"
+model AppUser {
+  // ... fields
+}
+```
+
+```ts title="auth.ts"
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "postgresql",
+  }),
+  user: {
+    modelName: "AppUser",
+  },
+});
+```
+
+### Custom Field Names
+
+If your Prisma fields use different names:
+
+```prisma title="prisma/schema.prisma"
+model User {
+  id           String @id @default(cuid())
+  emailAddress String @unique @map("email_address")
+  // ... other fields
+}
+```
+
+```ts title="auth.ts"
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "postgresql",
+  }),
+  user: {
+    fields: {
+      email: "emailAddress",
+    },
+  },
+});
+```
+
+## Example: Complete Setup
+
+<CodeGroup>
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { prismaAdapter } from "better-auth/adapters/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
+
+export const auth = betterAuth({
+  database: prismaAdapter(prisma, {
+    provider: "postgresql",
+    transaction: true,
+  }),
+  emailAndPassword: {
+    enabled: true,
+  },
+  experimental: {
+    joins: true,
+  },
+});
+```
+
+```prisma title="prisma/schema.prisma"
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  sessions      Session[]
+  accounts      Account[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id           String    @id @default(cuid())
+  accountId    String
+  providerId   String
+  userId       String
+  accessToken  String?
+  refreshToken String?
+  idToken      String?
+  expiresAt    DateTime?
+  password     String?
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  
+  @@unique([identifier, value])
+}
+```
+</CodeGroup>
+
+## Additional Resources
+
+- [Prisma Documentation](https://www.prisma.io/docs/)
+- [How to use Prisma ORM with Better Auth and Next.js](https://www.prisma.io/docs/guides/betterauth-nextjs)
+- [Performance Optimization Guide](/guides/optimizing-for-performance)
+- [Better Auth CLI Reference](/concepts/cli)
